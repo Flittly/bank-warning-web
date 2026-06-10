@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+ï»¿import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '../App.css';
 
-// ÉèÖÃMapbox·ÃÎÊÁîÅÆ
+// è®¾ç½®Mapboxè®¿é—®ä»¤ç‰Œ
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
 
-// ·ÖÎöÅäÖÃÄ¬ÈÏÖµ
+// åˆ†æé…ç½®é»˜è®¤å€¼
 const ANALYSIS_CONFIG_DEFAULT = {
   "bench-id": "tiff/Mzs/2012/standard/201210/201210.tif",
   "ref-id": "tiff/Mzs/2023/standard/202304/202304.tif",
@@ -40,12 +40,12 @@ const ANALYSIS_CONFIG_DEFAULT = {
 };
 
 /**
- * ÔÚÏßÉÏÒÔ¹Ì¶¨¼ä¾àÉú³É´¹Ïß
- * @param line Ö÷Ïß
- * @param startDist Æğµã¾àÀë (Ã×)
- * @param endDist ÖÕµã¾àÀë (Ã×)
- * @param interval ¼ä¾à (Ã×)
- * @param crossLength ´¹Ïß×Ü³¤¶È (Ã×)
+ * åœ¨çº¿ä¸Šä»¥å›ºå®šé—´è·ç”Ÿæˆå‚çº¿
+ * @param line ä¸»çº¿
+ * @param startDist èµ·ç‚¹è·ç¦» (ç±³)
+ * @param endDist ç»ˆç‚¹è·ç¦» (ç±³)
+ * @param interval é—´è· (ç±³)
+ * @param crossLength å‚çº¿æ€»é•¿åº¦ (ç±³)
  */
 function generatePerpendicularLines(
   line: GeoJSON.Feature<GeoJSON.LineString>,
@@ -57,22 +57,22 @@ function generatePerpendicularLines(
   const perpendicularLines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
   const endpointData: { distance: number; left: number[]; right: number[] }[] = [];
 
-  // È·±£ start < end
+  // ç¡®ä¿ start < end
   const actualStart = Math.min(startDist, endDist);
   const actualEnd = Math.max(startDist, endDist);
   const lineLength = turf.length(line, { units: 'meters' });
   const segmentLen = actualEnd - actualStart;
 
-  console.log(`--- Éú³É´¹ÏßÊı¾İ (·¶Î§: ${actualStart.toFixed(2)}m - ${actualEnd.toFixed(2)}m, ¶Î³¤: ${segmentLen.toFixed(2)}m, Ä¸Ïß×Ü³¤: ${lineLength.toFixed(2)}m) ---`);
+  console.log(`--- ç”Ÿæˆå‚çº¿æ•°æ® (èŒƒå›´: ${actualStart.toFixed(2)}m - ${actualEnd.toFixed(2)}m, æ®µé•¿: ${segmentLen.toFixed(2)}m, æ¯çº¿æ€»é•¿: ${lineLength.toFixed(2)}m) ---`);
 
   for (let d = actualStart; d <= actualEnd; d += interval) {
     const p1 = turf.along(line, d, { units: 'meters' });
-    // ÎªÁË¼ÆËãÇĞÏß·½Ïò
+    // ä¸ºäº†è®¡ç®—åˆ‡çº¿æ–¹å‘
     const p2Offset = Math.min(d + 0.1, lineLength);
     const p2 = turf.along(line, p2Offset, { units: 'meters' });
 
     const relPos = segmentLen > 0 ? (d - actualStart) / segmentLen : 0;
-    console.log(`´¹ÏßÎ»ÖÃ: ${d.toFixed(2)}m, ÕûÏß¹éÒ»»¯: ${(d / lineLength).toFixed(4)}, Çø¶ÎÄÚ¹éÒ»»¯: ${relPos.toFixed(4)}`);
+    console.log(`å‚çº¿ä½ç½®: ${d.toFixed(2)}m, æ•´çº¿å½’ä¸€åŒ–: ${(d / lineLength).toFixed(4)}, åŒºæ®µå†…å½’ä¸€åŒ–: ${relPos.toFixed(4)}`);
 
     let bearing = 0;
     if (d >= lineLength - 0.1) {
@@ -117,39 +117,39 @@ function generatePerpendicularLines(
   };
 }
 
-// ¶¨ÒåÑ¡Ôñ×é½Ó¿Ú
+// å®šä¹‰é€‰æ‹©ç»„æ¥å£
 interface SelectionGroup {
   id: string;
   line: GeoJSON.Feature<GeoJSON.LineString>;
-  lineIndex: number | undefined; // ÏßÔÚÉÏ´«Êı¾İÖĞµÄË÷Òı£¬ÓÃÓÚÅĞ¶ÏÊÇ·ñÍ¬Ò»ÌõÏß
+  lineIndex: number | undefined; // çº¿åœ¨ä¸Šä¼ æ•°æ®ä¸­çš„ç´¢å¼•ï¼Œç”¨äºåˆ¤æ–­æ˜¯å¦åŒä¸€æ¡çº¿
   start: number;
   end: number | null;
   interval: number;
-  // ÉÏÒ»´ÎÊµ¼ÊÓ¦ÓÃµ½´¹ÏßÉÏµÄ¼ä¾à£¬ÓÃÓÚÅĞ¶ÏÓÃ»§ÊÇ·ñĞŞ¸ÄÁË¼ä¾à
+  // ä¸Šä¸€æ¬¡å®é™…åº”ç”¨åˆ°å‚çº¿ä¸Šçš„é—´è·ï¼Œç”¨äºåˆ¤æ–­ç”¨æˆ·æ˜¯å¦ä¿®æ”¹äº†é—´è·
   lastAppliedInterval: number;
   length: number;
   crossData: { distance: number; left: number[]; right: number[] }[];
-  // ¸Ã×éµÄÊôĞÔÅäÖÃ£¨Èç¹ûÎ´ÉèÖÃÔòÊ¹ÓÃÈ«¾ÖÅäÖÃ£©
+  // è¯¥ç»„çš„å±æ€§é…ç½®ï¼ˆå¦‚æœæœªè®¾ç½®åˆ™ä½¿ç”¨å…¨å±€é…ç½®ï¼‰
   properties?: Partial<typeof ANALYSIS_CONFIG_DEFAULT>;
 }
 
 /**
- * ½«´¹ÏßÊı¾İ·¢ËÍµ½ºó¶Ë½øĞĞ·ÖÎö
- * @param crossData ´¹Ïß¶ËµãÊı¾İÊı×é
- * @param groupId ×éID£¨ÓÃÓÚÈÕÖ¾£©
- * @param taskUid ÈÎÎñµÄÎ¨Ò»±êÊ¶·û
+ * å°†å‚çº¿æ•°æ®å‘é€åˆ°åç«¯è¿›è¡Œåˆ†æ
+ * @param crossData å‚çº¿ç«¯ç‚¹æ•°æ®æ•°ç»„
+ * @param groupId ç»„IDï¼ˆç”¨äºæ—¥å¿—ï¼‰
+ * @param taskUid ä»»åŠ¡çš„å”¯ä¸€æ ‡è¯†ç¬¦
  */
 async function sendCrossLinesToBackend(
   crossData: { distance: number; left: number[]; right: number[]; analysisConfig?: typeof ANALYSIS_CONFIG_DEFAULT }[],
   groupId: string,
   taskUid: string
 ) {
-  console.log(`¿ªÊ¼Ïòºó¶Ë·¢ËÍ×é ${groupId} µÄ ${crossData.length} Ìõ´¹ÏßÊı¾İ...`);
-  console.log(`ÈÎÎñUID: ${taskUid}`);
+  console.log(`å¼€å§‹å‘åç«¯å‘é€ç»„ ${groupId} çš„ ${crossData.length} æ¡å‚çº¿æ•°æ®...`);
+  console.log(`ä»»åŠ¡UID: ${taskUid}`);
 
   try {
     const promises = crossData.map(async (item, index) => {
-      // ÎªÃ¿Ìõ¶ÏÃæÉú³ÉÎ¨Ò»µÄuid
+      // ä¸ºæ¯æ¡æ–­é¢ç”Ÿæˆå”¯ä¸€çš„uid
       const sectionUid = `crossline-${Date.now()}-${index + 1}`;
       
       const payload = {
@@ -165,7 +165,7 @@ async function sendCrossLinesToBackend(
         }
       };
 
-      console.log(`ÕıÔÚ·¢ËÍ´¹Ïß ${index + 1}/${crossData.length} (¾àÀë: ${item.distance.toFixed(2)}m, UID: ${sectionUid}):`, payload);
+      console.log(`æ­£åœ¨å‘é€å‚çº¿ ${index + 1}/${crossData.length} (è·ç¦»: ${item.distance.toFixed(2)}m, UID: ${sectionUid}):`, payload);
 
       const response = await fetch('http://192.168.1.102:8088/v0/mi/risk-level', {
         method: 'POST',
@@ -174,19 +174,19 @@ async function sendCrossLinesToBackend(
       });
 
       if (!response.ok) {
-        throw new Error(`ÇëÇóÊ§°Ü: ${response.statusText}`);
+        throw new Error(`è¯·æ±‚å¤±è´¥: ${response.statusText}`);
       }
 
       const result = await response.json();
-      console.log(`´¹Ïß ${index + 1}/${crossData.length} (¾àÀë: ${item.distance.toFixed(2)}m, UID: ${sectionUid}) ÒÑ·¢ËÍ`);
+      console.log(`å‚çº¿ ${index + 1}/${crossData.length} (è·ç¦»: ${item.distance.toFixed(2)}m, UID: ${sectionUid}) å·²å‘é€`);
       return result;
     });
 
     const results = await Promise.all(promises);
-    console.log(`×é ${groupId} µÄËùÓĞ´¹ÏßÊı¾İÒÑ³É¹¦·¢ËÍµ½ºó¶Ë`);
+    console.log(`ç»„ ${groupId} çš„æ‰€æœ‰å‚çº¿æ•°æ®å·²æˆåŠŸå‘é€åˆ°åç«¯`);
     return results;
   } catch (error) {
-    console.error(`·¢ËÍ×é ${groupId} µÄ´¹ÏßÊı¾İÊ±³ö´í:`, error);
+    console.error(`å‘é€ç»„ ${groupId} çš„å‚çº¿æ•°æ®æ—¶å‡ºé”™:`, error);
     throw error;
   }
 }
@@ -195,86 +195,86 @@ function EditorPage() {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
-  // ÉÏ´«µÄ GeoJSON Êı¾İ (Ö÷Ïß)
+  // ä¸Šä¼ çš„ GeoJSON æ•°æ® (ä¸»çº¿)
   const [uploadedData, setUploadedData] = useState<GeoJSON.FeatureCollection | null>(null);
-  // ÉÏ´«µÄ GeoJSON ÎÄ¼şÃû
+  // ä¸Šä¼ çš„ GeoJSON æ–‡ä»¶å
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
-  // Éú³ÉµÄ´¹ÏßÊı¾İ
+  // ç”Ÿæˆçš„å‚çº¿æ•°æ®
   const [perpendicularData, setPerpendicularData] = useState<GeoJSON.FeatureCollection | null>(null);
   const perpendicularDataRef = useRef(perpendicularData);
   useEffect(() => { perpendicularDataRef.current = perpendicularData; }, [perpendicularData]);
 
-  // ËùÓĞÑ¡Ôñ×é
+  // æ‰€æœ‰é€‰æ‹©ç»„
   const [groups, setGroups] = useState<SelectionGroup[]>([]);
   const groupsRef = useRef(groups);
   useEffect(() => { groupsRef.current = groups; }, [groups]);
 
-  // È«¾Ö´¹ÏßÅäÖÃ£¨ÓÃÓÚÊ×´Î»æÖÆÕû¸ö GeoJSON£©
+  // å…¨å±€å‚çº¿é…ç½®ï¼ˆç”¨äºé¦–æ¬¡ç»˜åˆ¶æ•´ä¸ª GeoJSONï¼‰
   const [globalInterval, setGlobalInterval] = useState<number>(100);
   const [globalLength, setGlobalLength] = useState<number>(2000);
   
-  // µ±Ç°ÕıÔÚ±à¼­µÄ×éID
+  // å½“å‰æ­£åœ¨ç¼–è¾‘çš„ç»„ID
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   
   const [showCrossLines, setShowCrossLines] = useState<boolean>(true);
   
-  // È«¾ÖÊôĞÔÅäÖÃ
+  // å…¨å±€å±æ€§é…ç½®
   const [globalProperties, setGlobalProperties] = useState(ANALYSIS_CONFIG_DEFAULT);
-  // ÊôĞÔÅäÖÃµ¯´°×´Ì¬
+  // å±æ€§é…ç½®å¼¹çª—çŠ¶æ€
   const [showGlobalPropertiesModal, setShowGlobalPropertiesModal] = useState<boolean>(false);
   const [editingPropertiesGroupId, setEditingPropertiesGroupId] = useState<string | null>(null);
   
-  // ĞÂÔö×´Ì¬£º¿ØÖÆ°¶¶ÎÑ¡ÔñÄ£Ê½
+  // æ–°å¢çŠ¶æ€ï¼šæ§åˆ¶å²¸æ®µé€‰æ‹©æ¨¡å¼
   const [isSelectingShoreLines, setIsSelectingShoreLines] = useState<boolean>(false);
   const isSelectingShoreLinesRef = useRef(isSelectingShoreLines);
   useEffect(() => { isSelectingShoreLinesRef.current = isSelectingShoreLines; }, [isSelectingShoreLines]);
   
-  // ĞÂÔö×´Ì¬£º¿ØÖÆÆğÖ¹µãÑ¡ÔñÄ£Ê½
+  // æ–°å¢çŠ¶æ€ï¼šæ§åˆ¶èµ·æ­¢ç‚¹é€‰æ‹©æ¨¡å¼
   const [isSelectingStartEnd, setIsSelectingStartEnd] = useState<boolean>(false);
   const isSelectingStartEndRef = useRef(isSelectingStartEnd);
   useEffect(() => { isSelectingStartEndRef.current = isSelectingStartEnd; }, [isSelectingStartEnd]);
   
-  // ĞÂÔö×´Ì¬£ºÑ¡ÖĞµÄÓÃÓÚÉú³É´¹ÏßµÄÏß¶Î£¨´æ´¢ÏßµÄÎ¨Ò»±êÊ¶£©
+  // æ–°å¢çŠ¶æ€ï¼šé€‰ä¸­çš„ç”¨äºç”Ÿæˆå‚çº¿çš„çº¿æ®µï¼ˆå­˜å‚¨çº¿çš„å”¯ä¸€æ ‡è¯†ï¼‰
   const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
   const selectedLinesRef = useRef(selectedLines);
   useEffect(() => { selectedLinesRef.current = selectedLines; }, [selectedLines]);
   
-  // ĞÂÔö×´Ì¬£º¿ØÖÆ¶ÏÃæÑ¡ÔñÄ£Ê½
+  // æ–°å¢çŠ¶æ€ï¼šæ§åˆ¶æ–­é¢é€‰æ‹©æ¨¡å¼
   const [isSelectingCrossLines, setIsSelectingCrossLines] = useState<boolean>(false);
   const isSelectingCrossLinesRef = useRef(isSelectingCrossLines);
   useEffect(() => { isSelectingCrossLinesRef.current = isSelectingCrossLines; }, [isSelectingCrossLines]);
   
-  // ĞÂÔö×´Ì¬£ºÑ¡ÖĞµÄ¶ÏÃæË÷Òı
+  // æ–°å¢çŠ¶æ€ï¼šé€‰ä¸­çš„æ–­é¢ç´¢å¼•
   const [selectedCrossLineIndex, setSelectedCrossLineIndex] = useState<number | null>(null);
   const selectedCrossLineIndexRef = useRef(selectedCrossLineIndex);
   useEffect(() => { selectedCrossLineIndexRef.current = selectedCrossLineIndex; }, [selectedCrossLineIndex]);
   
-  // ĞÂÔö×´Ì¬£ºÍÏ×§Ïà¹Ø
+  // æ–°å¢çŠ¶æ€ï¼šæ‹–æ‹½ç›¸å…³
   const [isDraggingCrossLine, setIsDraggingCrossLine] = useState<boolean>(false);
   const isDraggingCrossLineRef = useRef(isDraggingCrossLine);
   useEffect(() => { isDraggingCrossLineRef.current = isDraggingCrossLine; }, [isDraggingCrossLine]);
 
-  // Ê¹ÓÃ Ref ¸ú×ÙÅäÖÃÖµ£¬È·±£ÊÂ¼ş¼àÌıÆ÷ÖĞÄÜ»ñÈ¡µ½×îĞÂÖµ
+  // ä½¿ç”¨ Ref è·Ÿè¸ªé…ç½®å€¼ï¼Œç¡®ä¿äº‹ä»¶ç›‘å¬å™¨ä¸­èƒ½è·å–åˆ°æœ€æ–°å€¼
   const configRef = useRef({ interval: globalInterval, length: globalLength });
   useEffect(() => {
     configRef.current = { interval: globalInterval, length: globalLength };
   }, [globalInterval, globalLength]);
 
-  // ÇĞ»»°¶¶ÎÑ¡ÔñÄ£Ê½
+  // åˆ‡æ¢å²¸æ®µé€‰æ‹©æ¨¡å¼
   const toggleShoreLineSelection = () => {
     setIsSelectingShoreLines(!isSelectingShoreLines);
     if (isSelectingStartEnd) {
-      setIsSelectingStartEnd(false); // ¹Ø±ÕÆğÖ¹µãÑ¡ÔñÄ£Ê½
+      setIsSelectingStartEnd(false); // å…³é—­èµ·æ­¢ç‚¹é€‰æ‹©æ¨¡å¼
     }
     if (isSelectingCrossLines) {
-      setIsSelectingCrossLines(false); // ¹Ø±Õ¶ÏÃæÑ¡ÔñÄ£Ê½
+      setIsSelectingCrossLines(false); // å…³é—­æ–­é¢é€‰æ‹©æ¨¡å¼
     }
   };
   
-  // È«Ñ¡ËùÓĞ°¶¶Î
+  // å…¨é€‰æ‰€æœ‰å²¸æ®µ
   const selectAllShoreLines = () => {
     if (!uploadedData) {
-      alert('ÇëÏÈÉÏ´« GeoJSON Êı¾İ');
+      alert('è¯·å…ˆä¸Šä¼  GeoJSON æ•°æ®');
       return;
     }
     
@@ -286,22 +286,22 @@ function EditorPage() {
     });
     
     setSelectedLines(allLineIds);
-    console.log(`ÒÑÈ«Ñ¡ ${allLineIds.size} ¸ö°¶¶Î`);
-    alert(`ÒÑÈ«Ñ¡ ${allLineIds.size} ¸ö°¶¶Î`);
+    console.log(`å·²å…¨é€‰ ${allLineIds.size} ä¸ªå²¸æ®µ`);
+    alert(`å·²å…¨é€‰ ${allLineIds.size} ä¸ªå²¸æ®µ`);
   };
   
-  // ÇĞ»»ÆğÖ¹µãÑ¡ÔñÄ£Ê½
+  // åˆ‡æ¢èµ·æ­¢ç‚¹é€‰æ‹©æ¨¡å¼
   const toggleStartEndSelection = () => {
     setIsSelectingStartEnd(!isSelectingStartEnd);
     if (isSelectingShoreLines) {
-      setIsSelectingShoreLines(false); // ¹Ø±Õ°¶¶ÎÑ¡ÔñÄ£Ê½
+      setIsSelectingShoreLines(false); // å…³é—­å²¸æ®µé€‰æ‹©æ¨¡å¼
     }
     if (isSelectingCrossLines) {
-      setIsSelectingCrossLines(false); // ¹Ø±Õ¶ÏÃæÑ¡ÔñÄ£Ê½
+      setIsSelectingCrossLines(false); // å…³é—­æ–­é¢é€‰æ‹©æ¨¡å¼
     }
   };
   
-  // ÇĞ»»¶ÏÃæÑ¡ÔñÄ£Ê½
+  // åˆ‡æ¢æ–­é¢é€‰æ‹©æ¨¡å¼
   const toggleCrossLineSelection = () => {
     setIsSelectingCrossLines(!isSelectingCrossLines);
     if (isSelectingShoreLines) {
@@ -311,19 +311,19 @@ function EditorPage() {
       setIsSelectingStartEnd(false);
     }
     if (!isSelectingCrossLines) {
-      setSelectedCrossLineIndex(null); // ¹Ø±ÕÄ£Ê½Ê±Çå¿ÕÑ¡Ôñ
+      setSelectedCrossLineIndex(null); // å…³é—­æ¨¡å¼æ—¶æ¸…ç©ºé€‰æ‹©
     }
   };
   
-  // É¾³ıÑ¡ÖĞµÄ¶ÏÃæ
+  // åˆ é™¤é€‰ä¸­çš„æ–­é¢
   const deleteSelectedCrossLine = () => {
     if (selectedCrossLineIndex === null || !perpendicularData) {
-      alert('ÇëÏÈÑ¡ÔñÒªÉ¾³ıµÄ¶ÏÃæ');
+      alert('è¯·å…ˆé€‰æ‹©è¦åˆ é™¤çš„æ–­é¢');
       return;
     }
     
     const updatedFeatures = perpendicularData.features.filter((_, index) => index !== selectedCrossLineIndex);
-    // ÖØĞÂ·ÖÅäID
+    // é‡æ–°åˆ†é…ID
     updatedFeatures.forEach((feature, index) => {
       if (feature.properties) {
         feature.properties.crossLineId = index;
@@ -331,26 +331,26 @@ function EditorPage() {
     });
     setPerpendicularData(turf.featureCollection(updatedFeatures));
     setSelectedCrossLineIndex(null);
-    console.log('ÒÑÉ¾³ı¶ÏÃæ£¬Ê£Óà¶ÏÃæÊı:', updatedFeatures.length);
-    alert('ÒÑÉ¾³ıÑ¡ÖĞµÄ¶ÏÃæ');
+    console.log('å·²åˆ é™¤æ–­é¢ï¼Œå‰©ä½™æ–­é¢æ•°:', updatedFeatures.length);
+    alert('å·²åˆ é™¤é€‰ä¸­çš„æ–­é¢');
   };
   
-  // ¿ªÊ¼ÍÏ×§¶ÏÃæ
+  // å¼€å§‹æ‹–æ‹½æ–­é¢
   const startDraggingCrossLine = (index: number) => {
-    console.log(`=== startDraggingCrossLine ±»µ÷ÓÃ ===`);
-    console.log(`- ¶ÏÃæË÷Òı: ${index}`);
-    console.log(`- µ±Ç°perpendicularData:`, perpendicularData);
-    console.log(`- ¶ÏÃæ×ÜÊı: ${perpendicularData?.features.length}`);
+    console.log(`=== startDraggingCrossLine è¢«è°ƒç”¨ ===`);
+    console.log(`- æ–­é¢ç´¢å¼•: ${index}`);
+    console.log(`- å½“å‰perpendicularData:`, perpendicularData);
+    console.log(`- æ–­é¢æ€»æ•°: ${perpendicularData?.features.length}`);
     
     setSelectedCrossLineIndex(index);
     setIsDraggingCrossLine(true);
     
-    console.log(`- ×´Ì¬ÒÑ¸üĞÂ: selectedCrossLineIndex=${index}, isDragging=true`);
+    console.log(`- çŠ¶æ€å·²æ›´æ–°: selectedCrossLineIndex=${index}, isDragging=true`);
   };
   
-  // ÍÏ×§¶ÏÃæµ½ĞÂÎ»ÖÃ
+  // æ‹–æ‹½æ–­é¢åˆ°æ–°ä½ç½®
   const dragCrossLineTo = (lngLat: { lng: number; lat: number }) => {
-    console.log('=== dragCrossLineTo ±»µ÷ÓÃ ===', lngLat);
+    console.log('=== dragCrossLineTo è¢«è°ƒç”¨ ===', lngLat);
     
     const currentIndex = selectedCrossLineIndexRef.current;
     const currentData = perpendicularDataRef.current;
@@ -361,7 +361,7 @@ function EditorPage() {
     console.log('dragCrossLineTo - isDragging:', isDragging);
     
     if (currentIndex === null || !currentData || !isDragging) {
-      console.log('ÍÏ×§Ìõ¼ş²»Âú×ã:', { currentIndex, hasData: !!currentData, isDragging });
+      console.log('æ‹–æ‹½æ¡ä»¶ä¸æ»¡è¶³:', { currentIndex, hasData: !!currentData, isDragging });
       return;
     }
     
@@ -369,7 +369,7 @@ function EditorPage() {
     console.log('dragCrossLineTo - selectedLine:', selectedLine);
     
     if (!selectedLine || selectedLine.geometry.type !== 'LineString') {
-      console.log('¶ÏÃæ²»´æÔÚ»òÀàĞÍ´íÎó');
+      console.log('æ–­é¢ä¸å­˜åœ¨æˆ–ç±»å‹é”™è¯¯');
       return;
     }
     
@@ -379,27 +379,27 @@ function EditorPage() {
     
     console.log('dragCrossLineTo - leftPoint:', leftPoint, 'rightPoint:', rightPoint);
     
-    // ¼ÆËã¶ÏÃæµÄÔ­Ê¼ÖĞµã
+    // è®¡ç®—æ–­é¢çš„åŸå§‹ä¸­ç‚¹
     const oldMidPoint = [(leftPoint[0] + rightPoint[0]) / 2, (leftPoint[1] + rightPoint[1]) / 2];
     
-    // ĞÂµÄÖĞµã¾ÍÊÇÊó±êÎ»ÖÃ
+    // æ–°çš„ä¸­ç‚¹å°±æ˜¯é¼ æ ‡ä½ç½®
     const newMidPoint = [lngLat.lng, lngLat.lat];
     
     console.log('dragCrossLineTo - oldMidPoint:', oldMidPoint, 'newMidPoint:', newMidPoint);
     
-    // ¼ÆËãÆ«ÒÆÁ¿
+    // è®¡ç®—åç§»é‡
     const offsetLng = newMidPoint[0] - oldMidPoint[0];
     const offsetLat = newMidPoint[1] - oldMidPoint[1];
     
-    console.log('dragCrossLineTo - Æ«ÒÆÁ¿:', offsetLng, offsetLat);
+    console.log('dragCrossLineTo - åç§»é‡:', offsetLng, offsetLat);
     
-    // Æ½ÒÆÁ½¸ö¶Ëµã
+    // å¹³ç§»ä¸¤ä¸ªç«¯ç‚¹
     const newLeftPoint = [leftPoint[0] + offsetLng, leftPoint[1] + offsetLat];
     const newRightPoint = [rightPoint[0] + offsetLng, rightPoint[1] + offsetLat];
     
     console.log('dragCrossLineTo - newLeftPoint:', newLeftPoint, 'newRightPoint:', newRightPoint);
     
-    // ¸üĞÂ¶ÏÃæ£¬±£ÁôcrossLineId
+    // æ›´æ–°æ–­é¢ï¼Œä¿ç•™crossLineId
     const updatedFeatures = [...currentData.features];
     updatedFeatures[currentIndex] = {
       ...selectedLine,
@@ -415,39 +415,39 @@ function EditorPage() {
       }
     };
     
-    console.log('dragCrossLineTo - ×¼±¸¸üĞÂ×´Ì¬£¬ĞÂfeaturesÊıÁ¿:', updatedFeatures.length);
+    console.log('dragCrossLineTo - å‡†å¤‡æ›´æ–°çŠ¶æ€ï¼Œæ–°featuresæ•°é‡:', updatedFeatures.length);
     setPerpendicularData(turf.featureCollection(updatedFeatures as GeoJSON.Feature<GeoJSON.LineString>[]));
     perpendicularDataRef.current = turf.featureCollection(updatedFeatures as GeoJSON.Feature<GeoJSON.LineString>[]);
-    console.log('dragCrossLineTo - ×´Ì¬ÒÑ¸üĞÂ');
+    console.log('dragCrossLineTo - çŠ¶æ€å·²æ›´æ–°');
   };
   
-  // ½áÊøÍÏ×§
+  // ç»“æŸæ‹–æ‹½
   const stopDraggingCrossLine = () => {
     if (isDraggingCrossLine && selectedCrossLineIndex !== null) {
-      console.log(`½áÊøÍÏ×§¶ÏÃæ #${selectedCrossLineIndex + 1}`);
+      console.log(`ç»“æŸæ‹–æ‹½æ–­é¢ #${selectedCrossLineIndex + 1}`);
     }
     setIsDraggingCrossLine(false);
   };
   
-  // ÎªÑ¡ÖĞµÄ¶ÏÃæÅäÖÃÊôĞÔ
+  // ä¸ºé€‰ä¸­çš„æ–­é¢é…ç½®å±æ€§
   const configureSelectedCrossLineProperties = () => {
     if (selectedCrossLineIndex === null || !perpendicularData) {
-      alert('ÇëÏÈÑ¡ÔñÒªÅäÖÃµÄ¶ÏÃæ');
+      alert('è¯·å…ˆé€‰æ‹©è¦é…ç½®çš„æ–­é¢');
       return;
     }
-    // ´ò¿ªÊôĞÔÅäÖÃµ¯´°£¨Ê¹ÓÃÌØÊâµÄID±êÊ¶µ¥¸ö¶ÏÃæ£©
+    // æ‰“å¼€å±æ€§é…ç½®å¼¹çª—ï¼ˆä½¿ç”¨ç‰¹æ®Šçš„IDæ ‡è¯†å•ä¸ªæ–­é¢ï¼‰
     setEditingPropertiesGroupId(`cross-line-${selectedCrossLineIndex}`);
   };
 
-  // ºËĞÄÂß¼­£º»ùÓÚÉÏ´«µÄ GeoJSON ºÍÈ«¾ÖÅäÖÃÉú³ÉËùÓĞ´¹Ïß
+  // æ ¸å¿ƒé€»è¾‘ï¼šåŸºäºä¸Šä¼ çš„ GeoJSON å’Œå…¨å±€é…ç½®ç”Ÿæˆæ‰€æœ‰å‚çº¿
   const handleGenerateSections = () => {
     if (!uploadedData) {
-      alert('ÇëÏÈÉÏ´« GeoJSON Êı¾İ');
+      alert('è¯·å…ˆä¸Šä¼  GeoJSON æ•°æ®');
       return;
     }
 
     if (selectedLines.size === 0) {
-      alert('ÇëÏÈÑ¡ÔñÓÃÓÚ·ÖÎöµÄ°¶¶Î');
+      alert('è¯·å…ˆé€‰æ‹©ç”¨äºåˆ†æçš„å²¸æ®µ');
       return;
     }
 
@@ -456,7 +456,7 @@ function EditorPage() {
     uploadedData.features.forEach((feature, index) => {
       const lineId = `line-${index}`;
       
-      // Ö»´¦ÀíÑ¡ÖĞµÄÏß¶Î
+      // åªå¤„ç†é€‰ä¸­çš„çº¿æ®µ
       if (!selectedLines.has(lineId)) {
         return;
       }
@@ -492,7 +492,7 @@ function EditorPage() {
       }
     });
 
-    // ¼ò»¯¶ÏÃæÊı¾İ½á¹¹£ºÖ»±£Áô±ØÒªµÄÊôĞÔ£¬²¢Ìí¼ÓÎ¨Ò»ID
+    // ç®€åŒ–æ–­é¢æ•°æ®ç»“æ„ï¼šåªä¿ç•™å¿…è¦çš„å±æ€§ï¼Œå¹¶æ·»åŠ å”¯ä¸€ID
     allPerpendicularLines.forEach((line, index) => {
       const leftPoint = line.properties?.leftPoint;
       const rightPoint = line.properties?.rightPoint;
@@ -506,37 +506,37 @@ function EditorPage() {
 
     setPerpendicularData(turf.featureCollection(allPerpendicularLines));
     setShowCrossLines(true);
-    alert(`ÒÑÎª ${selectedLines.size} ¸ö°¶¶ÎÉú³É´¹Ïß£¡\n\nÌáÊ¾£º¿ÉÒÔµã»÷"ÊôĞÔÅäÖÃ"°´Å¥ÉèÖÃ·ÖÎö²ÎÊı`);
+    alert(`å·²ä¸º ${selectedLines.size} ä¸ªå²¸æ®µç”Ÿæˆå‚çº¿ï¼\n\næç¤ºï¼šå¯ä»¥ç‚¹å‡»"å±æ€§é…ç½®"æŒ‰é’®è®¾ç½®åˆ†æå‚æ•°`);
   };
 
-  // ¿ªÊ¼·ÖÎö£º½«ËùÓĞ´¹Ïß·¢ËÍµ½ºó¶Ë
+  // å¼€å§‹åˆ†æï¼šå°†æ‰€æœ‰å‚çº¿å‘é€åˆ°åç«¯
   const handleStartAnalysis = async () => {
     if (!perpendicularData || perpendicularData.features.length === 0) {
-      alert('ÇëÏÈ»æÖÆ¶ÏÃæ');
+      alert('è¯·å…ˆç»˜åˆ¶æ–­é¢');
       return;
     }
 
-    // »ñÈ¡ÈÎÎñÃû³Æ
-    const taskName = prompt('ÇëÊäÈëÈÎÎñÃû³Æ£º');
+    // è·å–ä»»åŠ¡åç§°
+    const taskName = prompt('è¯·è¾“å…¥ä»»åŠ¡åç§°ï¼š');
     if (!taskName || taskName.trim() === '') {
-      alert('ÈÎÎñÃû³Æ²»ÄÜÎª¿Õ');
+      alert('ä»»åŠ¡åç§°ä¸èƒ½ä¸ºç©º');
       return;
     }
 
-    // Éú³ÉÈÎÎñUID
+    // ç”Ÿæˆä»»åŠ¡UID
     const taskUid = `task-${Date.now()}`;
     
-    console.log(`´´½¨ÈÎÎñ: ${taskName} (UID: ${taskUid})`);
+    console.log(`åˆ›å»ºä»»åŠ¡: ${taskName} (UID: ${taskUid})`);
 
     try {
-      // 1. ÏÈ·¢ËÍÈÎÎñĞÅÏ¢µ½ /task ½Ó¿Ú
+      // 1. å…ˆå‘é€ä»»åŠ¡ä¿¡æ¯åˆ° /task æ¥å£
       const taskPayload = {
         uid: taskUid,
         name: taskName.trim(),
         geojson: uploadedFileName
       };
       
-      console.log('Ïòºó¶Ë·¢ËÍÈÎÎñĞÅÏ¢:', taskPayload);
+      console.log('å‘åç«¯å‘é€ä»»åŠ¡ä¿¡æ¯:', taskPayload);
       
       // const taskResponse = await fetch('http://192.168.1.102:8088/v0/mi/task', {
       //   method: 'POST',
@@ -545,13 +545,13 @@ function EditorPage() {
       // });
 
       // if (!taskResponse.ok) {
-      //   throw new Error(`´´½¨ÈÎÎñÊ§°Ü: ${taskResponse.statusText}`);
+      //   throw new Error(`åˆ›å»ºä»»åŠ¡å¤±è´¥: ${taskResponse.statusText}`);
       // }
 
       // const taskResult = await taskResponse.json();
-      // console.log('ÈÎÎñ´´½¨³É¹¦:', taskResult);
+      // console.log('ä»»åŠ¡åˆ›å»ºæˆåŠŸ:', taskResult);
 
-      // 2. ÊÕ¼¯ËùÓĞ´¹ÏßÊı¾İ£¬°üÀ¨Ã¿Ìõ´¹ÏßµÄÊôĞÔÅäÖÃ
+      // 2. æ”¶é›†æ‰€æœ‰å‚çº¿æ•°æ®ï¼ŒåŒ…æ‹¬æ¯æ¡å‚çº¿çš„å±æ€§é…ç½®
       const allCrossData = perpendicularData.features.map(line => ({
         distance: line.properties?.distance ?? 0,
         left: line.properties?.leftPoint as number[],
@@ -559,45 +559,45 @@ function EditorPage() {
         analysisConfig: line.properties?.analysisConfig as typeof ANALYSIS_CONFIG_DEFAULT
       }));
 
-      // 3. ·¢ËÍËùÓĞ¶ÏÃæÊı¾İ
+      // 3. å‘é€æ‰€æœ‰æ–­é¢æ•°æ®
       await sendCrossLinesToBackend(allCrossData, 'all-lines', taskUid);
       
-      alert(`ÈÎÎñ "${taskName}" ´´½¨³É¹¦£¡\nÈÎÎñUID: ${taskUid}\nÒÑ·¢ËÍ ${allCrossData.length} Ìõ´¹Ïßµ½ºó¶Ë`);
+      alert(`ä»»åŠ¡ "${taskName}" åˆ›å»ºæˆåŠŸï¼\nä»»åŠ¡UID: ${taskUid}\nå·²å‘é€ ${allCrossData.length} æ¡å‚çº¿åˆ°åç«¯`);
     } catch (err) {
-      alert('·¢ËÍÊı¾İµ½ºó¶ËÊ±³ö´í£¬Çë¼ì²é¿ØÖÆÌ¨');
+      alert('å‘é€æ•°æ®åˆ°åç«¯æ—¶å‡ºé”™ï¼Œè¯·æ£€æŸ¥æ§åˆ¶å°');
       console.error(err);
     }
   };
 
-  // Ó¦ÓÃ×Ô¶¨ÒåÏß¶ÎÅäÖÃ£º¸üĞÂµ±Ç°±à¼­×éµÄ´¹Ïß
+  // åº”ç”¨è‡ªå®šä¹‰çº¿æ®µé…ç½®ï¼šæ›´æ–°å½“å‰ç¼–è¾‘ç»„çš„å‚çº¿
   const handleApplyCustomSegments = () => {
     if (!editingGroupId) {
-      alert('ÇëÏÈµã»÷±à¼­°´Å¥Ñ¡ÔñÒªĞŞ¸ÄµÄ×é');
+      alert('è¯·å…ˆç‚¹å‡»ç¼–è¾‘æŒ‰é’®é€‰æ‹©è¦ä¿®æ”¹çš„ç»„');
       return;
     }
 
     const editingGroup = groups.find(g => g.id === editingGroupId);
     if (!editingGroup || editingGroup.end === null) {
-      alert('Ñ¡ÔñµÄ×éÎ´Íê³ÉÆğÖ¹µãÑ¡Ôñ');
+      alert('é€‰æ‹©çš„ç»„æœªå®Œæˆèµ·æ­¢ç‚¹é€‰æ‹©');
       return;
     }
 
     if (!perpendicularData) {
-      alert('ÇëÏÈ»æÖÆ¶ÏÃæ');
+      alert('è¯·å…ˆç»˜åˆ¶æ–­é¢');
       return;
     }
 
     const start = Math.min(editingGroup.start, editingGroup.end);
     const end = Math.max(editingGroup.start, editingGroup.end);
     
-    // ÅĞ¶ÏÊÇ·ñĞŞ¸ÄÁË¼ä¾à£ºÈç¹ûµ±Ç°¼ä¾àÓëÉÏÒ»´ÎÓ¦ÓÃµÄ¼ä¾à²»Í¬£¬ÔòÈÏÎªĞŞ¸ÄÁË¼ä¾à
+    // åˆ¤æ–­æ˜¯å¦ä¿®æ”¹äº†é—´è·ï¼šå¦‚æœå½“å‰é—´è·ä¸ä¸Šä¸€æ¬¡åº”ç”¨çš„é—´è·ä¸åŒï¼Œåˆ™è®¤ä¸ºä¿®æ”¹äº†é—´è·
     const intervalChanged = editingGroup.interval !== editingGroup.lastAppliedInterval;
 
-    // ¸´ÖÆÏÖÓĞ´¹ÏßÊı¾İ
+    // å¤åˆ¶ç°æœ‰å‚çº¿æ•°æ®
     let updatedLines = [...perpendicularData.features] as GeoJSON.Feature<GeoJSON.LineString>[];
 
     if (!intervalChanged) {
-      // ? Î´ĞŞ¸Ä¼ä¾à£º½ö¸ù¾İÃ¿Ìõ´¹ÏßµÄÎ»ÖÃ£¬µ÷ÕûÆä³¤¶È£¬²»¸Ä±äÎ»ÖÃÓëÊıÁ¿
+      // âœ… æœªä¿®æ”¹é—´è·ï¼šä»…æ ¹æ®æ¯æ¡å‚çº¿çš„ä½ç½®ï¼Œè°ƒæ•´å…¶é•¿åº¦ï¼Œä¸æ”¹å˜ä½ç½®ä¸æ•°é‡
       const newCrossData: { distance: number; left: number[]; right: number[] }[] = [];
 
       updatedLines = updatedLines.map(line => {
@@ -607,15 +607,15 @@ function EditorPage() {
         if (!leftPoint || !rightPoint) return line;
 
         try {
-          // ´¹ÏßÖĞµã
+          // å‚çº¿ä¸­ç‚¹
           const mid = [(leftPoint[0] + rightPoint[0]) / 2, (leftPoint[1] + rightPoint[1]) / 2];
           const midPoint = turf.point(mid);
-          // Í¶Ó°µ½µ±Ç°×éµÄÖ÷ÏßÉÏ£¬µÃµ½¸Ã´¹ÏßÔÚÖ÷ÏßÉÏµÄÊµ¼Ê¾àÀë
+          // æŠ•å½±åˆ°å½“å‰ç»„çš„ä¸»çº¿ä¸Šï¼Œå¾—åˆ°è¯¥å‚çº¿åœ¨ä¸»çº¿ä¸Šçš„å®é™…è·ç¦»
           const snapped = turf.nearestPointOnLine(editingGroup.line, midPoint, { units: 'meters' });
           const actualDist = snapped.properties.location ?? 0;
           const distToLine = turf.distance(midPoint, snapped, { units: 'meters' });
 
-          // ¹ıÂË£ºÖ»´¦ÀíÍ¬Ò»ÌõÏß¡¢²¢ÇÒ¾àÀëÔÚÏß¶Î [start, end] ÄÚµÄ´¹Ïß
+          // è¿‡æ»¤ï¼šåªå¤„ç†åŒä¸€æ¡çº¿ã€å¹¶ä¸”è·ç¦»åœ¨çº¿æ®µ [start, end] å†…çš„å‚çº¿
           if (distToLine > Math.max(globalLength, editingGroup.length) / 2 + 100) {
             return line;
           }
@@ -623,7 +623,7 @@ function EditorPage() {
             return line;
           }
 
-          // ÒÔÍ¶Ó°µãÎªÖĞĞÄµã£¬°´¾ÉµÄ³¯Ïò£¬ÖØĞÂ¸ù¾İĞÂµÄ³¤¶È¼ÆËã¶Ëµã
+          // ä»¥æŠ•å½±ç‚¹ä¸ºä¸­å¿ƒç‚¹ï¼ŒæŒ‰æ—§çš„æœå‘ï¼Œé‡æ–°æ ¹æ®æ–°çš„é•¿åº¦è®¡ç®—ç«¯ç‚¹
           const centerPoint = snapped as GeoJSON.Feature<GeoJSON.Point>;
           const bearingToLeft = turf.bearing(centerPoint, turf.point(leftPoint));
           const halfLen = editingGroup.length / 2;
@@ -638,7 +638,7 @@ function EditorPage() {
             type: 'LineString',
             coordinates: [newLeft, newRight]
           };
-          // ¼ò»¯ÊôĞÔ½á¹¹£¬±£ÁôÔ­ID
+          // ç®€åŒ–å±æ€§ç»“æ„ï¼Œä¿ç•™åŸID
           line.properties = {
             crossLineId: lineProp.crossLineId,
             leftPoint: newLeft,
@@ -654,7 +654,7 @@ function EditorPage() {
         }
       });
 
-      // °´¾àÀëÅÅĞò crossData£¬·½±ãºóĞøÊ¹ÓÃ
+      // æŒ‰è·ç¦»æ’åº crossDataï¼Œæ–¹ä¾¿åç»­ä½¿ç”¨
       newCrossData.sort((a, b) => a.distance - b.distance);
 
       setGroups(prev => {
@@ -671,11 +671,11 @@ function EditorPage() {
       });
 
       setPerpendicularData(turf.featureCollection(updatedLines));
-      alert(`ÒÑ¸üĞÂ×é ${groups.findIndex(g => g.id === editingGroupId) + 1} µÄ´¹Ïß³¤¶È£¨Î´ĞŞ¸Ä¼ä¾à£©`);
+      alert(`å·²æ›´æ–°ç»„ ${groups.findIndex(g => g.id === editingGroupId) + 1} çš„å‚çº¿é•¿åº¦ï¼ˆæœªä¿®æ”¹é—´è·ï¼‰`);
     } else {
-      // ? ĞŞ¸ÄÁË¼ä¾à£ºÉ¾³ı¸Ã¶ÎÔ­ÓĞ´¹Ïß£¬¸ù¾İĞÂµÄ¼ä¾àÓë³¤¶ÈÖØĞÂÉú³É
+      // âœ… ä¿®æ”¹äº†é—´è·ï¼šåˆ é™¤è¯¥æ®µåŸæœ‰å‚çº¿ï¼Œæ ¹æ®æ–°çš„é—´è·ä¸é•¿åº¦é‡æ–°ç”Ÿæˆ
 
-      // ÒÆ³ı¸ÃÏß¶Î·¶Î§ÄÚµÄ¾É´¹Ïß£¨Ö»ÒÆ³ıÍ¬Ò»ÌõÏßÉÏµÄ£©
+      // ç§»é™¤è¯¥çº¿æ®µèŒƒå›´å†…çš„æ—§å‚çº¿ï¼ˆåªç§»é™¤åŒä¸€æ¡çº¿ä¸Šçš„ï¼‰
       updatedLines = updatedLines.filter(line => {
         const lineProp = line.properties as any;
         if (!lineProp) return true;
@@ -689,26 +689,26 @@ function EditorPage() {
           const distOnLine = turf.nearestPointOnLine(editingGroup.line, midPoint, { units: 'meters' });
           const actualDist = distOnLine.properties.location ?? 0;
           
-          // ¼ì²é´¹ÏßÖĞµãÊÇ·ñÕæµÄÔÚµ±Ç°ÏßÉÏ£¨Í¨¹ı¾àÀëãĞÖµÅĞ¶Ï£©
+          // æ£€æŸ¥å‚çº¿ä¸­ç‚¹æ˜¯å¦çœŸçš„åœ¨å½“å‰çº¿ä¸Šï¼ˆé€šè¿‡è·ç¦»é˜ˆå€¼åˆ¤æ–­ï¼‰
           const distToLine = turf.distance(midPoint, distOnLine, { units: 'meters' });
           
-          // Èç¹û´¹ÏßÖĞµã¾àÀëÏßÌ«Ô¶£¬ËµÃ÷²»ÊÇÍ¬Ò»ÌõÏß
+          // å¦‚æœå‚çº¿ä¸­ç‚¹è·ç¦»çº¿å¤ªè¿œï¼Œè¯´æ˜ä¸æ˜¯åŒä¸€æ¡çº¿
           if (distToLine > Math.max(globalLength, editingGroup.length) / 2 + 100) {
-            return true; // ±£Áô£¬²»ÊÇÍ¬Ò»ÌõÏß
+            return true; // ä¿ç•™ï¼Œä¸æ˜¯åŒä¸€æ¡çº¿
           }
           
-          // ÊÇÍ¬Ò»ÌõÏß£¬¼ì²éÊÇ·ñÔÚÑ¡Ôñ·¶Î§ÄÚ
+          // æ˜¯åŒä¸€æ¡çº¿ï¼Œæ£€æŸ¥æ˜¯å¦åœ¨é€‰æ‹©èŒƒå›´å†…
           if (actualDist >= start && actualDist <= end) {
-            return false; // ÒÆ³ı£¬ÔÚ·¶Î§ÄÚ
+            return false; // ç§»é™¤ï¼Œåœ¨èŒƒå›´å†…
           }
           
-          return true; // ±£Áô£¬²»ÔÚ·¶Î§ÄÚ
+          return true; // ä¿ç•™ï¼Œä¸åœ¨èŒƒå›´å†…
         } catch {
-          return true; // ³ö´íÔò±£Áô
+          return true; // å‡ºé”™åˆ™ä¿ç•™
         }
       });
       
-      // Éú³ÉĞÂµÄ´¹ÏßÊı¾İ
+      // ç”Ÿæˆæ–°çš„å‚çº¿æ•°æ®
       const { featureCollection, endpointData } = generatePerpendicularLines(
         editingGroup.line,
         start,
@@ -717,7 +717,7 @@ function EditorPage() {
         editingGroup.length
       );
       
-      // ¼ò»¯´¹ÏßÊôĞÔ½á¹¹£¬Ìí¼ÓĞÂID
+      // ç®€åŒ–å‚çº¿å±æ€§ç»“æ„ï¼Œæ·»åŠ æ–°ID
       const startId = updatedLines.length;
       featureCollection.features.forEach((line, idx) => {
         const leftPoint = line.properties?.leftPoint;
@@ -730,7 +730,7 @@ function EditorPage() {
         };
       });
       
-      // ¸üĞÂ×éµÄ crossData Óë lastAppliedInterval
+      // æ›´æ–°ç»„çš„ crossData ä¸ lastAppliedInterval
       setGroups(prev => {
         const updated = [...prev];
         const idx = updated.findIndex(g => g.id === editingGroup.id);
@@ -744,15 +744,15 @@ function EditorPage() {
         return updated;
       });
       
-      // ºÏ²¢ĞÂ´¹Ïß
+      // åˆå¹¶æ–°å‚çº¿
       updatedLines.push(...(featureCollection.features as GeoJSON.Feature<GeoJSON.LineString>[]));
 
       setPerpendicularData(turf.featureCollection(updatedLines));
-      alert(`ÒÑÓ¦ÓÃ×é ${groups.findIndex(g => g.id === editingGroupId) + 1} µÄ×Ô¶¨ÒåÅäÖÃ£¨ĞŞ¸ÄÁË¼ä¾à£¬ÒÑÖØ»æ£©`);
+      alert(`å·²åº”ç”¨ç»„ ${groups.findIndex(g => g.id === editingGroupId) + 1} çš„è‡ªå®šä¹‰é…ç½®ï¼ˆä¿®æ”¹äº†é—´è·ï¼Œå·²é‡ç»˜ï¼‰`);
     }
   };
 
-  // ´¦ÀíÎÄ¼şÉÏ´«
+  // å¤„ç†æ–‡ä»¶ä¸Šä¼ 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -763,7 +763,7 @@ function EditorPage() {
         const json = JSON.parse(event.target?.result as string);
         const geojson = json.type === 'FeatureCollection' ? json : turf.featureCollection([json]);
         
-        // ÎªÃ¿¸öÒªËØÌí¼ÓË÷ÒıÊôĞÔ
+        // ä¸ºæ¯ä¸ªè¦ç´ æ·»åŠ ç´¢å¼•å±æ€§
         geojson.features.forEach((feature: any, index: number) => {
           if (!feature.properties) {
             feature.properties = {};
@@ -771,12 +771,12 @@ function EditorPage() {
           feature.properties.index = index;
         });
         
-        // ±£´æÎÄ¼şÃû
+        // ä¿å­˜æ–‡ä»¶å
         setUploadedFileName(file.name);
         
-        // ·¢ËÍ GeoJSON µ½ºó¶Ë
+        // å‘é€ GeoJSON åˆ°åç«¯
         try {
-          console.log('Ïòºó¶Ë·¢ËÍ GeoJSON ÎÄ¼ş:', file.name);
+          console.log('å‘åç«¯å‘é€ GeoJSON æ–‡ä»¶:', file.name);
           const response = await fetch('http://192.168.1.102:8088/v0/mi/geojson', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -787,18 +787,18 @@ function EditorPage() {
           });
 
           if (!response.ok) {
-            console.error('·¢ËÍ GeoJSON µ½ºó¶ËÊ§°Ü:', response.statusText);
+            console.error('å‘é€ GeoJSON åˆ°åç«¯å¤±è´¥:', response.statusText);
           } else {
             const result = await response.json();
-            console.log('GeoJSON ÒÑ³É¹¦·¢ËÍµ½ºó¶Ë:', result);
+            console.log('GeoJSON å·²æˆåŠŸå‘é€åˆ°åç«¯:', result);
           }
         } catch (err) {
-          console.error('·¢ËÍ GeoJSON µ½ºó¶ËÊ±³ö´í:', err);
-          // ²»×èÖ¹Ç°¶Ë¼ÓÔØ£¬Ö»ÊÇ¼ÇÂ¼´íÎó
+          console.error('å‘é€ GeoJSON åˆ°åç«¯æ—¶å‡ºé”™:', err);
+          // ä¸é˜»æ­¢å‰ç«¯åŠ è½½ï¼Œåªæ˜¯è®°å½•é”™è¯¯
         }
         
         setUploadedData(geojson);
-        // ÖØÖÃÑ¡Ôñ×´Ì¬
+        // é‡ç½®é€‰æ‹©çŠ¶æ€
         setSelectedLines(new Set());
         setIsSelectingShoreLines(false);
         setIsSelectingStartEnd(false);
@@ -808,13 +808,13 @@ function EditorPage() {
           mapRef.current.fitBounds([bbox[0], bbox[1], bbox[2], bbox[3]], { padding: 50 });
         }
       } catch (err) {
-        alert('½âÎö GeoJSON Ê§°Ü£¬Çë¼ì²éÎÄ¼ş¸ñÊ½');
+        alert('è§£æ GeoJSON å¤±è´¥ï¼Œè¯·æ£€æŸ¥æ–‡ä»¶æ ¼å¼');
       }
     };
     reader.readAsText(file);
   };
 
-  // ºËĞÄÂß¼­£ºÍ¬²½´¹Ïßµ½µØÍ¼Êı¾İÔ´
+  // æ ¸å¿ƒé€»è¾‘ï¼šåŒæ­¥å‚çº¿åˆ°åœ°å›¾æ•°æ®æº
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -833,7 +833,7 @@ function EditorPage() {
     }
   }, [perpendicularData]);
 
-  // Í¬²½ÉÏ´«µÄÊı¾İµ½µØÍ¼
+  // åŒæ­¥ä¸Šä¼ çš„æ•°æ®åˆ°åœ°å›¾
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !uploadedData) return;
@@ -852,13 +852,13 @@ function EditorPage() {
     }
   }, [uploadedData]);
 
-  // Í¬²½Ñ¡ÖĞÏß¶ÎµÄ¸ßÁÁÏÔÊ¾
+  // åŒæ­¥é€‰ä¸­çº¿æ®µçš„é«˜äº®æ˜¾ç¤º
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !uploadedData) return;
 
     const updateSelectedLines = () => {
-      // ´´½¨Ò»¸öĞÂµÄÍ¼²ãÀ´¸ßÁÁÑ¡ÖĞµÄÏß¶Î
+      // åˆ›å»ºä¸€ä¸ªæ–°çš„å›¾å±‚æ¥é«˜äº®é€‰ä¸­çš„çº¿æ®µ
       const selectedSource = map.getSource('selected-shore-lines') as mapboxgl.GeoJSONSource;
       if (selectedSource) {
         const selectedFeatures = uploadedData.features.filter((_, index) => 
@@ -875,13 +875,13 @@ function EditorPage() {
     }
   }, [selectedLines, uploadedData]);
 
-  // Í¬²½Ñ¡Ôñ×éÊı¾İµ½µØÍ¼
+  // åŒæ­¥é€‰æ‹©ç»„æ•°æ®åˆ°åœ°å›¾
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     const updateMapSources = () => {
-      // ¸üĞÂ±ê¼ÇµãÊı¾İÔ´ (ËùÓĞÆğÖ¹µã)
+      // æ›´æ–°æ ‡è®°ç‚¹æ•°æ®æº (æ‰€æœ‰èµ·æ­¢ç‚¹)
       const pointSource = map.getSource('selection-points') as mapboxgl.GeoJSONSource;
       if (pointSource) {
         const allPoints: GeoJSON.Feature<GeoJSON.Point>[] = [];
@@ -896,7 +896,7 @@ function EditorPage() {
         pointSource.setData(turf.featureCollection(allPoints));
       }
 
-      // ¸üĞÂÖ÷Ïß¸ßÁÁ¶Î
+      // æ›´æ–°ä¸»çº¿é«˜äº®æ®µ
       const activeLineSource = map.getSource('active-line') as mapboxgl.GeoJSONSource;
       if (activeLineSource) {
         const segments: GeoJSON.Feature<GeoJSON.LineString>[] = [];
@@ -909,7 +909,7 @@ function EditorPage() {
               segment.properties = { groupId: group.id };
               segments.push(segment as GeoJSON.Feature<GeoJSON.LineString>);
             } catch (err) {
-              console.warn('ÇĞ¸îÏß¶ÎÊ§°Ü', err);
+              console.warn('åˆ‡å‰²çº¿æ®µå¤±è´¥', err);
             }
           }
         });
@@ -924,7 +924,7 @@ function EditorPage() {
     }
   }, [groups]);
 
-  // ¿ØÖÆ´¹ÏßÍ¼²ãÏÔÓ°
+  // æ§åˆ¶å‚çº¿å›¾å±‚æ˜¾å½±
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -945,7 +945,7 @@ function EditorPage() {
     }
   }, [showCrossLines]);
   
-  // Í¬²½Ñ¡ÖĞ¶ÏÃæµÄ¸ßÁÁÏÔÊ¾
+  // åŒæ­¥é€‰ä¸­æ–­é¢çš„é«˜äº®æ˜¾ç¤º
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !perpendicularData) return;
@@ -971,7 +971,7 @@ function EditorPage() {
   useEffect(() => {
     if (!mapContainer.current) return;
 
-    // ³õÊ¼»¯µØÍ¼
+    // åˆå§‹åŒ–åœ°å›¾
     const map = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v10',
@@ -983,7 +983,7 @@ function EditorPage() {
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
     map.on('load', () => {
-      // ³õÊ¼»¯Êı¾İÔ´
+      // åˆå§‹åŒ–æ•°æ®æº
       map.addSource('perpendicular-lines', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('uploaded-data', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('selection-points', { type: 'geojson', data: turf.featureCollection([]) });
@@ -991,7 +991,7 @@ function EditorPage() {
       map.addSource('active-line', { type: 'geojson', data: turf.featureCollection([]), lineMetrics: true });
       map.addSource('selected-shore-lines', { type: 'geojson', data: turf.featureCollection([]) });
 
-      // ÉÏ´«ÏßµÄµã»÷²¶»ñ²ã£¨Í¸Ã÷µ«¿í£¬±ãÓÚµã»÷£©
+      // ä¸Šä¼ çº¿çš„ç‚¹å‡»æ•è·å±‚ï¼ˆé€æ˜ä½†å®½ï¼Œä¾¿äºç‚¹å‡»ï¼‰
       map.addLayer({
         id: 'uploaded-lines-hit-target',
         type: 'line',
@@ -1003,7 +1003,7 @@ function EditorPage() {
         }
       });
 
-      // ÉÏ´«ÏßµÄ»ù´¡ÏÔÊ¾²ã
+      // ä¸Šä¼ çº¿çš„åŸºç¡€æ˜¾ç¤ºå±‚
       map.addLayer({
         id: 'uploaded-lines',
         type: 'line',
@@ -1015,7 +1015,7 @@ function EditorPage() {
         }
       });
 
-      // ¸ßÁÁÑ¡ÖĞµÄ°¶¶Î
+      // é«˜äº®é€‰ä¸­çš„å²¸æ®µ
       map.addLayer({
         id: 'selected-shore-lines-layer',
         type: 'line',
@@ -1027,7 +1027,7 @@ function EditorPage() {
         }
       });
 
-      // ¸ßÁÁÑ¡ÖĞµÄÏß¶Î
+      // é«˜äº®é€‰ä¸­çš„çº¿æ®µ
       map.addLayer({
         id: 'active-line-layer',
         type: 'line',
@@ -1038,7 +1038,7 @@ function EditorPage() {
         }
       });
 
-      // ¶ÏÃæµã»÷²¶»ñ²ã£¨Í¸Ã÷µ«¿í£©
+      // æ–­é¢ç‚¹å‡»æ•è·å±‚ï¼ˆé€æ˜ä½†å®½ï¼‰
       map.addLayer({
         id: 'perpendicular-lines-hit-target',
         type: 'line',
@@ -1049,7 +1049,7 @@ function EditorPage() {
         }
       });
       
-      // ¶ÏÃæÏÔÊ¾²ã
+      // æ–­é¢æ˜¾ç¤ºå±‚
       map.addLayer({
         id: 'perpendicular-lines-layer',
         type: 'line',
@@ -1057,7 +1057,7 @@ function EditorPage() {
         paint: { 'line-color': '#ef4444', 'line-width': 2 }
       });
       
-      // Ñ¡ÖĞ¶ÏÃæ¸ßÁÁ²ã
+      // é€‰ä¸­æ–­é¢é«˜äº®å±‚
       map.addSource('selected-cross-line', { type: 'geojson', data: turf.featureCollection([]) });
       map.addLayer({
         id: 'selected-cross-line-layer',
@@ -1066,7 +1066,7 @@ function EditorPage() {
         paint: { 'line-color': '#3b82f6', 'line-width': 4 }
       });
 
-      // ÆğÖ¹µã±ê¼Ç
+      // èµ·æ­¢ç‚¹æ ‡è®°
       map.addLayer({
         id: 'points-layer',
         type: 'circle',
@@ -1079,7 +1079,7 @@ function EditorPage() {
         }
       });
 
-      // äÖÈ¾Îü¸½µã£¨Êó±ê¿¿½üÏßÊ±µÄ·´À¡£©
+      // æ¸²æŸ“å¸é™„ç‚¹ï¼ˆé¼ æ ‡é è¿‘çº¿æ—¶çš„åé¦ˆï¼‰
       map.addLayer({
         id: 'snap-point-layer',
         type: 'circle',
@@ -1095,47 +1095,47 @@ function EditorPage() {
       const hitLayers = ['uploaded-lines-hit-target'];
       const crossLineHitLayers = ['perpendicular-lines-hit-target'];
 
-      // mousedownÊÂ¼ş£º¿ªÊ¼ÍÏ×§¶ÏÃæ
+      // mousedownäº‹ä»¶ï¼šå¼€å§‹æ‹–æ‹½æ–­é¢
       map.on('mousedown', crossLineHitLayers, (e) => {
         if (isSelectingCrossLinesRef.current && e.originalEvent.button === 0) {
           const crossLineFeatures = map.queryRenderedFeatures(e.point, { layers: crossLineHitLayers });
-          console.log('mousedown - ²éÑ¯µ½¶ÏÃæ:', crossLineFeatures?.length);
+          console.log('mousedown - æŸ¥è¯¢åˆ°æ–­é¢:', crossLineFeatures?.length);
           
           if (crossLineFeatures && crossLineFeatures.length > 0) {
             const clickedFeature = crossLineFeatures[0];
             const crossLineId = clickedFeature.properties?.crossLineId;
             
-            console.log('mousedown - ¶ÏÃæID:', crossLineId);
+            console.log('mousedown - æ–­é¢ID:', crossLineId);
             
             if (crossLineId !== undefined && crossLineId !== null) {
               startDraggingCrossLine(crossLineId);
               e.preventDefault();
-              console.log('mousedown - ÒÑµ÷ÓÃstartDraggingCrossLine');
+              console.log('mousedown - å·²è°ƒç”¨startDraggingCrossLine');
             }
           }
         }
       });
       
-      // mousemoveÊÂ¼ş£ºÍÏ×§¶ÏÃæ
+      // mousemoveäº‹ä»¶ï¼šæ‹–æ‹½æ–­é¢
       map.on('mousemove', (e) => {
         const isDragging = isDraggingCrossLineRef.current;
         if (isDragging) {
-          console.log('mousemove - ÕıÔÚÍÏ×§, Î»ÖÃ:', e.lngLat.lng, e.lngLat.lat);
+          console.log('mousemove - æ­£åœ¨æ‹–æ‹½, ä½ç½®:', e.lngLat.lng, e.lngLat.lat);
           dragCrossLineTo(e.lngLat);
           e.preventDefault();
         }
       });
       
-      // mouseupÊÂ¼ş£º½áÊøÍÏ×§
+      // mouseupäº‹ä»¶ï¼šç»“æŸæ‹–æ‹½
       map.on('mouseup', () => {
         if (isDraggingCrossLineRef.current) {
           stopDraggingCrossLine();
         }
       });
 
-      // µã»÷ÊÂ¼ş´¦Àí£¨±£ÁôÔ­ÓĞµÄ°¶¶ÎºÍÆğÖ¹µãÑ¡ÔñÂß¼­£©
+      // ç‚¹å‡»äº‹ä»¶å¤„ç†ï¼ˆä¿ç•™åŸæœ‰çš„å²¸æ®µå’Œèµ·æ­¢ç‚¹é€‰æ‹©é€»è¾‘ï¼‰
       map.on('click', (e) => {
-        // ¶ÏÃæÑ¡ÔñÄ£Ê½ÏÂÌø¹ıclickÊÂ¼ş£¨Ê¹ÓÃmousedown/mousemove/mouseup´¦ÀíÍÏ×§£©
+        // æ–­é¢é€‰æ‹©æ¨¡å¼ä¸‹è·³è¿‡clickäº‹ä»¶ï¼ˆä½¿ç”¨mousedown/mousemove/mouseupå¤„ç†æ‹–æ‹½ï¼‰
         if (isSelectingCrossLinesRef.current) {
           return;
         }
@@ -1145,33 +1145,33 @@ function EditorPage() {
         
         if (!feature) return;
 
-        // ¹¹½¨µ±Ç°µã»÷µÄÏßÒªËØ
+        // æ„å»ºå½“å‰ç‚¹å‡»çš„çº¿è¦ç´ 
         const lineGeo = feature.geometry as GeoJSON.LineString;
         const lineFeature = turf.feature(lineGeo, feature.properties) as GeoJSON.Feature<GeoJSON.LineString>;
         
-        // »ñÈ¡ÏßµÄË÷Òı×÷ÎªÎ¨Ò»±êÊ¶
+        // è·å–çº¿çš„ç´¢å¼•ä½œä¸ºå”¯ä¸€æ ‡è¯†
         const lineIndex = feature.properties?.index;
         const lineId = lineIndex !== undefined ? `line-${lineIndex}` : `line-${Math.random()}`;
 
-        // Ä£Ê½1£ºÑ¡Ôñ°¶¶ÎÄ£Ê½
+        // æ¨¡å¼1ï¼šé€‰æ‹©å²¸æ®µæ¨¡å¼
         if (isSelectingShoreLinesRef.current) {
           setSelectedLines(prev => {
             const newSet = new Set(prev);
             if (newSet.has(lineId)) {
               newSet.delete(lineId);
-              console.log(`È¡ÏûÑ¡Ôñ°¶¶Î: ${lineId}`);
+              console.log(`å–æ¶ˆé€‰æ‹©å²¸æ®µ: ${lineId}`);
             } else {
               newSet.add(lineId);
-              console.log(`Ñ¡Ôñ°¶¶Î: ${lineId}`);
+              console.log(`é€‰æ‹©å²¸æ®µ: ${lineId}`);
             }
             return newSet;
           });
           return;
         }
         
-        // Ä£Ê½2£ºÑ¡ÔñÆğÖ¹µãÄ£Ê½
+        // æ¨¡å¼2ï¼šé€‰æ‹©èµ·æ­¢ç‚¹æ¨¡å¼
         if (!isSelectingStartEndRef.current) {
-          return; // Èç¹ûÎ´¿ªÆôÆğÖ¹µãÑ¡ÔñÄ£Ê½£¬²»´¦Àí
+          return; // å¦‚æœæœªå¼€å¯èµ·æ­¢ç‚¹é€‰æ‹©æ¨¡å¼ï¼Œä¸å¤„ç†
         }
 
         const snapped = turf.nearestPointOnLine(lineFeature, [e.lngLat.lng, e.lngLat.lat], { units: 'meters' });
@@ -1183,8 +1183,8 @@ function EditorPage() {
         const { interval, length } = configRef.current;
 
         if (activeIndex === -1) {
-          // ´´½¨ĞÂ×é
-          console.log(`[ÉèÖÃÆğµã] ÏßË÷Òı: ${lineIndex}, ¾àÀë: ${dist.toFixed(2)}m, ÕûÏß¹éÒ»»¯: ${(dist / totalLineLength).toFixed(4)}`);
+          // åˆ›å»ºæ–°ç»„
+          console.log(`[è®¾ç½®èµ·ç‚¹] çº¿ç´¢å¼•: ${lineIndex}, è·ç¦»: ${dist.toFixed(2)}m, æ•´çº¿å½’ä¸€åŒ–: ${(dist / totalLineLength).toFixed(4)}`);
           const newGroup: SelectionGroup = {
             id: Math.random().toString(36).substr(2, 9),
             line: lineFeature,
@@ -1198,13 +1198,13 @@ function EditorPage() {
           };
           setGroups(prev => [...prev, newGroup]);
         } else {
-          // ¼ì²éÕıÔÚ½øĞĞµÄ×éÊÇ·ñÔÚÍ¬Ò»ÌõÏßÉÏ£¨Í¨¹ılineIndexÅĞ¶Ï£©
+          // æ£€æŸ¥æ­£åœ¨è¿›è¡Œçš„ç»„æ˜¯å¦åœ¨åŒä¸€æ¡çº¿ä¸Šï¼ˆé€šè¿‡lineIndexåˆ¤æ–­ï¼‰
           const activeGroup = currentGroups[activeIndex];
           const isSameLine = lineIndex !== undefined && lineIndex === activeGroup.lineIndex;
 
           if (isSameLine) {
-            // ÔÚÍ¬Ò»ÌõÏßÉÏ£¬½áÊø¸Ã×é£¨²»Á¢¼´Éú³É´¹Ïß£©
-            console.log(`[ÉèÖÃÖÕµã] ÏßË÷Òı: ${lineIndex}, ¾àÀë: ${dist.toFixed(2)}m, ÕûÏß¹éÒ»»¯: ${(dist / totalLineLength).toFixed(4)}`);
+            // åœ¨åŒä¸€æ¡çº¿ä¸Šï¼Œç»“æŸè¯¥ç»„ï¼ˆä¸ç«‹å³ç”Ÿæˆå‚çº¿ï¼‰
+            console.log(`[è®¾ç½®ç»ˆç‚¹] çº¿ç´¢å¼•: ${lineIndex}, è·ç¦»: ${dist.toFixed(2)}m, æ•´çº¿å½’ä¸€åŒ–: ${(dist / totalLineLength).toFixed(4)}`);
             
             setGroups(prev => {
               const updated = [...prev];
@@ -1215,8 +1215,8 @@ function EditorPage() {
               return updated;
             });
           } else {
-            // ÔÚ²»Í¬ÏßÉÏ£¬ÖØÖÃÆğµã
-            console.log(`[¿çÏßµã»÷] ´ÓÏß${activeGroup.lineIndex}Ìøµ½Ïß${lineIndex}£¬ÖØÖÃÆğµã: ${dist.toFixed(2)}m`);
+            // åœ¨ä¸åŒçº¿ä¸Šï¼Œé‡ç½®èµ·ç‚¹
+            console.log(`[è·¨çº¿ç‚¹å‡»] ä»çº¿${activeGroup.lineIndex}è·³åˆ°çº¿${lineIndex}ï¼Œé‡ç½®èµ·ç‚¹: ${dist.toFixed(2)}m`);
             
             const newGroup: SelectionGroup = {
               id: Math.random().toString(36).substr(2, 9),
@@ -1238,9 +1238,9 @@ function EditorPage() {
         }
       });
 
-      // Êó±êÒÆ¶¯´¦Àí£ºÊµÏÖÎü¸½ÊÓ¾õ·´À¡£¨Ö»ÔÚ¼¤»îÄ£Ê½ÏÂ£©
+      // é¼ æ ‡ç§»åŠ¨å¤„ç†ï¼šå®ç°å¸é™„è§†è§‰åé¦ˆï¼ˆåªåœ¨æ¿€æ´»æ¨¡å¼ä¸‹ï¼‰
       map.on('mousemove', hitLayers, (e) => {
-        // Ö»ÔÚÑ¡Ôñ°¶¶Î»òÑ¡ÔñÆğÖ¹µãÄ£Ê½ÏÂÏÔÊ¾Îü¸½Ğ§¹û
+        // åªåœ¨é€‰æ‹©å²¸æ®µæˆ–é€‰æ‹©èµ·æ­¢ç‚¹æ¨¡å¼ä¸‹æ˜¾ç¤ºå¸é™„æ•ˆæœ
         if (!isSelectingShoreLinesRef.current && !isSelectingStartEndRef.current) {
           return;
         }
@@ -1258,7 +1258,7 @@ function EditorPage() {
         map.getCanvas().style.cursor = 'pointer';
       });
 
-      // Êó±êÀë¿ª²¶»ñÇøÓò£ºÇå¿ÕÎü¸½µã
+      // é¼ æ ‡ç¦»å¼€æ•è·åŒºåŸŸï¼šæ¸…ç©ºå¸é™„ç‚¹
       map.on('mouseleave', hitLayers, () => {
         const source = map.getSource('snap-point') as mapboxgl.GeoJSONSource;
         if (source) source.setData(turf.featureCollection([]));
@@ -1266,19 +1266,19 @@ function EditorPage() {
         map.getCanvas().style.cursor = '';
       });
       
-      // ¶ÏÃæÊó±êĞüÍ£Ğ§¹û
+      // æ–­é¢é¼ æ ‡æ‚¬åœæ•ˆæœ
       map.on('mousemove', crossLineHitLayers, (e) => {
         if (isSelectingCrossLinesRef.current && !isDraggingCrossLineRef.current) {
           map.getCanvas().style.cursor = 'grab';
           
-          // ÏÔÊ¾¶ÏÃæÖĞµã×÷ÎªÊÓ¾õ·´À¡
+          // æ˜¾ç¤ºæ–­é¢ä¸­ç‚¹ä½œä¸ºè§†è§‰åé¦ˆ
           const features = e.features;
           if (features && features.length > 0) {
             const feature = features[0];
             const geometry = feature.geometry as GeoJSON.LineString;
             const coords = geometry.coordinates;
             
-            // ¼ÆËãÖĞµã
+            // è®¡ç®—ä¸­ç‚¹
             const midPoint = turf.point([
               (coords[0][0] + coords[1][0]) / 2,
               (coords[0][1] + coords[1][1]) / 2
@@ -1296,7 +1296,7 @@ function EditorPage() {
         if (isSelectingCrossLinesRef.current) {
           map.getCanvas().style.cursor = '';
           
-          // Çå³ı¶ÏÃæÖĞµã
+          // æ¸…é™¤æ–­é¢ä¸­ç‚¹
           const source = map.getSource('snap-point') as mapboxgl.GeoJSONSource;
           if (source) source.setData(turf.featureCollection([]));
         }
@@ -1309,15 +1309,15 @@ function EditorPage() {
     };
   }, []);
 
-  // Çå³ıËùÓĞ×é
+  // æ¸…é™¤æ‰€æœ‰ç»„
   const onClear = () => {
     setGroups([]);
     setPerpendicularData(null);
     setEditingGroupId(null);
-    alert('ÒÑÇå³ıËùÓĞÑ¡Ôñ');
+    alert('å·²æ¸…é™¤æ‰€æœ‰é€‰æ‹©');
   };
 
-  // É¾³ıµ¥¸ö×é
+  // åˆ é™¤å•ä¸ªç»„
   const deleteGroup = (id: string) => {
     setGroups(prev => prev.filter(g => g.id !== id));
     if (editingGroupId === id) {
@@ -1325,16 +1325,16 @@ function EditorPage() {
     }
   };
 
-  // ÇĞ»»±à¼­×é×´Ì¬
+  // åˆ‡æ¢ç¼–è¾‘ç»„çŠ¶æ€
   const handleEditGroup = (id: string) => {
     if (editingGroupId === id) {
-      setEditingGroupId(null); // ¹Ø±Õ±à¼­
+      setEditingGroupId(null); // å…³é—­ç¼–è¾‘
     } else {
-      setEditingGroupId(id); // ´ò¿ª±à¼­
+      setEditingGroupId(id); // æ‰“å¼€ç¼–è¾‘
     }
   };
 
-  // ¸üĞÂ×éµÄÅäÖÃ
+  // æ›´æ–°ç»„çš„é…ç½®
   const updateGroupConfig = (id: string, field: 'interval' | 'length', value: number) => {
     setGroups(prev => {
       const updated = [...prev];
@@ -1351,7 +1351,7 @@ function EditorPage() {
   const totalCrossLinesCount = perpendicularData?.features.length || 0;
   const totalSelectedSegments = groups.filter(g => g.end !== null).length;
 
-  // ÊôĞÔÅäÖÃµ¯´°×é¼ş
+  // å±æ€§é…ç½®å¼¹çª—ç»„ä»¶
   const PropertiesModal = ({ 
     config, 
     onSave, 
@@ -1397,7 +1397,7 @@ function EditorPage() {
           
           <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              Äê·İ (year) - ¿É±à¼­:
+              å¹´ä»½ (year) - å¯ç¼–è¾‘:
             </label>
             <select 
               value={year} 
@@ -1409,7 +1409,7 @@ function EditorPage() {
           </div>
 
           <div style={{ marginBottom: '15px', opacity: 0.6 }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>ÆäËûÊôĞÔ£¨½öÕ¹Ê¾£©:</label>
+            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>å…¶ä»–å±æ€§ï¼ˆä»…å±•ç¤ºï¼‰:</label>
             <pre style={{ 
               backgroundColor: '#f5f5f5', 
               padding: '10px', 
@@ -1446,7 +1446,7 @@ function EditorPage() {
               onClick={onClose}
               style={{ padding: '8px 16px', cursor: 'pointer' }}
             >
-              È¡Ïû
+              å–æ¶ˆ
             </button>
             <button 
               onClick={handleSave}
@@ -1459,7 +1459,7 @@ function EditorPage() {
                 cursor: 'pointer'
               }}
             >
-              ±£´æ
+              ä¿å­˜
             </button>
           </div>
         </div>
@@ -1472,7 +1472,7 @@ function EditorPage() {
       <div ref={mapContainer} className="map-full" />
       <div className="upload-control">
         <label className="upload-button">
-          ÉÏ´« GeoJSON
+          ä¸Šä¼  GeoJSON
           <input
             type="file"
             accept=".geojson,application/json"
@@ -1482,16 +1482,16 @@ function EditorPage() {
         </label>
         {uploadedData && (
           <div className="upload-info">
-            ÒÑ¼ÓÔØ {uploadedData.features.length} ¸öÒªËØ
+            å·²åŠ è½½ {uploadedData.features.length} ä¸ªè¦ç´ 
             <br />
-            ÒÑÑ¡Ïß¶Î: {totalSelectedSegments} | ´¹Ïß×ÜÊı: {totalCrossLinesCount}
+            å·²é€‰çº¿æ®µ: {totalSelectedSegments} | å‚çº¿æ€»æ•°: {totalCrossLinesCount}
           </div>
         )}
         
         <div className="config-section">
-          <h4>1?? È«¾Ö´¹ÏßÅäÖÃ</h4>
+          <h4>1ï¸âƒ£ å…¨å±€å‚çº¿é…ç½®</h4>
           <div className="config-item">
-            <label>´¹Ïß¼ä¾à (m):</label>
+            <label>å‚çº¿é—´è· (m):</label>
             <input
               type="number"
               value={globalInterval}
@@ -1501,7 +1501,7 @@ function EditorPage() {
             />
           </div>
           <div className="config-item">
-            <label>´¹Ïß×Ü³¤ (m):</label>
+            <label>å‚çº¿æ€»é•¿ (m):</label>
             <input
               type="number"
               value={globalLength}
@@ -1516,69 +1516,69 @@ function EditorPage() {
               onClick={toggleShoreLineSelection}
               style={{marginRight: '5px'}}
             >
-              {isSelectingShoreLines ? '? ÕıÔÚÑ¡Ôñ°¶¶Î' : '?? Ñ¡Ôñ°¶¶Î'}
+              {isSelectingShoreLines ? 'âœ… æ­£åœ¨é€‰æ‹©å²¸æ®µ' : 'ğŸ¯ é€‰æ‹©å²¸æ®µ'}
             </button>
             <button 
               className="generate-button"
               onClick={selectAllShoreLines}
               style={{marginRight: '5px'}}
             >
-              ?? È«Ñ¡°¶¶Î
+              âœ”ï¸ å…¨é€‰å²¸æ®µ
             </button>
           </div>
           <p style={{fontSize: '13px', color: '#64748b', margin: '5px 0'}}>
-            ÒÑÑ¡Ôñ {selectedLines.size} ¸ö°¶¶Î
-            {isSelectingShoreLines && ' (µã»÷µØÍ¼ÉÏµÄÏßÑ¡Ôñ/È¡ÏûÑ¡Ôñ)'}
+            å·²é€‰æ‹© {selectedLines.size} ä¸ªå²¸æ®µ
+            {isSelectingShoreLines && ' (ç‚¹å‡»åœ°å›¾ä¸Šçš„çº¿é€‰æ‹©/å–æ¶ˆé€‰æ‹©)'}
           </p>
-          <button className="generate-button" onClick={handleGenerateSections}>?? »æÖÆ¶ÏÃæ</button>
+          <button className="generate-button" onClick={handleGenerateSections}>ğŸ“ ç»˜åˆ¶æ–­é¢</button>
           {perpendicularData && perpendicularData.features.length > 0 && (
             <button 
               className="generate-button" 
               onClick={() => setShowGlobalPropertiesModal(true)}
               style={{ marginTop: '10px', backgroundColor: '#8b5cf6' }}
             >
-              ?? ÊôĞÔÅäÖÃ
+              âš™ï¸ å±æ€§é…ç½®
             </button>
           )}
         </div>
 
         <div className="config-section">
-          <h4>2?? Ñ¡ÔñÆğÖ¹µã£¨ÔÚµØÍ¼ÉÏµã»÷£©</h4>
+          <h4>2ï¸âƒ£ é€‰æ‹©èµ·æ­¢ç‚¹ï¼ˆåœ¨åœ°å›¾ä¸Šç‚¹å‡»ï¼‰</h4>
           <button 
             className={`toggle-button ${isSelectingStartEnd ? 'active' : ''}`}
             onClick={toggleStartEndSelection}
             style={{marginBottom: '10px'}}
           >
-            {isSelectingStartEnd ? '? ÆğÖ¹µãÑ¡ÔñÒÑ¿ªÆô' : '?? ¿ªÆôÆğÖ¹µãÑ¡Ôñ'}
+            {isSelectingStartEnd ? 'âœ… èµ·æ­¢ç‚¹é€‰æ‹©å·²å¼€å¯' : 'ğŸ“ å¼€å¯èµ·æ­¢ç‚¹é€‰æ‹©'}
           </button>
           <p style={{fontSize: '13px', color: '#64748b', margin: '5px 0'}}>
-            {isSelectingStartEnd ? 'ÌáÊ¾£ºÔÚµØÍ¼ÏßÉÏµã»÷Á½´ÎÑ¡ÔñÆğÖ¹µã' : 'µã»÷ÉÏ·½°´Å¥¿ªÆôÆğÖ¹µãÑ¡ÔñÄ£Ê½'}
+            {isSelectingStartEnd ? 'æç¤ºï¼šåœ¨åœ°å›¾çº¿ä¸Šç‚¹å‡»ä¸¤æ¬¡é€‰æ‹©èµ·æ­¢ç‚¹' : 'ç‚¹å‡»ä¸Šæ–¹æŒ‰é’®å¼€å¯èµ·æ­¢ç‚¹é€‰æ‹©æ¨¡å¼'}
           </p>
         </div>
 
         {groups.length > 0 && (
           <div className="groups-list">
-            <h4>Ñ¡Ôñ×é ({groups.length})</h4>
+            <h4>é€‰æ‹©ç»„ ({groups.length})</h4>
             {groups.map((g, idx) => (
               <div key={g.id} className={`group-item ${editingGroupId === g.id ? 'editing' : ''}`}>
                 <div className="group-header">
-                  <span>×é {idx + 1}: {g.end === null ? '´ıÑ¡ÖÕµã' : `ÒÑÑ¡ (${g.start.toFixed(0)}m - ${g.end.toFixed(0)}m)`}</span>
+                  <span>ç»„ {idx + 1}: {g.end === null ? 'å¾…é€‰ç»ˆç‚¹' : `å·²é€‰ (${g.start.toFixed(0)}m - ${g.end.toFixed(0)}m)`}</span>
                   <div className="group-actions">
                     {g.end !== null && (
                       <button 
                         className={`edit-button ${editingGroupId === g.id ? 'active' : ''}`}
                         onClick={() => handleEditGroup(g.id)}
                       >
-                        {editingGroupId === g.id ? '? ±à¼­ÖĞ' : '?? ±à¼­'}
+                        {editingGroupId === g.id ? 'âœ… ç¼–è¾‘ä¸­' : 'âœï¸ ç¼–è¾‘'}
                       </button>
                     )}
-                    <button onClick={() => deleteGroup(g.id)}>É¾³ı</button>
+                    <button onClick={() => deleteGroup(g.id)}>åˆ é™¤</button>
                   </div>
                 </div>
                 {editingGroupId === g.id && g.end !== null && (
                   <div className="group-config">
                     <div className="config-item">
-                      <label>¼ä¾à (m):</label>
+                      <label>é—´è· (m):</label>
                       <input
                         type="number"
                         value={g.interval}
@@ -1588,7 +1588,7 @@ function EditorPage() {
                       />
                     </div>
                     <div className="config-item">
-                      <label>³¤¶È (m):</label>
+                      <label>é•¿åº¦ (m):</label>
                       <input
                         type="number"
                         value={g.length}
@@ -1602,14 +1602,14 @@ function EditorPage() {
                       onClick={() => setEditingPropertiesGroupId(g.id)}
                       style={{ marginBottom: '10px', backgroundColor: '#8b5cf6' }}
                     >
-                      ?? ÊôĞÔÅäÖÃ
+                      âš™ï¸ å±æ€§é…ç½®
                     </button>
-                    <button className="apply-button" onClick={handleApplyCustomSegments}>? Ó¦ÓÃÅäÖÃ</button>
+                    <button className="apply-button" onClick={handleApplyCustomSegments}>âœ… åº”ç”¨é…ç½®</button>
                   </div>
                 )}
                 {g.crossData.length > 0 && (
                   <div className="group-info">
-                    ´¹Ïß: {g.crossData.length} Ìõ | ¼ä¾à: {g.interval}m | ³¤¶È: {g.length}m
+                    å‚çº¿: {g.crossData.length} æ¡ | é—´è·: {g.interval}m | é•¿åº¦: {g.length}m
                   </div>
                 )}
               </div>
@@ -1618,79 +1618,79 @@ function EditorPage() {
         )}
 
         <div className="config-section">
-          <h4>3?? ¶ÏÃæ²Ù×÷</h4>
+          <h4>3ï¸âƒ£ æ–­é¢æ“ä½œ</h4>
           <button 
             className={`toggle-button ${isSelectingCrossLines ? 'active' : ''}`}
             onClick={toggleCrossLineSelection}
             style={{marginBottom: '10px'}}
           >
-            {isSelectingCrossLines ? '? ¶ÏÃæÍÏ×§Ä£Ê½ÒÑ¿ªÆô' : '?? ¿ªÆô¶ÏÃæÍÏ×§'}
+            {isSelectingCrossLines ? 'âœ… æ–­é¢æ‹–æ‹½æ¨¡å¼å·²å¼€å¯' : 'ğŸ¯ å¼€å¯æ–­é¢æ‹–æ‹½'}
           </button>
           {selectedCrossLineIndex !== null && (
             <div style={{marginBottom: '10px', padding: '10px', backgroundColor: '#f0f9ff', borderRadius: '4px'}}>
               <p style={{margin: '0 0 10px 0', fontWeight: 'bold', color: '#0369a1'}}>
-                ÒÑÑ¡ÖĞ¶ÏÃæ #{selectedCrossLineIndex + 1}
-                {isDraggingCrossLine && <span style={{color: '#16a34a'}}> £¨ÍÏ×§ÖĞ...£©</span>}
+                å·²é€‰ä¸­æ–­é¢ #{selectedCrossLineIndex + 1}
+                {isDraggingCrossLine && <span style={{color: '#16a34a'}}> ï¼ˆæ‹–æ‹½ä¸­...ï¼‰</span>}
               </p>
               <div style={{display: 'flex', gap: '5px', marginTop: '10px'}}>
                 <button 
                   onClick={configureSelectedCrossLineProperties}
                   style={{flex: 1, padding: '8px', backgroundColor: '#8b5cf6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'}}
                 >
-                  ?? ÊôĞÔÅäÖÃ
+                  âš™ï¸ å±æ€§é…ç½®
                 </button>
                 <button 
                   onClick={deleteSelectedCrossLine}
                   style={{flex: 1, padding: '8px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'}}
                 >
-                  ??? É¾³ı
+                  ğŸ—‘ï¸ åˆ é™¤
                 </button>
               </div>
             </div>
           )}
           <p style={{fontSize: '13px', color: '#64748b', margin: '5px 0'}}>
-            {isSelectingCrossLines ? '?? °´×¡Êó±ê×ó¼üÍÏ×§¶ÏÃæµ½ÈÎÒâÎ»ÖÃ' : 'µã»÷ÉÏ·½°´Å¥¿ªÆô¶ÏÃæÍÏ×§Ä£Ê½'}
+            {isSelectingCrossLines ? 'ğŸ’¡ æŒ‰ä½é¼ æ ‡å·¦é”®æ‹–æ‹½æ–­é¢åˆ°ä»»æ„ä½ç½®' : 'ç‚¹å‡»ä¸Šæ–¹æŒ‰é’®å¼€å¯æ–­é¢æ‹–æ‹½æ¨¡å¼'}
           </p>
         </div>
         
         <div className="config-section">
-          <h4>4?? ¿ªÊ¼·ÖÎö</h4>
+          <h4>4ï¸âƒ£ å¼€å§‹åˆ†æ</h4>
           <button 
             className="analysis-button" 
             onClick={handleStartAnalysis}
             disabled={!perpendicularData || perpendicularData.features.length === 0}
           >
-            ?? ¿ªÊ¼·ÖÎö£¨·¢ËÍÈ«²¿´¹Ïß£©
+            ğŸš€ å¼€å§‹åˆ†æï¼ˆå‘é€å…¨éƒ¨å‚çº¿ï¼‰
           </button>
           <p style={{fontSize: '13px', color: '#64748b', margin: '5px 0'}}>
-            {perpendicularData ? `µ±Ç°¹² ${perpendicularData.features.length} Ìõ´¹Ïß` : 'ÇëÏÈ»æÖÆ¶ÏÃæ'}
+            {perpendicularData ? `å½“å‰å…± ${perpendicularData.features.length} æ¡å‚çº¿` : 'è¯·å…ˆç»˜åˆ¶æ–­é¢'}
           </p>
         </div>
 
         <div className="config-section">
-          <h4>?? ¹¤¾ß</h4>
+          <h4>âš™ï¸ å·¥å…·</h4>
           <button 
             className={`toggle-button ${!showCrossLines ? 'off' : ''}`}
             onClick={() => setShowCrossLines(!showCrossLines)}
           >
-            {showCrossLines ? '??? Òş²Ø´¹Ïß' : '??? ÏÔÊ¾´¹Ïß'}
+            {showCrossLines ? 'ğŸ‘ï¸ éšè—å‚çº¿' : 'ğŸ‘ï¸ æ˜¾ç¤ºå‚çº¿'}
           </button>
-          <button className="clear-button" onClick={onClear}>?? Çå¿ÕÑ¡Ôñ</button>
+          <button className="clear-button" onClick={onClear}>ğŸ§¹ æ¸…ç©ºé€‰æ‹©</button>
         </div>
       </div>
 
-      {/* È«¾ÖÊôĞÔÅäÖÃµ¯´° */}
+      {/* å…¨å±€å±æ€§é…ç½®å¼¹çª— */}
       {showGlobalPropertiesModal && (
         <PropertiesModal
           config={globalProperties}
-          title="È«¾ÖÊôĞÔÅäÖÃ"
+          title="å…¨å±€å±æ€§é…ç½®"
           onSave={(newConfig) => {
             setGlobalProperties(newConfig);
-            // ¸üĞÂËùÓĞÎ´×Ô¶¨ÒåÊôĞÔµÄ´¹Ïß
+            // æ›´æ–°æ‰€æœ‰æœªè‡ªå®šä¹‰å±æ€§çš„å‚çº¿
             if (perpendicularData) {
               const updatedLines = perpendicularData.features.map(line => {
                 const lineProp: any = line.properties || {};
-                // ¼ì²éÊÇ·ñÊôÓÚÄ³¸ö×Ô¶¨ÒåÊôĞÔ×é
+                // æ£€æŸ¥æ˜¯å¦å±äºæŸä¸ªè‡ªå®šä¹‰å±æ€§ç»„
                 const belongsToCustomGroup = groups.some(g => {
                   if (!g.properties || g.end === null) return false;
                   try {
@@ -1716,15 +1716,15 @@ function EditorPage() {
               });
               setPerpendicularData(turf.featureCollection(updatedLines as GeoJSON.Feature<GeoJSON.LineString>[]));
             }
-            alert('È«¾ÖÊôĞÔÅäÖÃÒÑ¸üĞÂ');
+            alert('å…¨å±€å±æ€§é…ç½®å·²æ›´æ–°');
           }}
           onClose={() => setShowGlobalPropertiesModal(false)}
         />
       )}
 
-      {/* ×éÊôĞÔÅäÖÃµ¯´° */}
+      {/* ç»„å±æ€§é…ç½®å¼¹çª— */}
       {editingPropertiesGroupId && (() => {
-        // ¼ì²éÊÇ·ñÊÇµ¥¸ö¶ÏÃæµÄÊôĞÔÅäÖÃ
+        // æ£€æŸ¥æ˜¯å¦æ˜¯å•ä¸ªæ–­é¢çš„å±æ€§é…ç½®
         if (editingPropertiesGroupId.startsWith('cross-line-')) {
           const index = parseInt(editingPropertiesGroupId.replace('cross-line-', ''));
           if (!perpendicularData || !perpendicularData.features[index]) return null;
@@ -1735,7 +1735,7 @@ function EditorPage() {
           return (
             <PropertiesModal
               config={currentConfig}
-              title={`¶ÏÃæ #${index + 1} ÊôĞÔÅäÖÃ`}
+              title={`æ–­é¢ #${index + 1} å±æ€§é…ç½®`}
               onSave={(newConfig) => {
                 const updatedFeatures = [...perpendicularData.features];
                 updatedFeatures[index] = {
@@ -1746,7 +1746,7 @@ function EditorPage() {
                   }
                 };
                 setPerpendicularData(turf.featureCollection(updatedFeatures as GeoJSON.Feature<GeoJSON.LineString>[]));
-                alert(`¶ÏÃæ #${index + 1} µÄÊôĞÔÅäÖÃÒÑ±£´æ`);
+                alert(`æ–­é¢ #${index + 1} çš„å±æ€§é…ç½®å·²ä¿å­˜`);
                 setEditingPropertiesGroupId(null);
               }}
               onClose={() => setEditingPropertiesGroupId(null)}
@@ -1754,13 +1754,13 @@ function EditorPage() {
           );
         }
         
-        // ×éÊôĞÔÅäÖÃ
+        // ç»„å±æ€§é…ç½®
         const group = groups.find(g => g.id === editingPropertiesGroupId);
         if (!group) return null;
         return (
           <PropertiesModal
             config={{...globalProperties, ...(group.properties || {})}}
-            title={`×é ${groups.findIndex(g => g.id === editingPropertiesGroupId) + 1} ÊôĞÔÅäÖÃ`}
+            title={`ç»„ ${groups.findIndex(g => g.id === editingPropertiesGroupId) + 1} å±æ€§é…ç½®`}
             onSave={(newConfig) => {
               setGroups(prev => {
                 const updated = [...prev];
@@ -1770,7 +1770,7 @@ function EditorPage() {
                 }
                 return updated;
               });
-              alert(`×é ${groups.findIndex(g => g.id === editingPropertiesGroupId) + 1} µÄÊôĞÔÅäÖÃÒÑ±£´æ\n\n×¢Òâ£ºĞèÒªµã»÷"Ó¦ÓÃÅäÖÃ"²ÅÄÜ½«ÊôĞÔ¸üĞÂµ½´¹ÏßÉÏ`);
+              alert(`ç»„ ${groups.findIndex(g => g.id === editingPropertiesGroupId) + 1} çš„å±æ€§é…ç½®å·²ä¿å­˜\n\næ³¨æ„ï¼šéœ€è¦ç‚¹å‡»"åº”ç”¨é…ç½®"æ‰èƒ½å°†å±æ€§æ›´æ–°åˆ°å‚çº¿ä¸Š`);
             }}
             onClose={() => setEditingPropertiesGroupId(null)}
           />

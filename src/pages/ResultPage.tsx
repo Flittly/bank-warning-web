@@ -5,10 +5,11 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import '../App.css';
 import { getVerticalFootCoordsFromAny, getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 
-// �?EditorPage 保持一致的 Mapbox token
+// 与 EditorPage 保持一致的 Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-// 后端返回的任务结�?interface Task {
+// 后端返回的任务结构
+interface Task {
   id: number;
   task_id: string;
   task_name: string;
@@ -21,7 +22,8 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
   error_message?: string | null;
 }
 
-// 断面结构（带模型结果�?interface SectionResult {
+// 断面结构（带模型结果）
+interface SectionResult {
   section_id: string;
   id?: number;
   section_name?: string;
@@ -31,7 +33,7 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
   vertical_foot_point?: { type: 'Point'; coordinates: [number, number] } | null;
   // legacy compatibility
   anchorPoint?: number[] | null;
-  risk_level?: string | number; // 字符�?high, medium, low, no) �?数字(1, 2, 3, 4)
+  risk_level?: string | number; // 字符串(high, medium, low, no) 或 数字(1, 2, 3, 4)
   risk_score?: number;
 }
 
@@ -81,8 +83,14 @@ type TaskProgressSnapshot = {
   }>;
 };
 
-// 颜色映射：支持数�?ID �?字符�?// 风险等级映射�? 最低，3 最�?const RISK_COLORS: Record<string, string> = {
-  '0': '#10b981', // 最低风�?- �?  '1': '#facc15', // �?�?- �?  '2': '#f97316', // 较高 - �?  '3': '#ef4444', // 最�?- �?  'default': '#94a3b8'
+// 颜色映射：支持数字 ID 和 字符串
+// 风险等级映射：0 最低，3 最高
+const RISK_COLORS: Record<string, string> = {
+  '0': '#10b981', // 最低风险 - 绿
+  '1': '#facc15', // 低-中 - 黄
+  '2': '#f97316', // 较高 - 橙
+  '3': '#ef4444', // 最高 - 红
+  'default': '#94a3b8'
 };
 
 const CLOSE_LOOP_DISTANCE_METERS = 2000;
@@ -92,7 +100,7 @@ const MATRIX_GROUPS = [
     title: '水流动力指标',
     weightKey: 'wRE',
     indicatorKeys: [
-      { label: '抗冲流�?Ky)', key: 'Ky' },
+      { label: '抗冲流速(Ky)', key: 'Ky' },
       { label: '造床流量当量(PQ)', key: 'PQ' },
       { label: '水位变幅(Zd)', key: 'Zd' }
     ]
@@ -238,7 +246,7 @@ function ResultPage(props: ResultPageProps) {
 
   const renderProfileChart = (series: Array<{ distance: number; elevation: number }>) => {
     if (!series || series.length < 2) {
-      return <div className="profile-empty">无剖面数�?/div>;
+      return <div className="profile-empty">无剖面数据</div>;
     }
 
     const width = 900;
@@ -333,7 +341,7 @@ function ResultPage(props: ResultPageProps) {
 
     const profilePromise = (async () => {
       if (!effectiveTaskId) {
-        throw new Error('未选择任务，无法加载断面剖�?);
+        throw new Error('未选择任务，无法加载断面剖面');
       }
       const bySection = await ensureTaskProfilesLoaded(effectiveTaskId);
       const prof = bySection[String(sectionId)] ?? null;
@@ -364,7 +372,8 @@ function ResultPage(props: ResultPageProps) {
     if (v === null || v === undefined) return '-';
     if (typeof v === 'number') {
       if (!Number.isFinite(v)) return String(v);
-      // 避免长小数影响可读�?      return Math.abs(v) >= 1000 ? String(Math.round(v)) : String(Number(v.toFixed(4)));
+      // 避免长小数影响可读性
+      return Math.abs(v) >= 1000 ? String(Math.round(v)) : String(Number(v.toFixed(4)));
     }
     if (typeof v === 'string') return v;
     if (typeof v === 'boolean') return v ? 'true' : 'false';
@@ -383,7 +392,7 @@ function ResultPage(props: ResultPageProps) {
     // 头部信息
     rows.push(['断面矩阵详情']);
     rows.push([]);
-    rows.push(['字段', '�?]);
+    rows.push(['字段', '值']);
     rows.push(['断面名称', String(matrixSectionName || '-')]);
     rows.push(['断面ID', String(matrixSectionId || '-')]);
     rows.push(['Task ID', formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId)]);
@@ -391,7 +400,7 @@ function ResultPage(props: ResultPageProps) {
     rows.push(['区域代码', formatCellValue(matrixDetail.region_code ?? matrixDetail.regionCode)]);
     rows.push(['岸段ID', formatCellValue(matrixDetail.bank_id ?? matrixDetail.bankId)]);
     rows.push(['运行时间', formatCellValue(matrixDetail.run_time ?? matrixDetail.runTime)]);
-    rows.push(['水流�?, formatCellValue(matrixDetail.water_qs ?? matrixDetail?.indicators?.water_qs ?? matrixDetail?.water_qs)]);
+    rows.push(['水流量', formatCellValue(matrixDetail.water_qs ?? matrixDetail?.indicators?.water_qs ?? matrixDetail?.water_qs)]);
     rows.push(['潮差', formatCellValue(matrixDetail.tidal_level ?? matrixDetail?.indicators?.tidal_level ?? matrixDetail?.tidal_level)]);
     rows.push(['风险等级', formatCellValue(matrixDetail.risk_level ?? matrixDetail.riskLevel)]);
     rows.push([]);
@@ -405,15 +414,17 @@ function ResultPage(props: ResultPageProps) {
       const subThresholds = indicators?.sub_thresholds || {};
       const groupWeight = Array.isArray(indicators?.wRL) ? indicators.wRL[groupIdx] : weightValues;
       
-      // 组标�?      rows.push([]);
+      // 组标题
+      rows.push([]);
       rows.push([group.title]);
       rows.push(['准则权重', formatCellValue(groupWeight)]);
       rows.push([]);
       
       // 表头
-      rows.push(['指标', '阈�?', '阈�?', '阈�?', '权重', '结果']);
+      rows.push(['指标', '阈值1', '阈值2', '阈值3', '权重', '结果']);
       
-      // 数据�?      group.indicatorKeys.forEach(({ label, key }, idx) => {
+      // 数据行
+      group.indicatorKeys.forEach(({ label, key }, idx) => {
         const thresholdRow = subThresholds[key] || [];
         const displayThresholds = Array.isArray(thresholdRow) ? thresholdRow : [];
         const displayWeight = Array.isArray(weightValues) ? formatCellValue(weightValues[idx]) : formatCellValue(weightValues);
@@ -430,7 +441,7 @@ function ResultPage(props: ResultPageProps) {
       });
     });
     
-    // 转换�?CSV 格式
+    // 转换为 CSV 格式
     return rows.map(row => 
       row.map(cell => {
         const str = String(cell);
@@ -446,11 +457,12 @@ function ResultPage(props: ResultPageProps) {
   const downloadMatrixCSV = () => {
     const csv = generateMatrixCSV();
     if (!csv) {
-      alert('无可导出的数�?);
+      alert('无可导出的数据');
       return;
     }
     
-    // 创建 Blob 并下�?    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    // 创建 Blob 并下载
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     
@@ -488,7 +500,7 @@ function ResultPage(props: ResultPageProps) {
             <thead>
               <tr>
                 <th className="matrix-assessment-row-header" />
-                <th colSpan={3}>风险阈�?/th>
+                <th colSpan={3}>风险阈值</th>
                 <th>权重</th>
                 <th>结果</th>
               </tr>
@@ -518,7 +530,8 @@ function ResultPage(props: ResultPageProps) {
     );
   };
 
-  // 切换断面可见�?  useEffect(() => {
+  // 切换断面可见性
+  useEffect(() => {
     if (!mapRef.current) return;
     const map = mapRef.current;
     
@@ -545,7 +558,8 @@ function ResultPage(props: ResultPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 风险解析辅助：判�?risk_level 是否�?0-3 的有效数�?  const getRiskInfo = (risk: any) => {
+  // 风险解析辅助：判断 risk_level 是否为 0-3 的有效数字
+  const getRiskInfo = (risk: any) => {
     if (risk === null || risk === undefined) {
       return { valid: false, color: RISK_COLORS.default, label: '未知', level: null };
     }
@@ -555,15 +569,18 @@ function ResultPage(props: ResultPageProps) {
       return { valid: true, color: RISK_COLORS[String(n)] || RISK_COLORS.default, label: n, level: n };
     }
 
-    // �?0-3 的值视为未知（灰色�?    return { valid: false, color: RISK_COLORS.default, label: '未知', level: null };
+    // 非 0-3 的值视为未知（灰色）
+    return { valid: false, color: RISK_COLORS.default, label: '未知', level: null };
   };
 
   // 颜色展示回退：仅按四级风险颜色展示（result 数值暂不参与）
-  // 不同等级之间的过渡（岸线/中线）仍�?Mapbox �?line-gradient 插值完�?  const computeColorWithMatrix = (baseLevel: any) => {
+  // 不同等级之间的过渡（岸线/中线）仍由 Mapbox 的 line-gradient 插值完成
+  const computeColorWithMatrix = (baseLevel: any) => {
     return getRiskInfo(baseLevel);
   };
 
-  // 获取所有任务列�?  useEffect(() => {
+  // 获取所有任务列表
+  useEffect(() => {
     const fetchTasks = async () => {
       try {
         const res = await fetch('/v0/bank/tasks');
@@ -668,7 +685,8 @@ function ResultPage(props: ResultPageProps) {
       // 忽略：任务状态接口可能不可用，但轮询结果仍可继续
     }
 
-    // 兼容：部分后端只�?/full 中返�?status/run_completed_at 等字�?    if (!taskInfo || (!taskInfo.status && !taskInfo.run_completed_at && !taskInfo.runCompletedAt)) {
+    // 兼容：部分后端只在 /full 中返回 status/run_completed_at 等字段
+    if (!taskInfo || (!taskInfo.status && !taskInfo.run_completed_at && !taskInfo.runCompletedAt)) {
       try {
         const fullRes = await fetch(`/v0/bank/tasks/${taskId}/full`);
         if (fullRes.ok) {
@@ -688,7 +706,8 @@ function ResultPage(props: ResultPageProps) {
         resultsList = parseResultsList(jr);
       }
     } catch (err) {
-      // 忽略：临时网络错误不应中断轮�?    }
+      // 忽略：临时网络错误不应中断轮询
+    }
 
     if (activePollTaskIdRef.current !== taskId) return;
 
@@ -732,16 +751,17 @@ function ResultPage(props: ResultPageProps) {
       return { ...s, risk_level: hit.riskLevel ?? s.risk_level };
     });
 
-    // 注：result 的数值意义尚不明确，暂不再轮�?/matrix（避免高频额外请求）
+    // 注：result 的数值意义尚不明确，暂不再轮询 /matrix（避免高频额外请求）
 
-    // 统计成功数：�?risk_level(0-3) 为准
+    // 统计成功数：以 risk_level(0-3) 为准
     const successCount = mergedSections.reduce((acc, s) => {
       const n = Number(s.risk_level);
       if (!isNaN(n) && Number.isFinite(n) && n >= 0 && n <= 3) return acc + 1;
       return acc;
     }, 0);
 
-    // 如果任务已完成，但仍有部分断面没有结果，则把它们当作“无结果/计算失败”展示出�?    const completed = isTaskCompleted(taskInfo);
+    // 如果任务已完成，但仍有部分断面没有结果，则把它们当作“无结果/计算失败”展示出来
+    const completed = isTaskCompleted(taskInfo);
     const missingAsErrors: TaskProgressSnapshot['errors'] = [];
     if (completed) {
       mergedSections.forEach(s => {
@@ -755,7 +775,7 @@ function ResultPage(props: ResultPageProps) {
               section_id: s.section_id,
               section_name: s.section_name,
               bank_id: s.bank_id,
-              message: hasAnyResult ? '计算未返回有效风险等�? : '未返回结果（可能计算失败�?
+              message: hasAnyResult ? '计算未返回有效风险等级' : '未返回结果（可能计算失败）'
             });
           }
         }
@@ -788,7 +808,7 @@ function ResultPage(props: ResultPageProps) {
       errors: allErrors
     });
 
-    // 轮询驱动地图刷新（断面颜�?+ 岸段插值）
+    // 轮询驱动地图刷新（断面颜色 + 岸段插值）
     if (map) {
       renderSections(mergedSections);
       applyShorelineGradient(mergedSections);
@@ -800,7 +820,8 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
-  // 点击任务：获取任务详情（包含所有断面及其结果）并在地图可视�?  const handleTaskClick = async (taskId: string) => {
+  // 点击任务：获取任务详情（包含所有断面及其结果）并在地图可视化
+  const handleTaskClick = async (taskId: string) => {
     stopPolling();
 
     setSelectedTask(taskId);
@@ -820,7 +841,8 @@ function ResultPage(props: ResultPageProps) {
       });
       if (map.getSource('sections-source')) map.removeSource('sections-source');
 
-      // 清除所有中线图层（�?midline- 开头的�?      const style = map.getStyle();
+      // 清除所有中线图层（以 midline- 开头的）
+      const style = map.getStyle();
       if (style && style.layers) {
         style.layers.forEach((layer: any) => {
           if (layer.id && layer.id.startsWith('midline-')) {
@@ -829,7 +851,8 @@ function ResultPage(props: ResultPageProps) {
         });
       }
       
-      // 清除所有中线数据源（以 midline- 开头的�?      if (style && style.sources) {
+      // 清除所有中线数据源（以 midline- 开头的）
+      if (style && style.sources) {
         Object.keys(style.sources).forEach((sourceId: string) => {
           if (sourceId.startsWith('midline-')) {
             if (map.getSource(sourceId)) map.removeSource(sourceId);
@@ -859,7 +882,8 @@ function ResultPage(props: ResultPageProps) {
           risk_level: s.risk_level
         }));
 
-      // 打印处理后的断面列表 JSON，便于调试（也可在控制台查看�?      try {
+      // 打印处理后的断面列表 JSON，便于调试（也可在控制台查看）
+      try {
         console.log('ResultPage: parsed sectionResults:', JSON.stringify(sectionResults, null, 2));
       } catch (e) {
         console.log('ResultPage: parsed sectionResults (non-serializable):', sectionResults);
@@ -882,12 +906,14 @@ function ResultPage(props: ResultPageProps) {
         }
       }
 
-      // 3) 打开进度窗口并开始轮询（任务状�?+ 结果列表），驱动地图插值持续更�?      activePollTaskIdRef.current = taskId;
+      // 3) 打开进度窗口并开始轮询（任务状态 + 结果列表），驱动地图插值持续更新
+      activePollTaskIdRef.current = taskId;
 
       // 任务名用于弹窗展示（优先用列表中的名称）
       const taskName = taskList.find(t => t.task_id === taskId)?.task_name;
 
-      // 立即执行一次，再开启定时轮�?      await updateProgressAndMap(taskId, taskName, sectionResults);
+      // 立即执行一次，再开启定时轮询
+      await updateProgressAndMap(taskId, taskName, sectionResults);
 
       pollTimerRef.current = window.setInterval(() => {
         if (activePollTaskIdRef.current !== taskId) return;
@@ -903,10 +929,11 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
-  // 删除当前选中的任�?  const handleDeleteTask = async () => {
+  // 删除当前选中的任务
+  const handleDeleteTask = async () => {
     if (!selectedTask) return;
 
-    const confirmDelete = window.confirm('确定要删除当前选中的任务吗？此操作不可恢复�?);
+    const confirmDelete = window.confirm('确定要删除当前选中的任务吗？此操作不可恢复。');
     if (!confirmDelete) return;
 
     setLoading(true);
@@ -921,7 +948,8 @@ function ResultPage(props: ResultPageProps) {
         throw new Error(data.message || '删除任务失败');
       }
 
-      // 从任务列表中移除已删除任�?      setTaskList(prev => prev.filter(task => task.task_id !== selectedTask));
+      // 从任务列表中移除已删除任务
+      setTaskList(prev => prev.filter(task => task.task_id !== selectedTask));
 
       // 清空当前选择
       stopPolling();
@@ -967,17 +995,18 @@ function ResultPage(props: ResultPageProps) {
     const map = mapRef.current;
     if (!map) return;
 
-    // 转换断面数据�?GeoJSON
+    // 转换断面数据为 GeoJSON
     const features = sections.filter(s => s.geometry).map(s => {
       const info = computeColorWithMatrix(s.risk_level);
       const color = info.color;
       const displayRisk = info.valid ? info.level : info.label;
 
-      // 风险等级的中文标签映�?      const RISK_LABELS: Record<number, string> = {
+      // 风险等级的中文标签映射
+      const RISK_LABELS: Record<number, string> = {
         3: '极高风险',
-        2: '高风�?,
-        1: '一般风�?,
-        0: '�?无风�?
+        2: '高风险',
+        1: '一般风险',
+        0: '低/无风险'
       };
 
       const riskLabel = info.valid && info.level !== null ? RISK_LABELS[info.level] : '未知';
@@ -1008,7 +1037,8 @@ function ResultPage(props: ResultPageProps) {
       });
     }
 
-    // 若图层不存在则创建一次；后续仅更�?source 数据与可见�?    if (!map.getLayer('sections-line')) {
+    // 若图层不存在则创建一次；后续仅更新 source 数据与可见性
+    if (!map.getLayer('sections-line')) {
       map.addLayer({
         id: 'sections-line',
         type: 'line',
@@ -1041,7 +1071,8 @@ function ResultPage(props: ResultPageProps) {
       });
     }
 
-    // 事件只绑定一次（防止轮询刷新导致重复绑定�?    if (!sectionClickHandlerRef.current) {
+    // 事件只绑定一次（防止轮询刷新导致重复绑定）
+    if (!sectionClickHandlerRef.current) {
       sectionClickHandlerRef.current = (e: any) => {
         if (!e.features || e.features.length === 0) return;
         const f = e.features[0];
@@ -1113,11 +1144,12 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
-  // 颜色插值逻辑: 基于同一岸段下所有断面中点生成一条折线，并根据中点的风险值插值颜�?  const applyShorelineGradient = (sections: SectionResult[]) => {
+  // 颜色插值逻辑: 基于同一岸段下所有断面中点生成一条折线，并根据中点的风险值插值颜色
+  const applyShorelineGradient = (sections: SectionResult[]) => {
     const map = mapRef.current;
     if (!map || !sections || sections.length === 0) return;
 
-    // 1. �?bank_id 分组
+    // 1. 按 bank_id 分组
     const groups: Record<string, SectionResult[]> = {};
     sections.forEach(s => {
       const bid = s.bank_id || 'unknown';
@@ -1125,12 +1157,14 @@ function ResultPage(props: ResultPageProps) {
       groups[bid].push(s);
     });
 
-    // 2. 遍历每个岸段�?    Object.keys(groups).forEach(bankId => {
+    // 2. 遍历每个岸段组
+    Object.keys(groups).forEach(bankId => {
       const bankSections = groups[bankId];
       if (!bankSections || bankSections.length < 2) return;
 
       // 计算每个断面中点，并按传入的断面顺序（即 sections 数组本身的顺序）连接
-      // 说明：此前按经纬度排序（西→东、北→南）会改变生成顺序；现在改为使用后�?生成顺序（section 列表顺序�?      const points = bankSections
+      // 说明：此前按经纬度排序（西→东、北→南）会改变生成顺序；现在改为使用后端/生成顺序（section 列表顺序）
+      const points = bankSections
         .filter(s => s && s.geometry && s.geometry.type === 'LineString')
         .map(s => {
           const coords = (s.geometry as any).coordinates as number[][];
@@ -1155,7 +1189,8 @@ function ResultPage(props: ResultPageProps) {
       const newLine = turf.lineString(lineCoords as any);
       const totalDist = turf.length(newLine, { units: 'meters' });
 
-      // 构建颜色梯度参数（沿排序后的折线累积距离�?      const riskStops: { val: number; color: string }[] = [];
+      // 构建颜色梯度参数（沿排序后的折线累积距离）
+      const riskStops: { val: number; color: string }[] = [];
       let currentDist = 0;
       for (let idx = 0; idx < points.length; idx++) {
         if (idx > 0) {
@@ -1169,7 +1204,8 @@ function ResultPage(props: ResultPageProps) {
         }
       }
 
-      // Mapbox interpolate 表达式格�?      const stops: any[] = ['interpolate', ['linear'], ['line-progress']];
+      // Mapbox interpolate 表达式格式
+      const stops: any[] = ['interpolate', ['linear'], ['line-progress']];
       if (riskStops.length === 0) {
         stops.push(0, RISK_COLORS.default, 1, RISK_COLORS.default);
       } else if (riskStops.length === 1) {
@@ -1227,7 +1263,7 @@ function ResultPage(props: ResultPageProps) {
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
     map.on('load', () => {
-      // �?EditorPage 一样预�?uploaded-data 源供岸段使用
+      // 与 EditorPage 一样预留 uploaded-data 源供岸段使用
       map.addSource('uploaded-data', { type: 'geojson', data: turf.featureCollection([]) });
       map.addLayer({
         id: 'uploaded-lines-base',
@@ -1285,7 +1321,7 @@ function ResultPage(props: ResultPageProps) {
 
             <div className="matrix-body">
               {matrixLoading ? (
-                <div className="matrix-loading">加载�?..</div>
+                <div className="matrix-loading">加载中...</div>
               ) : matrixError ? (
                 <div className="matrix-error">{matrixError}</div>
               ) : matrixDetail ? (
@@ -1310,19 +1346,19 @@ function ResultPage(props: ResultPageProps) {
                       const indicators = matrixDetail?.indicators?.thresholds ?? matrixDetail?.thresholds ?? {};
                       const renderedGroups = MATRIX_GROUPS.map((group, idx) => renderAssessmentGroup(group, indicators, idx)).filter(Boolean);
                       if (renderedGroups.length === 0) {
-                        return <div className="matrix-empty">无矩阵数�?/div>;
+                        return <div className="matrix-empty">无矩阵数据</div>;
                       }
                       return renderedGroups;
                     })()}
                   </div>
                 </>
               ) : (
-                <div className="matrix-empty">无矩阵数�?/div>
+                <div className="matrix-empty">无矩阵数据</div>
               )}
 
               <div className="profile-section-title">断面剖面折线</div>
               {profileLoading ? (
-                <div className="profile-loading">加载�?..</div>
+                <div className="profile-loading">加载中...</div>
               ) : profileError ? (
                 <div className="profile-error">{profileError}</div>
               ) : (
@@ -1341,7 +1377,7 @@ function ResultPage(props: ResultPageProps) {
                 <div className="progress-modal-title">计算进度</div>
                 <div className="progress-modal-subtitle">
                   任务: {progress?.taskName || selectedTask}
-                  {progress?.status ? ` | 状�? ${progress.status}` : ''}
+                  {progress?.status ? ` | 状态: ${progress.status}` : ''}
                 </div>
               </div>
               <button className="progress-modal-close" onClick={() => setProgressOpen(false)}>关闭</button>
@@ -1356,11 +1392,11 @@ function ResultPage(props: ResultPageProps) {
             <div className="progress-stats">
               <div>进度: {progressPercent}%</div>
               <div>
-                已处�? {progress?.processedCount ?? 0}/{progress?.expectedTotal ?? 0}
+                已处理: {progress?.processedCount ?? 0}/{progress?.expectedTotal ?? 0}
                 {' | '}成功: {progress?.successCount ?? 0}
                 {' | '}失败: {progress?.errorCount ?? 0}
               </div>
-              <div className="progress-updated">最后更�? {progress?.lastUpdatedAt ? new Date(progress.lastUpdatedAt).toLocaleTimeString() : '-'}</div>
+              <div className="progress-updated">最后更新: {progress?.lastUpdatedAt ? new Date(progress.lastUpdatedAt).toLocaleTimeString() : '-'}</div>
             </div>
 
             {(progress?.errors?.length ?? 0) > 0 ? (
@@ -1433,7 +1469,7 @@ function ResultPage(props: ResultPageProps) {
           删除选中任务
         </button>
 
-        {loading && <div className="loading-spinner">数据加载�?..</div>}
+        {loading && <div className="loading-spinner">数据加载中...</div>}
         {error && <p className="error-message">错误: {error}</p>}
         
         {selectedTask && !loading && (
@@ -1441,9 +1477,9 @@ function ResultPage(props: ResultPageProps) {
             <h5>当前分析结果</h5>
             <div className="legend">
               <div className="legend-item"><span className="dot high"></span>极高风险</div>
-              <div className="legend-item"><span className="dot medium"></span>高风�?/div>
-              <div className="legend-item"><span className="dot low"></span>一般风�?/div>
-              <div className="legend-item"><span className="dot no"></span>�?无风�?/div>
+              <div className="legend-item"><span className="dot medium"></span>高风险</div>
+              <div className="legend-item"><span className="dot low"></span>一般风险</div>
+              <div className="legend-item"><span className="dot no"></span>低/无风险</div>
             </div>
           </div>
         )}

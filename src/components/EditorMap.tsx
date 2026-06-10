@@ -42,7 +42,8 @@ function buildCrossLineArrowPoints(
     const start = coords[0];
     const end = coords[coords.length - 1];
     const bearing = bearingDegrees(start as any, end as any);
-    // 参�?Mapbox 图标默认朝向与正北夹角，�?-90 度修�?    const iconRotate = Number(bearing - 90);
+    // 参考 Mapbox 图标默认朝向与正北夹角，做 -90 度修正
+    const iconRotate = Number(bearing - 90);
 
     const props: any = feature.properties || {};
 
@@ -190,7 +191,7 @@ function EditorMap(props: EditorMapProps) {
     crossLineEditModeRef.current = crossLineEditMode;
   }, [crossLineEditMode]);
 
-  // 在自由模式断面精调时，Ctrl 键要用于多选；Mapbox 默认 Ctrl+左键会触�?dragRotate，需禁用以免抢占事件
+  // 在自由模式断面精调时，Ctrl 键要用于多选；Mapbox 默认 Ctrl+左键会触发 dragRotate，需禁用以免抢占事件
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -209,7 +210,7 @@ function EditorMap(props: EditorMapProps) {
     }
   }, [isSelectingCrossLines, crossLineControlMode, crossLineEditMode]);
 
-  // 退出断面精�?释放选择时，清理吸附点与鼠标样式
+  // 退出断面精调/释放选择时，清理吸附点与鼠标样式
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -295,7 +296,8 @@ function EditorMap(props: EditorMapProps) {
         source.setData(uploadedData);
       }
 
-      // 仅在从“无要素 -> 有要素”时自动适配视图范围，避免后续对 uploadedData 的小改动（如 reversed 标记切换）触发多次缩�?      try {
+      // 仅在从“无要素 -> 有要素”时自动适配视图范围，避免后续对 uploadedData 的小改动（如 reversed 标记切换）触发多次缩放
+      try {
         const prevCount = prevUploadedCountRef.current || 0;
         const currCount = (uploadedData.features && uploadedData.features.length) || 0;
         if (prevCount === 0 && currCount > 0) {
@@ -304,7 +306,8 @@ function EditorMap(props: EditorMapProps) {
         }
         prevUploadedCountRef.current = currCount;
       } catch (err) {
-        // 保守处理：若计算 bbox 失败则忽�?        console.warn('更新 uploadedData 时适配视图范围失败', err);
+        // 保守处理：若计算 bbox 失败则忽略
+        console.warn('更新 uploadedData 时适配视图范围失败', err);
       }
     };
 
@@ -315,7 +318,8 @@ function EditorMap(props: EditorMapProps) {
     }
   }, [uploadedData]);
 
-  // 同步选中线段的高亮显�?  useEffect(() => {
+  // 同步选中线段的高亮显示
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !uploadedData) return;
 
@@ -399,7 +403,8 @@ function EditorMap(props: EditorMapProps) {
     }
   }, [showCrossLines]);
 
-  // 同步选中断面的高亮显�?  useEffect(() => {
+  // 同步选中断面的高亮显示
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !perpendicularData) return;
 
@@ -517,7 +522,7 @@ function EditorMap(props: EditorMapProps) {
         type: 'symbol',
         source: 'perpendicular-arrows',
         layout: {
-          'text-field': '�?,
+          'text-field': '▶',
           'text-size': 20,
           'text-rotate': ['get', 'iconRotate'],
           'text-rotation-alignment': 'map',
@@ -596,7 +601,7 @@ function EditorMap(props: EditorMapProps) {
         const message = props?.validation_message;
         const error = props?.validation_error;
 
-        let label = '未验�?;
+        let label = '未验证';
         let color = '#f59e0b';
         if (status === 'valid' || isValid === true) {
           label = '通过';
@@ -614,7 +619,7 @@ function EditorMap(props: EditorMapProps) {
               `<p style="margin:4px 0 0; font-size:12px; color:#64748b;">问题: ${escapeHtml(detail)}</p>`,
             );
           }
-        } else if (label === '未验�? && error) {
+        } else if (label === '未验证' && error) {
           detailHtml.push(
             `<p style="margin:4px 0 0; font-size:12px; color:#64748b;">上次请求失败: ${escapeHtml(error)}</p>`,
           );
@@ -624,9 +629,9 @@ function EditorMap(props: EditorMapProps) {
           .setLngLat(lngLat)
           .setHTML(`
             <div style="padding: 4px; font-family: sans-serif;">
-              <p style="margin:0; font-weight:bold; color:#1e293b;">断面校验状�?/p>
+              <p style="margin:0; font-weight:bold; color:#1e293b;">断面校验状态</p>
               <p style="margin:4px 0 0; font-size:12px; color:#64748b;">断面ID: ${escapeHtml(sectionId || '未知')}</p>
-              <p style="margin:4px 0 0; font-size:12px; color:#64748b;">状�? <span style="color:${color}; font-weight:bold;">${label}</span></p>
+              <p style="margin:4px 0 0; font-size:12px; color:#64748b;">状态: <span style="color:${color}; font-weight:bold;">${label}</span></p>
               ${detailHtml.join('')}
             </div>
           `)
@@ -639,7 +644,7 @@ function EditorMap(props: EditorMapProps) {
             startLngLat: mapboxgl.LngLat;
             startCoordsById: Map<number, number[][]>;
             lastCoordsById: Map<number, number[][]>;
-            // 拖拽期间只更�?Mapbox source（不触发 React setState），避免多选时卡顿
+            // 拖拽期间只更新 Mapbox source（不触发 React setState），避免多选时卡顿
             workingCrossLinesData: GeoJSON.FeatureCollection;
             workingArrowData: GeoJSON.FeatureCollection<GeoJSON.Point>;
             arrowIndexByCrossLineId: Map<number, number>;
@@ -717,7 +722,8 @@ function EditorMap(props: EditorMapProps) {
           active.pendingDelta = null;
           applyDragFrame(active, pending.dx, pending.dy);
 
-          // 如果在本帧渲染时又积累了新的 delta，继续排队下一�?          if (active.pendingDelta) {
+          // 如果在本帧渲染时又积累了新的 delta，继续排队下一帧
+          if (active.pendingDelta) {
             scheduleDragRender(active);
           }
         });
@@ -752,7 +758,8 @@ function EditorMap(props: EditorMapProps) {
         map.off('mousemove', onDragMove);
         map.getCanvas().style.cursor = '';
 
-        // 拖动结束：一次性写�?React 状态（避免 N �?setState�?        const updates: Array<{ crossLineIndex: number; geometry: GeoJSON.LineString }> = [];
+        // 拖动结束：一次性写回 React 状态（避免 N 次 setState）
+        const updates: Array<{ crossLineIndex: number; geometry: GeoJSON.LineString }> = [];
         ds.crossLineIds.forEach((id) => {
           const coords = ds.lastCoordsById.get(id);
           if (!coords) return;
@@ -780,7 +787,8 @@ function EditorMap(props: EditorMapProps) {
           };
           tasks.push(persistCrossLineGeometryRef.current(id, finalGeometry));
         });
-        // 不阻�?UI；后台同步即�?        Promise.allSettled(tasks);
+        // 不阻塞 UI；后台同步即可
+        Promise.allSettled(tasks);
         dragState = null;
       };
 
@@ -808,7 +816,10 @@ function EditorMap(props: EditorMapProps) {
         const clickedIsSelected = currentSelected.has(crossLineId);
         if (isCtrl && !clickedIsSelected) return;
 
-        // 拖拽逻辑�?        // - 如果点击的是已选中断面（无论是否按 Ctrl），则拖拽整个多选集�?        // - 如果点击的是未选中断面，则先单选它再拖�?        const willUseIds = clickedIsSelected ? Array.from(currentSelected) : [crossLineId];
+        // 拖拽逻辑：
+        // - 如果点击的是已选中断面（无论是否按 Ctrl），则拖拽整个多选集合
+        // - 如果点击的是未选中断面，则先单选它再拖拽
+        const willUseIds = clickedIsSelected ? Array.from(currentSelected) : [crossLineId];
 
         if (!clickedIsSelected) {
           setSelectedCrossLineIndex(crossLineId);
@@ -827,7 +838,7 @@ function EditorMap(props: EditorMapProps) {
           lastCoordsById.set(id, copied.map((c) => [c[0], c[1]]));
         });
 
-        // 为拖拽创建一次性的工作副本：只 clone 被拖拽的要素，避免污�?React state
+        // 为拖拽创建一次性的工作副本：只 clone 被拖拽的要素，避免污染 React state
         const base = perpendicularDataRef.current;
         const workingFeatures = (base?.features ? base.features.slice() : []) as any[];
         Array.from(startCoordsById.entries()).forEach(([id, coords]) => {
@@ -896,7 +907,8 @@ function EditorMap(props: EditorMapProps) {
           !isSelectingStartEndRef.current &&
           !isSelectingCrossLinesRef.current;
 
-        // 岸段修正选择开启时，禁用断面信息弹窗（避免干扰点击岸段�?        if (noEditingActive && !isFixingShoreLineReversedRef.current) {
+        // 岸段修正选择开启时，禁用断面信息弹窗（避免干扰点击岸段）
+        if (noEditingActive && !isFixingShoreLineReversedRef.current) {
           const crossLineFeatures = map.queryRenderedFeatures(e.point, { layers: crossLineHitLayers });
           const hit = crossLineFeatures?.[0];
           if (hit) {
@@ -906,7 +918,8 @@ function EditorMap(props: EditorMapProps) {
         }
 
         if (isSelectingCrossLinesRef.current) {
-          // 进入断面编辑时，关闭信息弹窗，避免遮�?          closeInfoPopup();
+          // 进入断面编辑时，关闭信息弹窗，避免遮挡
+          closeInfoPopup();
           const editMode = crossLineEditModeRef.current;
           const controlMode = crossLineControlModeRef.current;
 
@@ -950,7 +963,8 @@ function EditorMap(props: EditorMapProps) {
                       const first = Array.from(next)[0];
                       setSelectedCrossLineIndex(first);
                     } else {
-                      // 保持主选中不变；若是新增则更新为新点�?                      if (!prev.has(crossLineId)) setSelectedCrossLineIndex(crossLineId);
+                      // 保持主选中不变；若是新增则更新为新点选
+                      if (!prev.has(crossLineId)) setSelectedCrossLineIndex(crossLineId);
                     }
 
                     return next;
@@ -973,7 +987,7 @@ function EditorMap(props: EditorMapProps) {
                 const snapped = turf.nearestPointOnLine(lineFeature, [e.lngLat.lng, e.lngLat.lat], { units: 'meters' });
                 const distanceOnLine = snapped.properties.location ?? 0;
 
-                console.log(`点击岸段新建断面，距�? ${distanceOnLine.toFixed(2)}m`);
+                console.log(`点击岸段新建断面，距离: ${distanceOnLine.toFixed(2)}m`);
                 createCrossLineAtPoint(lineFeature, distanceOnLine);
               }
             } else {
@@ -988,7 +1002,7 @@ function EditorMap(props: EditorMapProps) {
                 freeAddStartRef.current = null;
                 const source = map.getSource('snap-point') as mapboxgl.GeoJSONSource;
                 if (source) source.setData(turf.featureCollection([]));
-                console.log('自由模式：已选择断面终点，开始创建断�?);
+                console.log('自由模式：已选择断面终点，开始创建断面');
                 createCrossLineByEndpointsRef.current(start, clicked);
               }
             }
@@ -999,7 +1013,8 @@ function EditorMap(props: EditorMapProps) {
         // 点击到空白处时，收起信息弹窗
         closeInfoPopup();
 
-        // 岸段修正选择：点击岸段触发批量反转（仅在外部回调中做选段过滤�?        if (isFixingShoreLineReversedRef.current) {
+        // 岸段修正选择：点击岸段触发批量反转（仅在外部回调中做选段过滤）
+        if (isFixingShoreLineReversedRef.current) {
           const features = map.queryRenderedFeatures(e.point, { layers: hitLayers });
           const feature = features?.[0];
           if (!feature) return;
@@ -1052,7 +1067,7 @@ function EditorMap(props: EditorMapProps) {
 
         if (activeIndex === -1) {
           console.log(
-            `[设置起点] 线索�? ${lineIndex}, 距离: ${dist.toFixed(2)}m, 整线归一�? ${(dist / totalLineLength).toFixed(4)}`,
+            `[设置起点] 线索引: ${lineIndex}, 距离: ${dist.toFixed(2)}m, 整线归一化: ${(dist / totalLineLength).toFixed(4)}`,
           );
           const newGroup: SelectionGroup = {
             id: Math.random().toString(36).substr(2, 9),
@@ -1072,7 +1087,7 @@ function EditorMap(props: EditorMapProps) {
 
           if (isSameLine) {
             console.log(
-              `[设置终点] 线索�? ${lineIndex}, 距离: ${dist.toFixed(2)}m, 整线归一�? ${(dist / totalLineLength).toFixed(4)}`,
+              `[设置终点] 线索引: ${lineIndex}, 距离: ${dist.toFixed(2)}m, 整线归一化: ${(dist / totalLineLength).toFixed(4)}`,
             );
 
             setGroups((prev) => {
@@ -1085,7 +1100,7 @@ function EditorMap(props: EditorMapProps) {
             });
           } else {
             console.log(
-              `[跨线点击] 从线${activeGroup.lineIndex}跳到�?{lineIndex}，重置起�? ${dist.toFixed(2)}m`,
+              `[跨线点击] 从线${activeGroup.lineIndex}跳到线${lineIndex}，重置起点: ${dist.toFixed(2)}m`,
             );
 
             const newGroup: SelectionGroup = {

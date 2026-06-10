@@ -7,7 +7,8 @@ import './App.css';
 // 设置Mapbox访问令牌
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
 
-// 分析配置默认�?const ANALYSIS_CONFIG_DEFAULT = {
+// 分析配置默认值
+const ANALYSIS_CONFIG_DEFAULT = {
   "bench-id": "tiff/Mzs/2012/standard/201210/201210.tif",
   "ref-id": "tiff/Mzs/2023/standard/202304/202304.tif",
   "dem-id": "tiff/Mzs/2023/standard/202304/202304.tif",
@@ -41,10 +42,10 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
 /**
  * 在线上以固定间距生成垂线
  * @param line 主线
- * @param startDist 起点距离 (�?
- * @param endDist 终点距离 (�?
- * @param interval 间距 (�?
- * @param crossLength 垂线总长�?(�?
+ * @param startDist 起点距离 (米)
+ * @param endDist 终点距离 (米)
+ * @param interval 间距 (米)
+ * @param crossLength 垂线总长度 (米)
  */
 function generatePerpendicularLines(
   line: GeoJSON.Feature<GeoJSON.LineString>,
@@ -71,7 +72,7 @@ function generatePerpendicularLines(
     const p2 = turf.along(line, p2Offset, { units: 'meters' });
 
     const relPos = segmentLen > 0 ? (d - actualStart) / segmentLen : 0;
-    console.log(`垂线位置: ${d.toFixed(2)}m, 整线归一�? ${(d / lineLength).toFixed(4)}, 区段内归一�? ${relPos.toFixed(4)}`);
+    console.log(`垂线位置: ${d.toFixed(2)}m, 整线归一化: ${(d / lineLength).toFixed(4)}, 区段内归一化: ${relPos.toFixed(4)}`);
 
     let bearing = 0;
     if (d >= lineLength - 0.1) {
@@ -116,7 +117,8 @@ function generatePerpendicularLines(
   };
 }
 
-// 定义选择组接�?interface SelectionGroup {
+// 定义选择组接口
+interface SelectionGroup {
   id: string;
   line: GeoJSON.Feature<GeoJSON.LineString>;
   lineIndex: number | undefined; // 线在上传数据中的索引，用于判断是否同一条线
@@ -127,7 +129,8 @@ function generatePerpendicularLines(
   lastAppliedInterval: number;
   length: number;
   crossData: { distance: number; left: number[]; right: number[] }[];
-  // 该组的属性配置（如果未设置则使用全局配置�?  properties?: Partial<typeof ANALYSIS_CONFIG_DEFAULT>;
+  // 该组的属性配置（如果未设置则使用全局配置）
+  properties?: Partial<typeof ANALYSIS_CONFIG_DEFAULT>;
 }
 
 /**
@@ -139,7 +142,7 @@ async function sendCrossLinesToBackend(
   crossData: { distance: number; left: number[]; right: number[]; analysisConfig?: typeof ANALYSIS_CONFIG_DEFAULT }[],
   groupId: string
 ) {
-  console.log(`开始向后端发送组 ${groupId} �?${crossData.length} 条垂线数�?..`);
+  console.log(`开始向后端发送组 ${groupId} 的 ${crossData.length} 条垂线数据...`);
 
   try {
     const promises = crossData.map(async (item, index) => {
@@ -155,7 +158,7 @@ async function sendCrossLinesToBackend(
         }
       };
 
-      console.log(`正在发送垂�?${index + 1}/${crossData.length} (距离: ${item.distance.toFixed(2)}m):`, payload);
+      console.log(`正在发送垂线 ${index + 1}/${crossData.length} (距离: ${item.distance.toFixed(2)}m):`, payload);
 
       const response = await fetch('/v0/mi/risk-level', {
         method: 'POST',
@@ -173,7 +176,7 @@ async function sendCrossLinesToBackend(
     });
 
     const results = await Promise.all(promises);
-    console.log(`�?${groupId} 的所有垂线数据已成功发送到后端`);
+    console.log(`组 ${groupId} 的所有垂线数据已成功发送到后端`);
     return results;
   } catch (error) {
     console.error(`发送组 ${groupId} 的垂线数据时出错:`, error);
@@ -185,15 +188,18 @@ function App() {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
-  // 上传�?GeoJSON 数据 (主线)
+  // 上传的 GeoJSON 数据 (主线)
   const [uploadedData, setUploadedData] = useState<GeoJSON.FeatureCollection | null>(null);
-  // 生成的垂线数�?  const [perpendicularData, setPerpendicularData] = useState<GeoJSON.FeatureCollection | null>(null);
+  // 生成的垂线数据
+  const [perpendicularData, setPerpendicularData] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  // 所有选择�?  const [groups, setGroups] = useState<SelectionGroup[]>([]);
+  // 所有选择组
+  const [groups, setGroups] = useState<SelectionGroup[]>([]);
   const groupsRef = useRef(groups);
   useEffect(() => { groupsRef.current = groups; }, [groups]);
 
-  // 全局垂线配置（用于首次绘制整�?GeoJSON�?  const [globalInterval, setGlobalInterval] = useState<number>(100);
+  // 全局垂线配置（用于首次绘制整个 GeoJSON）
+  const [globalInterval, setGlobalInterval] = useState<number>(100);
   const [globalLength, setGlobalLength] = useState<number>(2000);
   
   // 当前正在编辑的组ID
@@ -201,8 +207,10 @@ function App() {
   
   const [showCrossLines, setShowCrossLines] = useState<boolean>(true);
   
-  // 全局属性配�?  const [globalProperties, setGlobalProperties] = useState(ANALYSIS_CONFIG_DEFAULT);
-  // 属性配置弹窗状�?  const [showGlobalPropertiesModal, setShowGlobalPropertiesModal] = useState<boolean>(false);
+  // 全局属性配置
+  const [globalProperties, setGlobalProperties] = useState(ANALYSIS_CONFIG_DEFAULT);
+  // 属性配置弹窗状态
+  const [showGlobalPropertiesModal, setShowGlobalPropertiesModal] = useState<boolean>(false);
   const [editingPropertiesGroupId, setEditingPropertiesGroupId] = useState<string | null>(null);
   
   // 新增状态：控制岸段选择模式
@@ -215,11 +223,13 @@ function App() {
   const isSelectingStartEndRef = useRef(isSelectingStartEnd);
   useEffect(() => { isSelectingStartEndRef.current = isSelectingStartEnd; }, [isSelectingStartEnd]);
   
-  // 新增状态：选中的用于生成垂线的线段（存储线的唯一标识�?  const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
+  // 新增状态：选中的用于生成垂线的线段（存储线的唯一标识）
+  const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
   const selectedLinesRef = useRef(selectedLines);
   useEffect(() => { selectedLinesRef.current = selectedLines; }, [selectedLines]);
 
-  // 使用 Ref 跟踪配置值，确保事件监听器中能获取到最新�?  const configRef = useRef({ interval: globalInterval, length: globalLength });
+  // 使用 Ref 跟踪配置值，确保事件监听器中能获取到最新值
+  const configRef = useRef({ interval: globalInterval, length: globalLength });
   useEffect(() => {
     configRef.current = { interval: globalInterval, length: globalLength };
   }, [globalInterval, globalLength]);
@@ -232,7 +242,8 @@ function App() {
     }
   };
   
-  // 全选所有岸�?  const selectAllShoreLines = () => {
+  // 全选所有岸段
+  const selectAllShoreLines = () => {
     if (!uploadedData) {
       alert('请先上传 GeoJSON 数据');
       return;
@@ -246,8 +257,8 @@ function App() {
     });
     
     setSelectedLines(allLineIds);
-    console.log(`已全�?${allLineIds.size} 个岸段`);
-    alert(`已全�?${allLineIds.size} 个岸段`);
+    console.log(`已全选 ${allLineIds.size} 个岸段`);
+    alert(`已全选 ${allLineIds.size} 个岸段`);
   };
   
   // 切换起止点选择模式
@@ -258,14 +269,15 @@ function App() {
     }
   };
 
-  // 核心逻辑：基于上传的 GeoJSON 和全局配置生成所有垂�?  const handleGenerateSections = () => {
+  // 核心逻辑：基于上传的 GeoJSON 和全局配置生成所有垂线
+  const handleGenerateSections = () => {
     if (!uploadedData) {
       alert('请先上传 GeoJSON 数据');
       return;
     }
 
     if (selectedLines.size === 0) {
-      alert('请先选择用于分析的岸�?);
+      alert('请先选择用于分析的岸段');
       return;
     }
 
@@ -274,7 +286,8 @@ function App() {
     uploadedData.features.forEach((feature, index) => {
       const lineId = `line-${index}`;
       
-      // 只处理选中的线�?      if (!selectedLines.has(lineId)) {
+      // 只处理选中的线段
+      if (!selectedLines.has(lineId)) {
         return;
       }
       
@@ -309,7 +322,8 @@ function App() {
       }
     });
 
-    // 为每条垂线添加属�?    allPerpendicularLines.forEach(line => {
+    // 为每条垂线添加属性
+    allPerpendicularLines.forEach(line => {
       if (line.properties) {
         line.properties.analysisConfig = { ...globalProperties };
       }
@@ -317,7 +331,7 @@ function App() {
 
     setPerpendicularData(turf.featureCollection(allPerpendicularLines));
     setShowCrossLines(true);
-    alert(`已为 ${selectedLines.size} 个岸段生成垂线！\n\n提示：可以点�?属性配�?按钮设置分析参数`);
+    alert(`已为 ${selectedLines.size} 个岸段生成垂线！\n\n提示：可以点击"属性配置"按钮设置分析参数`);
   };
 
   // 开始分析：将所有垂线发送到后端
@@ -327,7 +341,8 @@ function App() {
       return;
     }
 
-    // 收集所有垂线数据，包括每条垂线的属性配�?    const allCrossData = perpendicularData.features.map(line => ({
+    // 收集所有垂线数据，包括每条垂线的属性配置
+    const allCrossData = perpendicularData.features.map(line => ({
       distance: line.properties?.distance ?? 0,
       left: line.properties?.leftPoint as number[],
       right: line.properties?.rightPoint as number[],
@@ -336,7 +351,7 @@ function App() {
 
     try {
       await sendCrossLinesToBackend(allCrossData, 'all-lines');
-      alert(`成功发�?${allCrossData.length} 条垂线到后端！`);
+      alert(`成功发送 ${allCrossData.length} 条垂线到后端！`);
     } catch (err) {
       alert('发送垂线到后端时出错，请检查控制台');
       console.error(err);
@@ -346,7 +361,7 @@ function App() {
   // 应用自定义线段配置：更新当前编辑组的垂线
   const handleApplyCustomSegments = () => {
     if (!editingGroupId) {
-      alert('请先点击编辑按钮选择要修改的�?);
+      alert('请先点击编辑按钮选择要修改的组');
       return;
     }
 
@@ -364,13 +379,15 @@ function App() {
     const start = Math.min(editingGroup.start, editingGroup.end);
     const end = Math.max(editingGroup.start, editingGroup.end);
     
-    // 判断是否修改了间距：如果当前间距与上一次应用的间距不同，则认为修改了间�?    const intervalChanged = editingGroup.interval !== editingGroup.lastAppliedInterval;
+    // 判断是否修改了间距：如果当前间距与上一次应用的间距不同，则认为修改了间距
+    const intervalChanged = editingGroup.interval !== editingGroup.lastAppliedInterval;
 
     // 复制现有垂线数据
     let updatedLines = [...perpendicularData.features] as GeoJSON.Feature<GeoJSON.LineString>[];
 
     if (!intervalChanged) {
-      // �?未修改间距：仅根据每条垂线的位置，调整其长度，不改变位置与数�?      const newCrossData: { distance: number; left: number[]; right: number[] }[] = [];
+      // ✅ 未修改间距：仅根据每条垂线的位置，调整其长度，不改变位置与数量
+      const newCrossData: { distance: number; left: number[]; right: number[] }[] = [];
 
       updatedLines = updatedLines.map(line => {
         const lineProp: any = line.properties || {};
@@ -382,7 +399,8 @@ function App() {
           // 垂线中点
           const mid = [(leftPoint[0] + rightPoint[0]) / 2, (leftPoint[1] + rightPoint[1]) / 2];
           const midPoint = turf.point(mid);
-          // 投影到当前组的主线上，得到该垂线在主线上的实际距�?          const snapped = turf.nearestPointOnLine(editingGroup.line, midPoint, { units: 'meters' });
+          // 投影到当前组的主线上，得到该垂线在主线上的实际距离
+          const snapped = turf.nearestPointOnLine(editingGroup.line, midPoint, { units: 'meters' });
           const actualDist = snapped.properties.location ?? 0;
           const distToLine = turf.distance(midPoint, snapped, { units: 'meters' });
 
@@ -394,7 +412,8 @@ function App() {
             return line;
           }
 
-          // 以投影点为中心点，按旧的朝向，重新根据新的长度计算端�?          const centerPoint = snapped as GeoJSON.Feature<GeoJSON.Point>;
+          // 以投影点为中心点，按旧的朝向，重新根据新的长度计算端点
+          const centerPoint = snapped as GeoJSON.Feature<GeoJSON.Point>;
           const bearingToLeft = turf.bearing(centerPoint, turf.point(leftPoint));
           const halfLen = editingGroup.length / 2;
 
@@ -424,7 +443,8 @@ function App() {
         }
       });
 
-      // 按距离排�?crossData，方便后续使�?      newCrossData.sort((a, b) => a.distance - b.distance);
+      // 按距离排序 crossData，方便后续使用
+      newCrossData.sort((a, b) => a.distance - b.distance);
 
       setGroups(prev => {
         const updated = [...prev];
@@ -442,9 +462,10 @@ function App() {
       setPerpendicularData(turf.featureCollection(updatedLines));
       alert(`已更新组 ${groups.findIndex(g => g.id === editingGroupId) + 1} 的垂线长度（未修改间距）`);
     } else {
-      // �?修改了间距：删除该段原有垂线，根据新的间距与长度重新生成
+      // ✅ 修改了间距：删除该段原有垂线，根据新的间距与长度重新生成
 
-      // 移除该线段范围内的旧垂线（只移除同一条线上的�?      updatedLines = updatedLines.filter(line => {
+      // 移除该线段范围内的旧垂线（只移除同一条线上的）
+      updatedLines = updatedLines.filter(line => {
         const lineProp = line.properties as any;
         if (!lineProp) return true;
         
@@ -465,12 +486,15 @@ function App() {
             return true; // 保留，不是同一条线
           }
           
-          // 是同一条线，检查是否在选择范围�?          if (actualDist >= start && actualDist <= end) {
-            return false; // 移除，在范围�?          }
+          // 是同一条线，检查是否在选择范围内
+          if (actualDist >= start && actualDist <= end) {
+            return false; // 移除，在范围内
+          }
           
           return true; // 保留，不在范围内
         } catch {
-          return true; // 出错则保�?        }
+          return true; // 出错则保留
+        }
       });
       
       // 生成新的垂线数据
@@ -482,13 +506,14 @@ function App() {
         editingGroup.length
       );
       
-      // 为新生成的垂线添加属性配�?      featureCollection.features.forEach(line => {
+      // 为新生成的垂线添加属性配置
+      featureCollection.features.forEach(line => {
         if (line.properties) {
           line.properties.analysisConfig = editingGroup.properties || { ...globalProperties };
         }
       });
       
-      // 更新组的 crossData �?lastAppliedInterval
+      // 更新组的 crossData 与 lastAppliedInterval
       setGroups(prev => {
         const updated = [...prev];
         const idx = updated.findIndex(g => g.id === editingGroup.id);
@@ -502,7 +527,8 @@ function App() {
         return updated;
       });
       
-      // 合并新垂�?      updatedLines.push(...(featureCollection.features as GeoJSON.Feature<GeoJSON.LineString>[]));
+      // 合并新垂线
+      updatedLines.push(...(featureCollection.features as GeoJSON.Feature<GeoJSON.LineString>[]));
 
       setPerpendicularData(turf.featureCollection(updatedLines));
       alert(`已应用组 ${groups.findIndex(g => g.id === editingGroupId) + 1} 的自定义配置（修改了间距，已重绘）`);
@@ -520,7 +546,8 @@ function App() {
         const json = JSON.parse(event.target?.result as string);
         const geojson = json.type === 'FeatureCollection' ? json : turf.featureCollection([json]);
         
-        // 为每个要素添加索引属�?        geojson.features.forEach((feature, index) => {
+        // 为每个要素添加索引属性
+        geojson.features.forEach((feature, index) => {
           if (!feature.properties) {
             feature.properties = {};
           }
@@ -528,7 +555,8 @@ function App() {
         });
         
         setUploadedData(geojson);
-        // 重置选择状�?        setSelectedLines(new Set());
+        // 重置选择状态
+        setSelectedLines(new Set());
         setIsSelectingShoreLines(false);
         setIsSelectingStartEnd(false);
 
@@ -537,13 +565,14 @@ function App() {
           mapRef.current.fitBounds([bbox[0], bbox[1], bbox[2], bbox[3]], { padding: 50 });
         }
       } catch (err) {
-        alert('解析 GeoJSON 失败，请检查文件格�?);
+        alert('解析 GeoJSON 失败，请检查文件格式');
       }
     };
     reader.readAsText(file);
   };
 
-  // 核心逻辑：同步垂线到地图数据�?  useEffect(() => {
+  // 核心逻辑：同步垂线到地图数据源
+  useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
@@ -580,12 +609,14 @@ function App() {
     }
   }, [uploadedData]);
 
-  // 同步选中线段的高亮显�?  useEffect(() => {
+  // 同步选中线段的高亮显示
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !uploadedData) return;
 
     const updateSelectedLines = () => {
-      // 创建一个新的图层来高亮选中的线�?      const selectedSource = map.getSource('selected-shore-lines') as mapboxgl.GeoJSONSource;
+      // 创建一个新的图层来高亮选中的线段
+      const selectedSource = map.getSource('selected-shore-lines') as mapboxgl.GeoJSONSource;
       if (selectedSource) {
         const selectedFeatures = uploadedData.features.filter((_, index) => 
           selectedLines.has(`line-${index}`)
@@ -622,7 +653,8 @@ function App() {
         pointSource.setData(turf.featureCollection(allPoints));
       }
 
-      // 更新主线高亮�?      const activeLineSource = map.getSource('active-line') as mapboxgl.GeoJSONSource;
+      // 更新主线高亮段
+      const activeLineSource = map.getSource('active-line') as mapboxgl.GeoJSONSource;
       if (activeLineSource) {
         const segments: GeoJSON.Feature<GeoJSON.LineString>[] = [];
         groups.forEach(group => {
@@ -666,7 +698,8 @@ function App() {
   useEffect(() => {
     if (!mapContainer.current) return;
 
-    // 初始化地�?    const map = new mapboxgl.Map({
+    // 初始化地图
+    const map = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v10',
       center: [119.89600633, 32.22907004],
@@ -697,7 +730,8 @@ function App() {
         }
       });
 
-      // 上传线的基础显示�?      map.addLayer({
+      // 上传线的基础显示层
+      map.addLayer({
         id: 'uploaded-lines',
         type: 'line',
         source: 'uploaded-data',
@@ -708,7 +742,8 @@ function App() {
         }
       });
 
-      // 高亮选中的岸�?      map.addLayer({
+      // 高亮选中的岸段
+      map.addLayer({
         id: 'selected-shore-lines-layer',
         type: 'line',
         source: 'selected-shore-lines',
@@ -719,7 +754,8 @@ function App() {
         }
       });
 
-      // 高亮选中的线�?      map.addLayer({
+      // 高亮选中的线段
+      map.addLayer({
         id: 'active-line-layer',
         type: 'line',
         source: 'active-line',
@@ -736,7 +772,8 @@ function App() {
         paint: { 'line-color': '#ef4444', 'line-width': 2 }
       });
 
-      // 起止点标�?      map.addLayer({
+      // 起止点标记
+      map.addLayer({
         id: 'points-layer',
         type: 'circle',
         source: 'selection-points',
@@ -794,7 +831,8 @@ function App() {
           return;
         }
         
-        // 模式2：选择起止点模�?        if (!isSelectingStartEndRef.current) {
+        // 模式2：选择起止点模式
+        if (!isSelectingStartEndRef.current) {
           return; // 如果未开启起止点选择模式，不处理
         }
 
@@ -808,7 +846,7 @@ function App() {
 
         if (activeIndex === -1) {
           // 创建新组
-          console.log(`[设置起点] 线索�? ${lineIndex}, 距离: ${dist.toFixed(2)}m, 整线归一�? ${(dist / totalLineLength).toFixed(4)}`);
+          console.log(`[设置起点] 线索引: ${lineIndex}, 距离: ${dist.toFixed(2)}m, 整线归一化: ${(dist / totalLineLength).toFixed(4)}`);
           const newGroup: SelectionGroup = {
             id: Math.random().toString(36).substr(2, 9),
             line: lineFeature,
@@ -822,11 +860,13 @@ function App() {
           };
           setGroups(prev => [...prev, newGroup]);
         } else {
-          // 检查正在进行的组是否在同一条线上（通过lineIndex判断�?          const activeGroup = currentGroups[activeIndex];
+          // 检查正在进行的组是否在同一条线上（通过lineIndex判断）
+          const activeGroup = currentGroups[activeIndex];
           const isSameLine = lineIndex !== undefined && lineIndex === activeGroup.lineIndex;
 
           if (isSameLine) {
-            // 在同一条线上，结束该组（不立即生成垂线�?            console.log(`[设置终点] 线索�? ${lineIndex}, 距离: ${dist.toFixed(2)}m, 整线归一�? ${(dist / totalLineLength).toFixed(4)}`);
+            // 在同一条线上，结束该组（不立即生成垂线）
+            console.log(`[设置终点] 线索引: ${lineIndex}, 距离: ${dist.toFixed(2)}m, 整线归一化: ${(dist / totalLineLength).toFixed(4)}`);
             
             setGroups(prev => {
               const updated = [...prev];
@@ -838,7 +878,7 @@ function App() {
             });
           } else {
             // 在不同线上，重置起点
-            console.log(`[跨线点击] 从线${activeGroup.lineIndex}跳到�?{lineIndex}，重置起�? ${dist.toFixed(2)}m`);
+            console.log(`[跨线点击] 从线${activeGroup.lineIndex}跳到线${lineIndex}，重置起点: ${dist.toFixed(2)}m`);
             
             const newGroup: SelectionGroup = {
               id: Math.random().toString(36).substr(2, 9),
@@ -860,7 +900,8 @@ function App() {
         }
       });
 
-      // 鼠标移动处理：实现吸附视觉反馈（只在激活模式下�?      map.on('mousemove', hitLayers, (e) => {
+      // 鼠标移动处理：实现吸附视觉反馈（只在激活模式下）
+      map.on('mousemove', hitLayers, (e) => {
         // 只在选择岸段或选择起止点模式下显示吸附效果
         if (!isSelectingShoreLinesRef.current && !isSelectingStartEndRef.current) {
           return;
@@ -902,14 +943,16 @@ function App() {
     alert('已清除所有选择');
   };
 
-  // 删除单个�?  const deleteGroup = (id: string) => {
+  // 删除单个组
+  const deleteGroup = (id: string) => {
     setGroups(prev => prev.filter(g => g.id !== id));
     if (editingGroupId === id) {
       setEditingGroupId(null);
     }
   };
 
-  // 切换编辑组状�?  const handleEditGroup = (id: string) => {
+  // 切换编辑组状态
+  const handleEditGroup = (id: string) => {
     if (editingGroupId === id) {
       setEditingGroupId(null); // 关闭编辑
     } else {
@@ -980,11 +1023,13 @@ function App() {
         setGlobalInterval(globalInterval);
         setGlobalLength(globalLength);
         
-        // 恢复全局属性配�?        if (config.globalProperties) {
+        // 恢复全局属性配置
+        if (config.globalProperties) {
           setGlobalProperties(config.globalProperties);
         }
 
-        // 恢复选择�?        let restoredGroups: SelectionGroup[] = [];
+        // 恢复选择组
+        let restoredGroups: SelectionGroup[] = [];
         if (config.groups && Array.isArray(config.groups)) {
           restoredGroups = config.groups.map((g: any) => ({
             id: g.id || Math.random().toString(36).substr(2, 9),
@@ -1010,7 +1055,8 @@ function App() {
         
         // 立即绘制垂线
         if (uploadedData) {
-          // 1. 先使用全局配置生成所有垂�?          const allPerpendicularLines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+          // 1. 先使用全局配置生成所有垂线
+          const allPerpendicularLines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
           uploadedData.features.forEach(feature => {
             if (feature.geometry.type === 'LineString') {
@@ -1101,19 +1147,21 @@ function App() {
             }
           });
 
-          // 更新选择组（�?crossData�?          setGroups(restoredGroups);
+          // 更新选择组（带 crossData）
+          setGroups(restoredGroups);
           setPerpendicularData(turf.featureCollection(updatedLines));
           setShowCrossLines(true);
           
           alert(`已加载配置并绘制 ${restoredGroups.length} 个选择组的垂线`);
         } else {
-          alert(`已加�?${restoredGroups.length} 个选择组配置，请先上传 GeoJSON 数据后再绘制断面`);
+          alert(`已加载 ${restoredGroups.length} 个选择组配置，请先上传 GeoJSON 数据后再绘制断面`);
         }
         
-        // 重置输入�?        e.target.value = '';
+        // 重置输入框
+        e.target.value = '';
       } catch (err) {
         console.error('加载配置失败:', err);
-        alert('加载配置失败，请检查文件格�?);
+        alert('加载配置失败，请检查文件格式');
       }
     };
     reader.readAsText(file);
@@ -1122,7 +1170,8 @@ function App() {
   const totalCrossLinesCount = perpendicularData?.features.length || 0;
   const totalSelectedSegments = groups.filter(g => g.end !== null).length;
 
-  // 属性配置弹窗组�?  const PropertiesModal = ({ 
+  // 属性配置弹窗组件
+  const PropertiesModal = ({ 
     config, 
     onSave, 
     onClose,
@@ -1167,7 +1216,7 @@ function App() {
           
           <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              年份 (year) - 可编�?
+              年份 (year) - 可编辑:
             </label>
             <select 
               value={year} 
@@ -1252,8 +1301,9 @@ function App() {
         </label>
         {uploadedData && (
           <div className="upload-info">
-            已加�?{uploadedData.features.length} 个要�?            <br />
-            已选线�? {totalSelectedSegments} | 垂线总数: {totalCrossLinesCount}
+            已加载 {uploadedData.features.length} 个要素
+            <br />
+            已选线段: {totalSelectedSegments} | 垂线总数: {totalCrossLinesCount}
           </div>
         )}
         
@@ -1285,17 +1335,19 @@ function App() {
               onClick={toggleShoreLineSelection}
               style={{marginRight: '5px'}}
             >
-              {isSelectingShoreLines ? '�?正在选择岸段' : '🎯 选择岸段'}
+              {isSelectingShoreLines ? '✅ 正在选择岸段' : '🎯 选择岸段'}
             </button>
             <button 
               className="generate-button"
               onClick={selectAllShoreLines}
               style={{marginRight: '5px'}}
             >
-              ✔️ 全选岸�?            </button>
+              ✔️ 全选岸段
+            </button>
           </div>
           <p style={{fontSize: '13px', color: '#64748b', margin: '5px 0'}}>
-            已选择 {selectedLines.size} 个岸�?            {isSelectingShoreLines && ' (点击地图上的线选择/取消选择)'}
+            已选择 {selectedLines.size} 个岸段
+            {isSelectingShoreLines && ' (点击地图上的线选择/取消选择)'}
           </p>
           <button className="generate-button" onClick={handleGenerateSections}>📏 绘制断面</button>
           {perpendicularData && perpendicularData.features.length > 0 && (
@@ -1304,38 +1356,39 @@ function App() {
               onClick={() => setShowGlobalPropertiesModal(true)}
               style={{ marginTop: '10px', backgroundColor: '#8b5cf6' }}
             >
-              ⚙️ 属性配�?            </button>
+              ⚙️ 属性配置
+            </button>
           )}
         </div>
 
         <div className="config-section">
-          <h4>2️⃣ 选择起止点（在地图上点击�?/h4>
+          <h4>2️⃣ 选择起止点（在地图上点击）</h4>
           <button 
             className={`toggle-button ${isSelectingStartEnd ? 'active' : ''}`}
             onClick={toggleStartEndSelection}
             style={{marginBottom: '10px'}}
           >
-            {isSelectingStartEnd ? '�?起止点选择已开�? : '📍 开启起止点选择'}
+            {isSelectingStartEnd ? '✅ 起止点选择已开启' : '📍 开启起止点选择'}
           </button>
           <p style={{fontSize: '13px', color: '#64748b', margin: '5px 0'}}>
-            {isSelectingStartEnd ? '提示：在地图线上点击两次选择起止�? : '点击上方按钮开启起止点选择模式'}
+            {isSelectingStartEnd ? '提示：在地图线上点击两次选择起止点' : '点击上方按钮开启起止点选择模式'}
           </p>
         </div>
 
         {groups.length > 0 && (
           <div className="groups-list">
-            <h4>选择�?({groups.length})</h4>
+            <h4>选择组 ({groups.length})</h4>
             {groups.map((g, idx) => (
               <div key={g.id} className={`group-item ${editingGroupId === g.id ? 'editing' : ''}`}>
                 <div className="group-header">
-                  <span>�?{idx + 1}: {g.end === null ? '待选终�? : `已�?(${g.start.toFixed(0)}m - ${g.end.toFixed(0)}m)`}</span>
+                  <span>组 {idx + 1}: {g.end === null ? '待选终点' : `已选 (${g.start.toFixed(0)}m - ${g.end.toFixed(0)}m)`}</span>
                   <div className="group-actions">
                     {g.end !== null && (
                       <button 
                         className={`edit-button ${editingGroupId === g.id ? 'active' : ''}`}
                         onClick={() => handleEditGroup(g.id)}
                       >
-                        {editingGroupId === g.id ? '�?编辑�? : '✏️ 编辑'}
+                        {editingGroupId === g.id ? '✅ 编辑中' : '✏️ 编辑'}
                       </button>
                     )}
                     <button onClick={() => deleteGroup(g.id)}>删除</button>
@@ -1368,13 +1421,14 @@ function App() {
                       onClick={() => setEditingPropertiesGroupId(g.id)}
                       style={{ marginBottom: '10px', backgroundColor: '#8b5cf6' }}
                     >
-                      ⚙️ 属性配�?                    </button>
-                    <button className="apply-button" onClick={handleApplyCustomSegments}>�?应用配置</button>
+                      ⚙️ 属性配置
+                    </button>
+                    <button className="apply-button" onClick={handleApplyCustomSegments}>✅ 应用配置</button>
                   </div>
                 )}
                 {g.crossData.length > 0 && (
                   <div className="group-info">
-                    垂线: {g.crossData.length} �?| 间距: {g.interval}m | 长度: {g.length}m
+                    垂线: {g.crossData.length} 条 | 间距: {g.interval}m | 长度: {g.length}m
                   </div>
                 )}
               </div>
@@ -1383,7 +1437,7 @@ function App() {
         )}
 
         <div className="config-section">
-          <h4>3️⃣ 开始分�?/h4>
+          <h4>3️⃣ 开始分析</h4>
           <button 
             className="analysis-button" 
             onClick={handleStartAnalysis}
@@ -1392,7 +1446,7 @@ function App() {
             🚀 开始分析（发送全部垂线）
           </button>
           <p style={{fontSize: '13px', color: '#64748b', margin: '5px 0'}}>
-            {perpendicularData ? `当前�?${perpendicularData.features.length} 条垂线` : '请先绘制断面'}
+            {perpendicularData ? `当前共 ${perpendicularData.features.length} 条垂线` : '请先绘制断面'}
           </p>
         </div>
 
@@ -1402,7 +1456,7 @@ function App() {
             className={`toggle-button ${!showCrossLines ? 'off' : ''}`}
             onClick={() => setShowCrossLines(!showCrossLines)}
           >
-            {showCrossLines ? '👁�?隐藏垂线' : '👁�?显示垂线'}
+            {showCrossLines ? '👁️ 隐藏垂线' : '👁️ 显示垂线'}
           </button>
           <button className="clear-button" onClick={onClear}>🧹 清空选择</button>
           <button className="save-config-button" onClick={handleSaveConfig}>💾 保存配置</button>
@@ -1418,11 +1472,11 @@ function App() {
         </div>
       </div>
 
-      {/* 全局属性配置弹�?*/}
+      {/* 全局属性配置弹窗 */}
       {showGlobalPropertiesModal && (
         <PropertiesModal
           config={globalProperties}
-          title="全局属性配�?
+          title="全局属性配置"
           onSave={(newConfig) => {
             setGlobalProperties(newConfig);
             // 更新所有未自定义属性的垂线
@@ -1461,14 +1515,14 @@ function App() {
         />
       )}
 
-      {/* 组属性配置弹�?*/}
+      {/* 组属性配置弹窗 */}
       {editingPropertiesGroupId && (() => {
         const group = groups.find(g => g.id === editingPropertiesGroupId);
         if (!group) return null;
         return (
           <PropertiesModal
             config={group.properties || globalProperties}
-            title={`�?${groups.findIndex(g => g.id === editingPropertiesGroupId) + 1} 属性配置`}
+            title={`组 ${groups.findIndex(g => g.id === editingPropertiesGroupId) + 1} 属性配置`}
             onSave={(newConfig) => {
               setGroups(prev => {
                 const updated = [...prev];
@@ -1478,7 +1532,7 @@ function App() {
                 }
                 return updated;
               });
-              alert(`�?${groups.findIndex(g => g.id === editingPropertiesGroupId) + 1} 的属性配置已保存\n\n注意：需要点�?应用配置"才能将属性更新到垂线上`);
+              alert(`组 ${groups.findIndex(g => g.id === editingPropertiesGroupId) + 1} 的属性配置已保存\n\n注意：需要点击"应用配置"才能将属性更新到垂线上`);
             }}
             onClose={() => setEditingPropertiesGroupId(null)}
           />
