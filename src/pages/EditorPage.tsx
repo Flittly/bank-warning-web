@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import * as turf from '@turf/turf';
 import '../App.css';
 import type { SectionParams } from '../types/sections';
@@ -6,6 +6,7 @@ import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import EditorSidebar from '../components/EditorSidebar';
 import EditorMap from '../components/EditorMap';
 import { setCurrentBasicParamId } from '../services/basicParamsService';
+import { fetchTiffBounds } from '../services/tiffService';
 import type { SelectionGroup } from '../types/selection';
 import { stripZFromGeoJSON } from '../utils/geojson';
 import {
@@ -65,6 +66,8 @@ function EditorPage(props: EditorPageProps) {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
 
   const [showCrossLines, setShowCrossLines] = useState<boolean>(true);
+  const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
+  const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
 
   // 全局属性配置
   const [globalProperties, setGlobalProperties] = useState<SectionParams | null>(null);
@@ -183,6 +186,28 @@ function EditorPage(props: EditorPageProps) {
       return changed ? turf.featureCollection(features as any) : prev;
     });
   };
+
+  useEffect(() => {
+    if (!showTiffBounds || tiffBoundsData) return;
+    fetchTiffBounds().then((data) => {
+      if (data) setTiffBoundsData(data);
+    });
+  }, [showTiffBounds, tiffBoundsData]);
+
+  const filteredTiffBoundsData = useMemo(() => {
+    if (!tiffBoundsData || selectedBasicParamIdState == null) return null;
+    const param = basicParamsList.find((p: any) => {
+      const pid = p.param_id ?? p.id;
+      return String(pid) === String(selectedBasicParamIdState);
+    });
+    if (!param) return null;
+    const demKeys = new Set([param.bench_id, param.ref_id].filter(Boolean));
+    if (demKeys.size === 0) return null;
+    const features = tiffBoundsData.features.filter((f: any) =>
+      demKeys.has(f.properties?.tiff_key)
+    );
+    return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
+  }, [tiffBoundsData, selectedBasicParamIdState, basicParamsList]);
 
   const validateSectionAsync = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
     try {
@@ -1914,6 +1939,8 @@ function EditorPage(props: EditorPageProps) {
         applyCrossLineGeometriesLocal={applyCrossLineGeometriesLocal}
         persistCrossLineGeometry={persistCrossLineGeometry}
         createCrossLineByEndpoints={createCrossLineByEndpoints}
+        tiffBoundsData={filteredTiffBoundsData}
+        showTiffBounds={showTiffBounds}
       />
       <EditorSidebar
         uploadedData={uploadedData}
@@ -1977,6 +2004,8 @@ function EditorPage(props: EditorPageProps) {
         reverseSelectedCrossLine={reverseSelectedCrossLine}
         showCrossLines={showCrossLines}
         setShowCrossLines={setShowCrossLines}
+        showTiffBounds={showTiffBounds}
+        setShowTiffBounds={setShowTiffBounds}
         handleStartAnalysis={handleStartAnalysis}
         onClear={onClear}
         handleFileUpload={handleFileUpload}

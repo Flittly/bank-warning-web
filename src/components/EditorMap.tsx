@@ -109,6 +109,8 @@ interface EditorMapProps {
   ) => void;
   persistCrossLineGeometry: (crossLineIndex: number, geometry: GeoJSON.LineString) => Promise<void>;
   createCrossLineByEndpoints: (start: number[], end: number[]) => void;
+  tiffBoundsData: GeoJSON.FeatureCollection | null;
+  showTiffBounds: boolean;
 }
 
 function EditorMap(props: EditorMapProps) {
@@ -138,6 +140,8 @@ function EditorMap(props: EditorMapProps) {
     applyCrossLineGeometriesLocal,
     persistCrossLineGeometry,
     createCrossLineByEndpoints,
+    tiffBoundsData,
+    showTiffBounds,
   } = props;
 
   const mapContainer = useRef<HTMLDivElement | null>(null);
@@ -284,6 +288,22 @@ function EditorMap(props: EditorMapProps) {
       map.once('idle', updateMapSources);
     }
   }, [perpendicularData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource('tiff-bounds') as mapboxgl.GeoJSONSource;
+    if (source) {
+      source.setData(tiffBoundsData || turf.featureCollection([]));
+    }
+  }, [tiffBoundsData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    map.setLayoutProperty('tiff-bounds-fill', 'visibility', showTiffBounds ? 'visible' : 'none');
+    map.setLayoutProperty('tiff-bounds-line', 'visibility', showTiffBounds ? 'visible' : 'none');
+  }, [showTiffBounds]);
 
   // 同步上传的数据到地图，并在首次上传时适配视图范围
   useEffect(() => {
@@ -456,6 +476,7 @@ function EditorMap(props: EditorMapProps) {
       map.addSource('snap-point', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('active-line', { type: 'geojson', data: turf.featureCollection([]), lineMetrics: true });
       map.addSource('selected-shore-lines', { type: 'geojson', data: turf.featureCollection([]) });
+      map.addSource('tiff-bounds', { type: 'geojson', data: turf.featureCollection([]) });
 
       map.addLayer({
         id: 'uploaded-lines-hit-target',
@@ -497,6 +518,33 @@ function EditorMap(props: EditorMapProps) {
         paint: {
           'line-color': '#10b981',
           'line-width': 6,
+        },
+      });
+
+      map.addLayer({
+        id: 'tiff-bounds-fill',
+        type: 'fill',
+        source: 'tiff-bounds',
+        filter: ['==', '$type', 'Polygon'],
+        paint: {
+          'fill-color': '#3b82f6',
+          'fill-opacity': 0.15,
+        },
+        layout: {
+          'visibility': showTiffBounds ? 'visible' : 'none',
+        },
+      });
+      map.addLayer({
+        id: 'tiff-bounds-line',
+        type: 'line',
+        source: 'tiff-bounds',
+        filter: ['==', '$type', 'Polygon'],
+        paint: {
+          'line-color': '#2563eb',
+          'line-width': 2,
+        },
+        layout: {
+          'visibility': showTiffBounds ? 'visible' : 'none',
         },
       });
 

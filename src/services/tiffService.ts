@@ -170,6 +170,20 @@ export async function deleteTiffResource(tiffKey: string): Promise<void> {
 
 const formatOptional = (value: string | undefined) => (value ? value : '未知');
 
+export async function fetchTiffBounds(): Promise<GeoJSON.FeatureCollection | null> {
+  try {
+    const res = await fetch('/v0/bank/tiff-bounds');
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (json?.success && json?.data) {
+      return json.data as GeoJSON.FeatureCollection;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function formatTiffResourceLabel(resource: TiffResource): string {
   const segment = formatOptional(resource.segment ?? resource.region_code);
   const year = formatOptional(resource.year);

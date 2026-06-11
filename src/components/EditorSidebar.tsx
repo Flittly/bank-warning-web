@@ -84,6 +84,8 @@ interface EditorSidebarProps {
   reverseSelectedCrossLine: () => void;
   showCrossLines: boolean;
   setShowCrossLines: (v: boolean) => void;
+  showTiffBounds: boolean;
+  setShowTiffBounds: (v: boolean) => void;
   handleStartAnalysis: () => void;
   onClear: () => void;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -151,6 +153,8 @@ function EditorSidebar(props: EditorSidebarProps) {
     reverseSelectedCrossLine,
     showCrossLines,
     setShowCrossLines,
+    showTiffBounds,
+    setShowTiffBounds,
     handleStartAnalysis,
     onClear,
     handleFileUpload,
@@ -707,6 +711,9 @@ function EditorSidebar(props: EditorSidebarProps) {
             <button type="button" className={styles.outlineButton} onClick={() => setShowCrossLines(!showCrossLines)} title={showCrossLines ? '隐藏设计' : '显示设计'} aria-label={showCrossLines ? '隐藏设计' : '显示设计'}>
               {showCrossLines ? <EyeOff size={16} /> : <Eye size={16} />} 
               {showCrossLines ? '隐藏设计' : '显示设计'}
+            </button>
+            <button type="button" className={styles.outlineButton} onClick={() => setShowTiffBounds(!showTiffBounds)} title={showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'} aria-label={showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'}>
+              <Layers size={16} /> {showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'}
             </button>
             <button type="button" className={styles.outlineButton} onClick={onClear} title="清空" aria-label="清空">
               <Eraser size={16} /> 清空
