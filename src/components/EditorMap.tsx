@@ -111,6 +111,7 @@ interface EditorMapProps {
   createCrossLineByEndpoints: (start: number[], end: number[]) => void;
   tiffBoundsData: GeoJSON.FeatureCollection | null;
   showTiffBounds: boolean;
+  resizeTrigger: number;
 }
 
 function EditorMap(props: EditorMapProps) {
@@ -142,6 +143,7 @@ function EditorMap(props: EditorMapProps) {
     createCrossLineByEndpoints,
     tiffBoundsData,
     showTiffBounds,
+    resizeTrigger,
   } = props;
 
   const mapContainer = useRef<HTMLDivElement | null>(null);
@@ -304,6 +306,12 @@ function EditorMap(props: EditorMapProps) {
     map.setLayoutProperty('tiff-bounds-fill', 'visibility', showTiffBounds ? 'visible' : 'none');
     map.setLayoutProperty('tiff-bounds-line', 'visibility', showTiffBounds ? 'visible' : 'none');
   }, [showTiffBounds]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    requestAnimationFrame(() => map.resize());
+  }, [resizeTrigger]);
 
   // 同步上传的数据到地图，并在首次上传时适配视图范围
   useEffect(() => {

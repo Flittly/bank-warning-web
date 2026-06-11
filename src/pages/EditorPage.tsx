@@ -5,6 +5,9 @@ import type { SectionParams } from '../types/sections';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import EditorSidebar from '../components/EditorSidebar';
 import EditorMap from '../components/EditorMap';
+import ChatPanel from '../components/ChatPanel';
+import ResizeHandle from '../components/ResizeHandle';
+import { MessageCircle } from 'lucide-react';
 import { setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
 import type { SelectionGroup } from '../types/selection';
@@ -66,6 +69,10 @@ function EditorPage(props: EditorPageProps) {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
 
   const [showCrossLines, setShowCrossLines] = useState<boolean>(true);
+  const [chatCollapsed, setChatCollapsed] = useState<boolean>(false);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(350);
+  const [rightPanelWidth, setRightPanelWidth] = useState(350);
+  const [resizeTrigger, setResizeTrigger] = useState(0);
   const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
   const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
 
@@ -1912,107 +1919,130 @@ function EditorPage(props: EditorPageProps) {
   const totalSelectedSegments = groups.filter(g => g.end !== null).length;
 
   return (
-    <div className="map-wrapper">
-      <EditorMap
-        perpendicularData={perpendicularData}
-        uploadedData={uploadedData}
-        groups={groups}
-        showCrossLines={showCrossLines}
-        isFixingShoreLineReversed={isFixingShoreLineReversed}
-        onFixSelectedShoreLineReversed={fixSelectedShoreLineReversed}
-        isSelectingShoreLines={isSelectingShoreLines}
-        isSelectingStartEnd={isSelectingStartEnd}
-        isSelectingCrossLines={isSelectingCrossLines}
-        crossLineControlMode={crossLineControlMode}
-        crossLineEditMode={crossLineEditMode}
-        selectedLines={selectedLines}
-        setSelectedLines={setSelectedLines}
-        setGroups={setGroups}
-        selectedCrossLineIndex={selectedCrossLineIndex}
-        setSelectedCrossLineIndex={setSelectedCrossLineIndex}
-        selectedCrossLineIndices={selectedCrossLineIndices}
-        setSelectedCrossLineIndices={setSelectedCrossLineIndices}
-        globalInterval={globalInterval}
-        globalLength={globalLength}
-        createCrossLineAtPoint={createCrossLineAtPoint}
-        updateCrossLineGeometryLocal={updateCrossLineGeometryLocal}
-        applyCrossLineGeometriesLocal={applyCrossLineGeometriesLocal}
-        persistCrossLineGeometry={persistCrossLineGeometry}
-        createCrossLineByEndpoints={createCrossLineByEndpoints}
-        tiffBoundsData={filteredTiffBoundsData}
-        showTiffBounds={showTiffBounds}
-      />
-      <EditorSidebar
-        uploadedData={uploadedData}
-        bankGroups={bankGroups}
-        bankList={bankList}
-        deleteBankById={deleteBankById}
-        deleteBanksByIds={deleteBanksByIds}
-        smoothSelectedShoreLines={smoothSelectedShoreLines}
-        selectedBankGroup={selectedBankGroup}
-        setSelectedBankGroup={handleSelectBanksFromDropdown}
-        deleteBankGroup={deleteBankGroup}
-        loadedBanks={loadedBanks}
-        selectedLoadedBanks={selectedLoadedBanks}
-        setSelectedLoadedBanks={setSelectedLoadedBanks}
-        deleteLoadedBanks={deleteLoadedBanks}
-        basicParamsList={basicParamsList}
-        selectedBasicParamIdState={selectedBasicParamIdState}
-        totalSelectedSegments={totalSelectedSegments}
-        totalCrossLinesCount={totalCrossLinesCount}
-        globalInterval={globalInterval}
-        setGlobalInterval={setGlobalInterval}
-        globalLength={globalLength}
-        setGlobalLength={setGlobalLength}
-        isSelectingShoreLines={isSelectingShoreLines}
-        toggleShoreLineSelection={toggleShoreLineSelection}
-        toggleSelectAllShoreLines={toggleSelectAllShoreLines}
-        selectedLinesSize={selectedLines.size}
-        handleGenerateSections={handleGenerateSections}
-        handleGenerateComputeSections={handleGenerateComputeSections}
-        isFixingShoreLineReversed={isFixingShoreLineReversed}
-        toggleFixShoreLineReversed={toggleFixShoreLineReversed}
-        sendSelectedShoreLinesGeoJson={sendSelectedShoreLinesGeoJson}
-        perpendicularData={perpendicularData}
-        openGlobalPropertiesModal={openGlobalPropertiesModal}
-        isSelectingStartEnd={isSelectingStartEnd}
-        toggleStartEndSelection={toggleStartEndSelection}
-        groups={groups}
-        editingGroupId={editingGroupId}
-        handleEditGroup={handleEditGroup}
-        deleteGroup={deleteGroup}
-        updateGroupConfig={updateGroupConfig}
-        reverseCrossLinesInGroup={reverseCrossLinesInGroup}
-        deleteCrossLinesInGroup={deleteCrossLinesInGroup}
-        setEditingPropertiesGroupId={setEditingPropertiesGroupId}
-        handleApplyCustomSegments={handleApplyCustomSegments}
-        isSelectingCrossLines={isSelectingCrossLines}
-        toggleCrossLineSelection={toggleCrossLineSelection}
-        validateAllPendingSections={validateAllPendingSections}
-        deleteAllInvalidSections={deleteAllInvalidSections}
-        crossLineControlMode={crossLineControlMode}
-        setCrossLineControlMode={setCrossLineControlMode}
-        crossLineEditMode={crossLineEditMode}
-        setCrossLineEditMode={setCrossLineEditMode}
-        clearSelectedCrossLineSelection={clearSelectedCrossLineSelection}
-        selectedCrossLineIndex={selectedCrossLineIndex}
-        translateSelectedCrossLine={translateSelectedCrossLine}
-        rotateSelectedCrossLine={rotateSelectedCrossLine}
-        scaleSelectedCrossLine={scaleSelectedCrossLine}
-        configureSelectedCrossLineProperties={configureSelectedCrossLineProperties}
-        deleteSelectedCrossLine={deleteSelectedCrossLine}
-        reverseSelectedCrossLine={reverseSelectedCrossLine}
-        showCrossLines={showCrossLines}
-        setShowCrossLines={setShowCrossLines}
-        showTiffBounds={showTiffBounds}
-        setShowTiffBounds={setShowTiffBounds}
-        handleStartAnalysis={handleStartAnalysis}
-        onClear={onClear}
-        handleFileUpload={handleFileUpload}
-        handleSectionsFileUpload={handleSectionsFileUpload}
-        onExportSections={handleExportSections}
-        handleSelectBasicParam={handleSelectBasicParam}
-      />
+    <div className="editor-layout">
+      <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth }}>
+        <EditorSidebar
+          uploadedData={uploadedData}
+          bankGroups={bankGroups}
+          bankList={bankList}
+          deleteBankById={deleteBankById}
+          deleteBanksByIds={deleteBanksByIds}
+          smoothSelectedShoreLines={smoothSelectedShoreLines}
+          selectedBankGroup={selectedBankGroup}
+          setSelectedBankGroup={handleSelectBanksFromDropdown}
+          deleteBankGroup={deleteBankGroup}
+          loadedBanks={loadedBanks}
+          selectedLoadedBanks={selectedLoadedBanks}
+          setSelectedLoadedBanks={setSelectedLoadedBanks}
+          deleteLoadedBanks={deleteLoadedBanks}
+          basicParamsList={basicParamsList}
+          selectedBasicParamIdState={selectedBasicParamIdState}
+          totalSelectedSegments={totalSelectedSegments}
+          totalCrossLinesCount={totalCrossLinesCount}
+          globalInterval={globalInterval}
+          setGlobalInterval={setGlobalInterval}
+          globalLength={globalLength}
+          setGlobalLength={setGlobalLength}
+          isSelectingShoreLines={isSelectingShoreLines}
+          toggleShoreLineSelection={toggleShoreLineSelection}
+          toggleSelectAllShoreLines={toggleSelectAllShoreLines}
+          selectedLinesSize={selectedLines.size}
+          handleGenerateSections={handleGenerateSections}
+          handleGenerateComputeSections={handleGenerateComputeSections}
+          isFixingShoreLineReversed={isFixingShoreLineReversed}
+          toggleFixShoreLineReversed={toggleFixShoreLineReversed}
+          sendSelectedShoreLinesGeoJson={sendSelectedShoreLinesGeoJson}
+          perpendicularData={perpendicularData}
+          openGlobalPropertiesModal={openGlobalPropertiesModal}
+          isSelectingStartEnd={isSelectingStartEnd}
+          toggleStartEndSelection={toggleStartEndSelection}
+          groups={groups}
+          editingGroupId={editingGroupId}
+          handleEditGroup={handleEditGroup}
+          deleteGroup={deleteGroup}
+          updateGroupConfig={updateGroupConfig}
+          reverseCrossLinesInGroup={reverseCrossLinesInGroup}
+          deleteCrossLinesInGroup={deleteCrossLinesInGroup}
+          setEditingPropertiesGroupId={setEditingPropertiesGroupId}
+          handleApplyCustomSegments={handleApplyCustomSegments}
+          isSelectingCrossLines={isSelectingCrossLines}
+          toggleCrossLineSelection={toggleCrossLineSelection}
+          validateAllPendingSections={validateAllPendingSections}
+          deleteAllInvalidSections={deleteAllInvalidSections}
+          crossLineControlMode={crossLineControlMode}
+          setCrossLineControlMode={setCrossLineControlMode}
+          crossLineEditMode={crossLineEditMode}
+          setCrossLineEditMode={setCrossLineEditMode}
+          clearSelectedCrossLineSelection={clearSelectedCrossLineSelection}
+          selectedCrossLineIndex={selectedCrossLineIndex}
+          translateSelectedCrossLine={translateSelectedCrossLine}
+          rotateSelectedCrossLine={rotateSelectedCrossLine}
+          scaleSelectedCrossLine={scaleSelectedCrossLine}
+          configureSelectedCrossLineProperties={configureSelectedCrossLineProperties}
+          deleteSelectedCrossLine={deleteSelectedCrossLine}
+          reverseSelectedCrossLine={reverseSelectedCrossLine}
+          showCrossLines={showCrossLines}
+          setShowCrossLines={setShowCrossLines}
+          showTiffBounds={showTiffBounds}
+          setShowTiffBounds={setShowTiffBounds}
+          handleStartAnalysis={handleStartAnalysis}
+          onClear={onClear}
+          handleFileUpload={handleFileUpload}
+          handleSectionsFileUpload={handleSectionsFileUpload}
+          onExportSections={handleExportSections}
+          handleSelectBasicParam={handleSelectBasicParam}
+        />
+      </div>
+      <ResizeHandle onResize={(delta) => { setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta))); setResizeTrigger(t => t + 1); }} />
+      <div className="editor-map-panel">
+        <EditorMap
+          perpendicularData={perpendicularData}
+          uploadedData={uploadedData}
+          groups={groups}
+          showCrossLines={showCrossLines}
+          isFixingShoreLineReversed={isFixingShoreLineReversed}
+          onFixSelectedShoreLineReversed={fixSelectedShoreLineReversed}
+          isSelectingShoreLines={isSelectingShoreLines}
+          isSelectingStartEnd={isSelectingStartEnd}
+          isSelectingCrossLines={isSelectingCrossLines}
+          crossLineControlMode={crossLineControlMode}
+          crossLineEditMode={crossLineEditMode}
+          selectedLines={selectedLines}
+          setSelectedLines={setSelectedLines}
+          setGroups={setGroups}
+          selectedCrossLineIndex={selectedCrossLineIndex}
+          setSelectedCrossLineIndex={setSelectedCrossLineIndex}
+          selectedCrossLineIndices={selectedCrossLineIndices}
+          setSelectedCrossLineIndices={setSelectedCrossLineIndices}
+          globalInterval={globalInterval}
+          globalLength={globalLength}
+          createCrossLineAtPoint={createCrossLineAtPoint}
+          updateCrossLineGeometryLocal={updateCrossLineGeometryLocal}
+          applyCrossLineGeometriesLocal={applyCrossLineGeometriesLocal}
+          persistCrossLineGeometry={persistCrossLineGeometry}
+          createCrossLineByEndpoints={createCrossLineByEndpoints}
+          tiffBoundsData={filteredTiffBoundsData}
+          showTiffBounds={showTiffBounds}
+          resizeTrigger={resizeTrigger}
+        />
+        <button
+          onClick={() => { setChatCollapsed(!chatCollapsed); setTimeout(() => setResizeTrigger(t => t + 1), 350); }}
+          style={{
+            position: 'absolute',             top: 140, right: 12, zIndex: 10,
+            background: '#ffffff', border: '1px solid #e2e8f0',
+            borderRadius: 6, padding: '6px 10px', cursor: 'pointer',
+            fontSize: '0.8rem', color: '#64748b',
+            display: 'flex', alignItems: 'center', gap: 4,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          }}
+          title={chatCollapsed ? '展开聊天' : '收起聊天'}
+        >
+          <MessageCircle size={16} />
+          {chatCollapsed ? 'AI' : '收起'}
+        </button>
+      </div>
+      {!chatCollapsed && <ResizeHandle onResize={(delta) => { setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta))); setResizeTrigger(t => t + 1); }} />}
+      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} />
 
       {/* 全局属性配置弹窗 */}
       {showGlobalPropertiesModal && globalProperties && (

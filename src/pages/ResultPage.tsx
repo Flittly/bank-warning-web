@@ -4,6 +4,12 @@ import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '../App.css';
 import { getVerticalFootCoordsFromAny, getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
+import ChatPanel from '../components/ChatPanel';
+import ResizeHandle from '../components/ResizeHandle';
+import WorkspacePanel from '../components/WorkspacePanel';
+import type { ReportTab } from '../components/WorkspacePanel';
+import VerticalResizeHandle from '../components/VerticalResizeHandle';
+import { FileText, MessageCircle } from 'lucide-react';
 
 // 与 EditorPage 保持一致的 Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -163,11 +169,52 @@ function ResultPage(props: ResultPageProps) {
   const [matrixSectionName, setMatrixSectionName] = useState<string | null>(null);
   const [matrixDetail, setMatrixDetail] = useState<any | null>(null);
 
+  const [chatCollapsed, setChatCollapsed] = useState<boolean>(false);
+  const [resizeTrigger, setResizeTrigger] = useState(0);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(350);
+  const [rightPanelWidth, setRightPanelWidth] = useState(350);
+  const [reportTabs, setReportTabs] = useState<ReportTab[]>([]);
+  const [activeReportTab, setActiveReportTab] = useState(0);
+  const [workspaceHeight, setWorkspaceHeight] = useState(300);
+  const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
+
   const profilesCacheRef = useRef<Record<string, Record<string, SectionProfile>>>({});
   const profilesPromiseRef = useRef<Record<string, Promise<Record<string, SectionProfile>> | null>>({});
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileDetail, setProfileDetail] = useState<SectionProfile | null>(null);
+
+  const handleGenerateReport = async (taskId: string, taskName: string) => {
+    setGeneratingTaskId(taskId);
+    try {
+      const res = await fetch(`/v0/bank/ai/agent/report/task/${taskId}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.data) {
+        const content = String(data.data).replace(/\.\/([^\s)]+\.png)/g, '/v0/bank/ai/viz-output/$1');
+        setReportTabs(prev => {
+          const existing = prev.findIndex(t => t.taskId === taskId);
+          const newTab: ReportTab = { taskId, taskName, content };
+          if (existing >= 0) {
+            const next = [...prev];
+            next[existing] = newTab;
+            setActiveReportTab(existing);
+            return next;
+          }
+          setActiveReportTab(prev.length);
+          return [...prev, newTab];
+        });
+        if (reportTabs.length === 0) {
+          setWorkspaceHeight(300);
+        }
+      } else {
+        alert('报告生成失败: ' + (data.error || '未知错误'));
+      }
+    } catch (e: any) {
+      alert('报告生成失败: ' + (e.message || '网络错误'));
+    } finally {
+      setGeneratingTaskId(null);
+    }
+  };
 
   useEffect(() => {
     selectedTaskRef.current = selectedTask;
@@ -1285,6 +1332,12 @@ function ResultPage(props: ResultPageProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    requestAnimationFrame(() => map.resize());
+  }, [resizeTrigger]);
+
   const progressPercent = useMemo(() => {
     if (!progress) return 0;
     if (progress.expectedTotal <= 0) return 0;
@@ -1298,192 +1351,244 @@ function ResultPage(props: ResultPageProps) {
   };
 
   return (
-    <div className="map-wrapper">
-      <div ref={mapContainer} className="map-full" />
-
-      {matrixOpen && (
-        <div className="matrix-modal-overlay" onClick={closeMatrixDetail}>
-          <div className="matrix-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="matrix-modal-header">
-              <div>
-                <div className="matrix-modal-title">断面矩阵详情</div>
-                <div className="matrix-modal-subtitle">
-                  {matrixSectionName ? `${matrixSectionName} | ` : ''}断面ID: {matrixSectionId || '-'}
-                </div>
-              </div>
-              <div className="matrix-modal-header-actions">
-                <button className="matrix-modal-download" onClick={downloadMatrixCSV} title="下载CSV数据">
-                  下载CSV
-                </button>
-                <button className="matrix-modal-close" onClick={closeMatrixDetail}>关闭</button>
-              </div>
-            </div>
-
-            <div className="matrix-body">
-              {matrixLoading ? (
-                <div className="matrix-loading">加载中...</div>
-              ) : matrixError ? (
-                <div className="matrix-error">{matrixError}</div>
-              ) : matrixDetail ? (
-                <>
-                  <div className="matrix-kv">
-                    <div className="matrix-kv-row"><span>case-id</span><span>{formatCellValue(matrixDetail['case-id'] ?? matrixDetail.case_id ?? matrixDetail.caseId)}</span></div>
-                    <div className="matrix-kv-row"><span>task_id</span><span>{formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId ?? matrixDetail.taskId)}</span></div>
-                    <div className="matrix-kv-row"><span>section_id</span><span>{formatCellValue(matrixDetail.section_id ?? matrixDetail.sectionId ?? matrixDetail.sectionId)}</span></div>
-                    <div className="matrix-kv-row"><span>section_name</span><span>{formatCellValue(matrixDetail.section_name ?? matrixDetail.sectionName ?? matrixDetail.section_name)}</span></div>
-                    <div className="matrix-kv-row"><span>region_code</span><span>{formatCellValue(matrixDetail.region_code ?? matrixDetail.regionCode ?? matrixDetail.region_code)}</span></div>
-                    <div className="matrix-kv-row"><span>bank_id</span><span>{formatCellValue(matrixDetail.bank_id ?? matrixDetail.bankId ?? matrixDetail.bank_id)}</span></div>
-                    <div className="matrix-kv-row"><span>run_time</span><span>{formatCellValue(matrixDetail.run_time ?? matrixDetail.runTime ?? matrixDetail.run_time)}</span></div>
-                    <div className="matrix-kv-row"><span>流量 (water_qs)</span><span>{formatCellValue(matrixDetail.water_qs ?? matrixDetail?.indicators?.water_qs ?? matrixDetail?.water_qs)}</span></div>
-                    <div className="matrix-kv-row"><span>潮差 (tidal_level)</span><span>{formatCellValue(matrixDetail.tidal_level ?? matrixDetail?.indicators?.tidal_level ?? matrixDetail?.tidal_level)}</span></div>
-                    <div className="matrix-kv-row"><span>风险等级</span><span>{formatCellValue(matrixDetail.risk_level ?? matrixDetail.riskLevel)}</span></div>
-                    
-                  </div>
-
-                  <div className="matrix-section-title">指标矩阵</div>
-                  <div className="matrix-assessment-list">
-                    {(() => {
-                      const indicators = matrixDetail?.indicators?.thresholds ?? matrixDetail?.thresholds ?? {};
-                      const renderedGroups = MATRIX_GROUPS.map((group, idx) => renderAssessmentGroup(group, indicators, idx)).filter(Boolean);
-                      if (renderedGroups.length === 0) {
-                        return <div className="matrix-empty">无矩阵数据</div>;
-                      }
-                      return renderedGroups;
-                    })()}
-                  </div>
-                </>
-              ) : (
-                <div className="matrix-empty">无矩阵数据</div>
-              )}
-
-              <div className="profile-section-title">断面剖面折线</div>
-              {profileLoading ? (
-                <div className="profile-loading">加载中...</div>
-              ) : profileError ? (
-                <div className="profile-error">{profileError}</div>
-              ) : (
-                renderProfileChart(getProfileSeries(profileDetail))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {progressOpen && selectedTask && (
-        <div className="progress-drawer" onClick={(e) => e.stopPropagation()}>
-          <div className="progress-modal progress-modal-drawer" >
-            <div className="progress-modal-header">
-              <div>
-                <div className="progress-modal-title">计算进度</div>
-                <div className="progress-modal-subtitle">
-                  任务: {progress?.taskName || selectedTask}
-                  {progress?.status ? ` | 状态: ${progress.status}` : ''}
-                </div>
-              </div>
-              <button className="progress-modal-close" onClick={() => setProgressOpen(false)}>关闭</button>
-            </div>
-
-            <progress
-              className="progress-bar-native"
-              value={progress?.processedCount ?? 0}
-              max={Math.max(1, progress?.expectedTotal ?? 1)}
-            />
-
-            <div className="progress-stats">
-              <div>进度: {progressPercent}%</div>
-              <div>
-                已处理: {progress?.processedCount ?? 0}/{progress?.expectedTotal ?? 0}
-                {' | '}成功: {progress?.successCount ?? 0}
-                {' | '}失败: {progress?.errorCount ?? 0}
-              </div>
-              <div className="progress-updated">最后更新: {progress?.lastUpdatedAt ? new Date(progress.lastUpdatedAt).toLocaleTimeString() : '-'}</div>
-            </div>
-
-            {(progress?.errors?.length ?? 0) > 0 ? (
-              <div className="progress-errors">
-                <div className="progress-errors-title">出错断面</div>
-                <div className="progress-errors-list">
-                  {progress!.errors.map(err => {
-                    const expanded = Boolean(expandedErrorIds[err.section_id]);
-                    return (
-                      <div key={err.section_id} className="progress-error-item">
-                        <div className="progress-error-row">
-                          <div className="progress-error-main">
-                            <div className="progress-error-id">{err.section_name || err.section_id}</div>
-                            <div className="progress-error-msg">{err.message}</div>
-                          </div>
-                          <button className="progress-error-toggle" onClick={() => toggleErrorExpanded(err.section_id)}>
-                            {expanded ? '收起' : '查看详情'}
-                          </button>
-                        </div>
-
-                        {expanded && (
-                          <div className="progress-error-detail">
-                            {err.detailError && <div className="progress-error-detail-error">{err.detailError}</div>}
-                            <pre className="progress-error-pre">{JSON.stringify(err.detail ?? err.raw ?? err, null, 2)}</pre>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="progress-no-errors">暂无断面错误信息</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="upload-control result-sidebar">
-        <div className="sidebar-header">
-          <h4>任务列表</h4>
-          <button 
-            className={`toggle-sections-btn ${!showSections ? 'hidden' : ''}`}
-            onClick={() => setShowSections(!showSections)}
-          >
-            {showSections ? '隐藏断面' : '显示断面'}
-          </button>
-        </div>
-        <div className="task-list-container">
-          {taskList.length === 0 && !loading && <p className="empty-hint">暂无任务</p>}
-          {taskList.map(task => (
-            <div 
-              key={task.task_id} 
-              className={`task-item ${selectedTask === task.task_id ? 'active' : ''}`}
-              onClick={() => handleTaskClick(task.task_id)}
+    <div className="editor-layout">
+      <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth }}>
+        <div className="upload-control result-sidebar" style={{ position: 'static', width: '100%', height: '100%', top: 0, left: 0 }}>
+          <div className="sidebar-header">
+            <h4>任务列表</h4>
+            <button 
+              className={`toggle-sections-btn ${!showSections ? 'hidden' : ''}`}
+              onClick={() => setShowSections(!showSections)}
             >
-              <div className="task-title">{task.task_name}</div>
-              <div className="task-meta">
-                ID: {task.task_id} | {new Date(task.created_at).toLocaleDateString()}
+              {showSections ? '隐藏断面' : '显示断面'}
+            </button>
+          </div>
+          <div className="task-list-container">
+            {taskList.length === 0 && !loading && <p className="empty-hint">暂无任务</p>}
+            {taskList.map(task => (
+              <div 
+                key={task.task_id} 
+                className={`task-item ${selectedTask === task.task_id ? 'active' : ''}`}
+                onClick={() => handleTaskClick(task.task_id)}
+              >
+                <div className="task-title">{task.task_name}</div>
+                <div className="task-meta">
+                  ID: {task.task_id} | {new Date(task.created_at).toLocaleDateString()}
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleGenerateReport(task.task_id, task.task_name); }}
+                  disabled={generatingTaskId === task.task_id}
+                  style={{
+                    marginTop: 6, padding: '3px 10px', fontSize: '0.75rem',
+                    background: generatingTaskId === task.task_id ? '#94a3b8' : '#2563eb',
+                    color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                  }}
+                >
+                  <FileText size={12} />
+                  {generatingTaskId === task.task_id ? '生成中...' : 'AI 出报告'}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            className="delete-task-btn"
+            disabled={!selectedTask || loading}
+            onClick={handleDeleteTask}
+          >
+            删除选中任务
+          </button>
+
+          {loading && <div className="loading-spinner">数据加载中...</div>}
+          {error && <p className="error-message">错误: {error}</p>}
+          
+          {selectedTask && !loading && (
+            <div className="result-info">
+              <h5>当前分析结果</h5>
+              <div className="legend">
+                <div className="legend-item"><span className="dot high"></span>极高风险</div>
+                <div className="legend-item"><span className="dot medium"></span>高风险</div>
+                <div className="legend-item"><span className="dot low"></span>一般风险</div>
+                <div className="legend-item"><span className="dot no"></span>低/无风险</div>
               </div>
             </div>
-          ))}
+          )}
         </div>
+      </div>
+      <ResizeHandle onResize={(delta) => { setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta))); setResizeTrigger(t => t + 1); }} />
+      <div className="editor-map-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div ref={mapContainer} className="map-full" style={{ flex: 1 }} />
 
-        <button
-          className="delete-task-btn"
-          disabled={!selectedTask || loading}
-          onClick={handleDeleteTask}
-        >
-          删除选中任务
-        </button>
+        {matrixOpen && (
+          <div className="matrix-modal-overlay" onClick={closeMatrixDetail}>
+            <div className="matrix-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="matrix-modal-header">
+                <div>
+                  <div className="matrix-modal-title">断面矩阵详情</div>
+                  <div className="matrix-modal-subtitle">
+                    {matrixSectionName ? `${matrixSectionName} | ` : ''}断面ID: {matrixSectionId || '-'}
+                  </div>
+                </div>
+                <div className="matrix-modal-header-actions">
+                  <button className="matrix-modal-download" onClick={downloadMatrixCSV} title="下载CSV数据">
+                    下载CSV
+                  </button>
+                  <button className="matrix-modal-close" onClick={closeMatrixDetail}>关闭</button>
+                </div>
+              </div>
 
-        {loading && <div className="loading-spinner">数据加载中...</div>}
-        {error && <p className="error-message">错误: {error}</p>}
-        
-        {selectedTask && !loading && (
-          <div className="result-info">
-            <h5>当前分析结果</h5>
-            <div className="legend">
-              <div className="legend-item"><span className="dot high"></span>极高风险</div>
-              <div className="legend-item"><span className="dot medium"></span>高风险</div>
-              <div className="legend-item"><span className="dot low"></span>一般风险</div>
-              <div className="legend-item"><span className="dot no"></span>低/无风险</div>
+              <div className="matrix-body">
+                {matrixLoading ? (
+                  <div className="matrix-loading">加载中...</div>
+                ) : matrixError ? (
+                  <div className="matrix-error">{matrixError}</div>
+                ) : matrixDetail ? (
+                  <>
+                    <div className="matrix-kv">
+                      <div className="matrix-kv-row"><span>case-id</span><span>{formatCellValue(matrixDetail['case-id'] ?? matrixDetail.case_id ?? matrixDetail.caseId)}</span></div>
+                      <div className="matrix-kv-row"><span>task_id</span><span>{formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId ?? matrixDetail.taskId)}</span></div>
+                      <div className="matrix-kv-row"><span>section_id</span><span>{formatCellValue(matrixDetail.section_id ?? matrixDetail.sectionId ?? matrixDetail.sectionId)}</span></div>
+                      <div className="matrix-kv-row"><span>section_name</span><span>{formatCellValue(matrixDetail.section_name ?? matrixDetail.sectionName ?? matrixDetail.section_name)}</span></div>
+                      <div className="matrix-kv-row"><span>region_code</span><span>{formatCellValue(matrixDetail.region_code ?? matrixDetail.regionCode ?? matrixDetail.region_code)}</span></div>
+                      <div className="matrix-kv-row"><span>bank_id</span><span>{formatCellValue(matrixDetail.bank_id ?? matrixDetail.bankId ?? matrixDetail.bank_id)}</span></div>
+                      <div className="matrix-kv-row"><span>run_time</span><span>{formatCellValue(matrixDetail.run_time ?? matrixDetail.runTime ?? matrixDetail.run_time)}</span></div>
+                      <div className="matrix-kv-row"><span>流量 (water_qs)</span><span>{formatCellValue(matrixDetail.water_qs ?? matrixDetail?.indicators?.water_qs ?? matrixDetail?.water_qs)}</span></div>
+                      <div className="matrix-kv-row"><span>潮差 (tidal_level)</span><span>{formatCellValue(matrixDetail.tidal_level ?? matrixDetail?.indicators?.tidal_level ?? matrixDetail?.tidal_level)}</span></div>
+                      <div className="matrix-kv-row"><span>风险等级</span><span>{formatCellValue(matrixDetail.risk_level ?? matrixDetail.riskLevel)}</span></div>
+                      
+                    </div>
+
+                    <div className="matrix-section-title">指标矩阵</div>
+                    <div className="matrix-assessment-list">
+                      {(() => {
+                        const indicators = matrixDetail?.indicators?.thresholds ?? matrixDetail?.thresholds ?? {};
+                        const renderedGroups = MATRIX_GROUPS.map((group, idx) => renderAssessmentGroup(group, indicators, idx)).filter(Boolean);
+                        if (renderedGroups.length === 0) {
+                          return <div className="matrix-empty">无矩阵数据</div>;
+                        }
+                        return renderedGroups;
+                      })()}
+                    </div>
+                  </>
+                ) : (
+                  <div className="matrix-empty">无矩阵数据</div>
+                )}
+
+                <div className="profile-section-title">断面剖面折线</div>
+                {profileLoading ? (
+                  <div className="profile-loading">加载中...</div>
+                ) : profileError ? (
+                  <div className="profile-error">{profileError}</div>
+                ) : (
+                  renderProfileChart(getProfileSeries(profileDetail))
+                )}
+              </div>
             </div>
           </div>
         )}
+
+        {progressOpen && selectedTask && (
+          <div className="progress-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="progress-modal progress-modal-drawer" >
+              <div className="progress-modal-header">
+                <div>
+                  <div className="progress-modal-title">计算进度</div>
+                  <div className="progress-modal-subtitle">
+                    任务: {progress?.taskName || selectedTask}
+                    {progress?.status ? ` | 状态: ${progress.status}` : ''}
+                  </div>
+                </div>
+                <button className="progress-modal-close" onClick={() => setProgressOpen(false)}>关闭</button>
+              </div>
+
+              <progress
+                className="progress-bar-native"
+                value={progress?.processedCount ?? 0}
+                max={Math.max(1, progress?.expectedTotal ?? 1)}
+              />
+
+              <div className="progress-stats">
+                <div>进度: {progressPercent}%</div>
+                <div>
+                  已处理: {progress?.processedCount ?? 0}/{progress?.expectedTotal ?? 0}
+                  {' | '}成功: {progress?.successCount ?? 0}
+                  {' | '}失败: {progress?.errorCount ?? 0}
+                </div>
+                <div className="progress-updated">最后更新: {progress?.lastUpdatedAt ? new Date(progress.lastUpdatedAt).toLocaleTimeString() : '-'}</div>
+              </div>
+
+              {(progress?.errors?.length ?? 0) > 0 ? (
+                <div className="progress-errors">
+                  <div className="progress-errors-title">出错断面</div>
+                  <div className="progress-errors-list">
+                    {progress!.errors.map(err => {
+                      const expanded = Boolean(expandedErrorIds[err.section_id]);
+                      return (
+                        <div key={err.section_id} className="progress-error-item">
+                          <div className="progress-error-row">
+                            <div className="progress-error-main">
+                              <div className="progress-error-id">{err.section_name || err.section_id}</div>
+                              <div className="progress-error-msg">{err.message}</div>
+                            </div>
+                            <button className="progress-error-toggle" onClick={() => toggleErrorExpanded(err.section_id)}>
+                              {expanded ? '收起' : '查看详情'}
+                            </button>
+                          </div>
+
+                          {expanded && (
+                            <div className="progress-error-detail">
+                              {err.detailError && <div className="progress-error-detail-error">{err.detailError}</div>}
+                              <pre className="progress-error-pre">{JSON.stringify(err.detail ?? err.raw ?? err, null, 2)}</pre>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="progress-no-errors">暂无断面错误信息</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => { setChatCollapsed(!chatCollapsed); setTimeout(() => setResizeTrigger(t => t + 1), 350); }}
+          style={{
+            position: 'absolute', top: 140, right: 12, zIndex: 10,
+            background: '#ffffff', border: '1px solid #e2e8f0',
+            borderRadius: 6, padding: '6px 10px', cursor: 'pointer',
+            fontSize: '0.8rem', color: '#64748b',
+            display: 'flex', alignItems: 'center', gap: 4,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          }}
+          title={chatCollapsed ? '展开聊天' : '收起聊天'}
+        >
+          <MessageCircle size={16} />
+          {chatCollapsed ? 'AI' : '收起'}
+        </button>
+        {reportTabs.length > 0 && (
+          <>
+            <VerticalResizeHandle onResize={(delta) => setWorkspaceHeight(h => Math.max(80, h + delta))} />
+            <WorkspacePanel
+              tabs={reportTabs}
+              activeTabIndex={activeReportTab}
+              onSelectTab={setActiveReportTab}
+              onCloseTab={(i) => {
+                setReportTabs(prev => prev.filter((_, idx) => idx !== i));
+                if (i <= activeReportTab && activeReportTab > 0) {
+                  setActiveReportTab(prev => Math.max(0, prev - 1));
+                }
+              }}
+              height={workspaceHeight}
+            />
+          </>
+        )}
       </div>
+      {!chatCollapsed && <ResizeHandle onResize={(delta) => { setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta))); setResizeTrigger(t => t + 1); }} />}
+      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} />
     </div>
   );
 }
