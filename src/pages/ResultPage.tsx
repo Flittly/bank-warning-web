@@ -207,13 +207,30 @@ function ResultPage(props: ResultPageProps) {
           setWorkspaceHeight(300);
         }
       } else {
-        alert('报告生成失败: ' + (data.error || '未知错误'));
+        alert(translateError(data.error || '未知错误'));
       }
     } catch (e: any) {
-      alert('报告生成失败: ' + (e.message || '网络错误'));
+      alert(translateError(e.message || '网络错误'));
     } finally {
       setGeneratingTaskId(null);
     }
+  };
+
+  const translateError = (msg: string) => {
+    const m = msg.toLowerCase();
+    if (m.includes('insufficient balance') || m.includes('402') || m.includes('insufficient_balance')) {
+      return 'DeepSeek API 余额不足，请前往 platform.deepseek.com 充值后再试。';
+    }
+    if (m.includes('401') || m.includes('unauthorized')) {
+      return 'API Key 无效或已过期，请检查配置。';
+    }
+    if (m.includes('429') || m.includes('rate limit')) {
+      return 'API 请求过于频繁，请稍后再试。';
+    }
+    if (m.includes('timeout') || m.includes('timed out')) {
+      return '请求超时，请检查网络后重试。';
+    }
+    return '报告生成失败: ' + msg;
   };
 
   useEffect(() => {
