@@ -9,7 +9,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { FileText, MessageCircle } from 'lucide-react';
+import { FileText, List, BarChart3, MessageCircle } from 'lucide-react';
 
 // 与 EditorPage 保持一致的 Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -177,6 +177,8 @@ function ResultPage(props: ResultPageProps) {
   const [activeReportTab, setActiveReportTab] = useState(0);
   const [workspaceHeight, setWorkspaceHeight] = useState(300);
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
+  const [reportList, setReportList] = useState<any[]>([]);
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'progress'>('tasks');
 
   const profilesCacheRef = useRef<Record<string, Record<string, SectionProfile>>>({});
   const profilesPromiseRef = useRef<Record<string, Promise<Record<string, SectionProfile>> | null>>({});
@@ -193,7 +195,7 @@ function ResultPage(props: ResultPageProps) {
         const content = String(data.data).replace(/\.\/([^\s)]+\.png)/g, '/v0/bank/ai/viz-output/$1');
         setReportTabs(prev => {
           const existing = prev.findIndex(t => t.taskId === taskId);
-          const newTab: ReportTab = { taskId, taskName, content };
+          const newTab: ReportTab = { taskId, taskName, content, filename: data.filename };
           if (existing >= 0) {
             const next = [...prev];
             next[existing] = newTab;
@@ -214,6 +216,39 @@ function ResultPage(props: ResultPageProps) {
     } finally {
       setGeneratingTaskId(null);
     }
+  };
+
+  const fetchReportList = async () => {
+    try {
+      const res = await fetch('/v0/bank/ai/reports');
+      const data = await res.json();
+      if (data.success) setReportList(data.reports || []);
+    } catch (e) { /* ignore */ }
+  };
+
+  const openReport = async (filename: string) => {
+    try {
+      const res = await fetch(`/v0/bank/ai/reports/${encodeURIComponent(filename)}`);
+      const data = await res.json();
+      if (data.success && data.content) {
+        const content = String(data.content).replace(/\.\/([^\s)]+\.png)/g, '/v0/bank/ai/viz-output/$1');
+        const taskId = filename.replace(/^report_/, '').replace(/_\d{8}_\d{6}\.md$/, '');
+        handleTaskClick(taskId);
+        setReportTabs(prev => {
+          const existing = prev.findIndex(t => t.taskId === taskId);
+          const tab: ReportTab = { taskId, taskName: filename, content, filename };
+          if (existing >= 0) {
+            const next = [...prev];
+            next[existing] = tab;
+            setActiveReportTab(existing);
+            return next;
+          }
+          setActiveReportTab(prev.length);
+          if (prev.length === 0) setWorkspaceHeight(300);
+          return [...prev, tab];
+        });
+      }
+    } catch (e) { /* ignore */ }
   };
 
   const translateError = (msg: string) => {
@@ -670,6 +705,10 @@ function ResultPage(props: ResultPageProps) {
     void handleTaskClick(initialTaskId);
   }, [initialTaskId, taskList, mapReady]);
 
+  useEffect(() => {
+    fetchReportList();
+  }, []);
+
   const parseResultsList = (data: any): any[] => {
     if (!data) return [];
     if (Array.isArray(data)) return data;
@@ -895,6 +934,7 @@ function ResultPage(props: ResultPageProps) {
     setProgressOpen(true);
     setProgress(null);
     setExpandedErrorIds({});
+    setActiveSidebarPanel('progress');
 
     // 清除地图上所有之前任务的图层和数据源
     const map = mapRef.current;
@@ -1369,67 +1409,212 @@ function ResultPage(props: ResultPageProps) {
 
   return (
     <div className="editor-layout">
-      <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth }}>
-        <div className="upload-control result-sidebar" style={{ position: 'static', width: '100%', height: '100%', top: 0, left: 0 }}>
-          <div className="sidebar-header">
-            <h4>任务列表</h4>
-            <button 
-              className={`toggle-sections-btn ${!showSections ? 'hidden' : ''}`}
-              onClick={() => setShowSections(!showSections)}
-            >
-              {showSections ? '隐藏断面' : '显示断面'}
-            </button>
-          </div>
-          <div className="task-list-container">
-            {taskList.length === 0 && !loading && <p className="empty-hint">暂无任务</p>}
-            {taskList.map(task => (
-              <div 
-                key={task.task_id} 
-                className={`task-item ${selectedTask === task.task_id ? 'active' : ''}`}
-                onClick={() => handleTaskClick(task.task_id)}
-              >
-                <div className="task-title">{task.task_name}</div>
-                <div className="task-meta">
-                  ID: {task.task_id} | {new Date(task.created_at).toLocaleDateString()}
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleGenerateReport(task.task_id, task.task_name); }}
-                  disabled={generatingTaskId === task.task_id}
-                  style={{
-                    marginTop: 6, padding: '3px 10px', fontSize: '0.75rem',
-                    background: generatingTaskId === task.task_id ? '#94a3b8' : '#2563eb',
-                    color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 4,
-                  }}
+      <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex' }}>
+        {/* Activity Bar - narrow icon column */}
+        <div style={{
+          width: 44, minWidth: 44, background: '#f1f5f9',
+          borderRight: '1px solid #e2e8f0',
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          paddingTop: 12, gap: 2,
+        }}>
+          <button
+            onClick={() => setActiveSidebarPanel('tasks')}
+            title="任务列表"
+            style={{
+              width: 38, height: 38, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 6, cursor: 'pointer',
+              background: activeSidebarPanel === 'tasks' ? '#e0e7ff' : 'transparent',
+              color: activeSidebarPanel === 'tasks' ? '#2563eb' : '#94a3b8',
+              gap: 1,
+            }}
+          ><List size={16} /></button>
+          <button
+            onClick={() => setActiveSidebarPanel('reports')}
+            title="报告查看"
+            style={{
+              width: 38, height: 38, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 6, cursor: 'pointer',
+              background: activeSidebarPanel === 'reports' ? '#e0e7ff' : 'transparent',
+              color: activeSidebarPanel === 'reports' ? '#2563eb' : '#94a3b8',
+              gap: 1,
+            }}
+          ><FileText size={16} /></button>
+          <button
+            onClick={() => setActiveSidebarPanel('progress')}
+            title="计算进度"
+            style={{
+              width: 38, height: 38, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 6, cursor: 'pointer',
+              background: activeSidebarPanel === 'progress' ? '#e0e7ff' : 'transparent',
+              color: activeSidebarPanel === 'progress' ? '#2563eb' : '#94a3b8',
+              gap: 1,
+            }}
+          ><BarChart3 size={16} /></button>
+        </div>
+
+        {/* Content panel - shows the active section only */}
+        <div className="upload-control result-sidebar" style={{ position: 'static', flex: 1, height: '100%', top: 0, left: 0 }}>
+          {/* === TASKS PANEL === */}
+          {activeSidebarPanel === 'tasks' && (
+            <>
+              <div className="sidebar-header">
+                <h4>任务列表</h4>
+                <button 
+                  className={`toggle-sections-btn ${!showSections ? 'hidden' : ''}`}
+                  onClick={() => setShowSections(!showSections)}
                 >
-                  <FileText size={12} />
-                  {generatingTaskId === task.task_id ? '生成中...' : 'AI 出报告'}
+                  {showSections ? '隐藏断面' : '显示断面'}
                 </button>
               </div>
-            ))}
-          </div>
-
-          <button
-            className="delete-task-btn"
-            disabled={!selectedTask || loading}
-            onClick={handleDeleteTask}
-          >
-            删除选中任务
-          </button>
-
-          {loading && <div className="loading-spinner">数据加载中...</div>}
-          {error && <p className="error-message">错误: {error}</p>}
-          
-          {selectedTask && !loading && (
-            <div className="result-info">
-              <h5>当前分析结果</h5>
-              <div className="legend">
-                <div className="legend-item"><span className="dot high"></span>极高风险</div>
-                <div className="legend-item"><span className="dot medium"></span>高风险</div>
-                <div className="legend-item"><span className="dot low"></span>一般风险</div>
-                <div className="legend-item"><span className="dot no"></span>低/无风险</div>
+              <div className="task-list-container">
+                {taskList.length === 0 && !loading && <p className="empty-hint">暂无任务</p>}
+                {taskList.map(task => (
+                  <div 
+                    key={task.task_id} 
+                    className={`task-item ${selectedTask === task.task_id ? 'active' : ''}`}
+                    onClick={() => handleTaskClick(task.task_id)}
+                  >
+                    <div className="task-title">{task.task_name}</div>
+                    <div className="task-meta">
+                      ID: {task.task_id} | {new Date(task.created_at).toLocaleDateString()}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleGenerateReport(task.task_id, task.task_name); }}
+                      disabled={generatingTaskId === task.task_id}
+                      style={{
+                        marginTop: 6, padding: '3px 10px', fontSize: '0.75rem',
+                        background: generatingTaskId === task.task_id ? '#94a3b8' : '#2563eb',
+                        color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                      }}
+                    >
+                      <FileText size={12} />
+                      {generatingTaskId === task.task_id ? '生成中...' : 'AI 出报告'}
+                    </button>
+                  </div>
+                ))}
               </div>
-            </div>
+
+              <button className="delete-task-btn" disabled={!selectedTask || loading} onClick={handleDeleteTask}>
+                删除选中任务
+              </button>
+
+              {loading && <div className="loading-spinner">数据加载中...</div>}
+              {error && <p className="error-message">错误: {error}</p>}
+              
+              {selectedTask && !loading && (
+                <div className="result-info">
+                  <h5>当前分析结果</h5>
+                  <div className="legend">
+                    <div className="legend-item"><span className="dot high"></span>极高风险</div>
+                    <div className="legend-item"><span className="dot medium"></span>高风险</div>
+                    <div className="legend-item"><span className="dot low"></span>一般风险</div>
+                    <div className="legend-item"><span className="dot no"></span>低/无风险</div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* === REPORTS PANEL === */}
+          {activeSidebarPanel === 'reports' && (
+            <>
+              <div className="sidebar-header">
+                <h4>报告查看</h4>
+              </div>
+              <div className="task-list-container" style={{ maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
+                {reportList.length === 0 && <p className="empty-hint">暂无报告</p>}
+                {reportList.map((r: any, i: number) => (
+                  <div key={r.filename || i} className="task-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => openReport(r.filename)}>
+                      <div className="task-title" style={{ fontSize: '0.8rem' }}>{r.taskId ? `任务 ${r.taskId}` : r.filename}</div>
+                      <div className="task-meta" style={{ fontSize: '0.7rem' }}>{r.time || ''}</div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!confirm('确定删除此报告？')) return;
+                        fetch(`/v0/bank/ai/reports/${encodeURIComponent(r.filename)}`, { method: 'DELETE' })
+                          .then(() => fetchReportList());
+                      }}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8', padding: '2px 4px' }}
+                      title="删除报告"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* === PROGRESS PANEL === */}
+          {activeSidebarPanel === 'progress' && (
+            <>
+              <div className="sidebar-header">
+                <h4>计算进度</h4>
+              </div>
+              {progressOpen && selectedTask ? (
+                <div style={{ flex: 1, overflow: 'auto' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: 8 }}>
+                    任务: {progress?.taskName || selectedTask}
+                    {progress?.status ? ` | 状态: ${progress.status}` : ''}
+                  </div>
+                  <progress
+                    value={progress?.processedCount ?? 0}
+                    max={Math.max(1, progress?.expectedTotal ?? 1)}
+                    style={{ width: '100%', height: 6, accentColor: '#2563eb' }}
+                  />
+                  <div style={{ fontSize: '0.72rem', marginTop: 6, color: '#64748b' }}>
+                    <div>进度: {progressPercent}% · 已处理: {progress?.processedCount ?? 0}/{progress?.expectedTotal ?? 0}</div>
+                    <div>成功: {progress?.successCount ?? 0} · 失败: {progress?.errorCount ?? 0}</div>
+                    <div style={{ marginTop: 2, fontSize: '0.65rem' }}>更新: {progress?.lastUpdatedAt ? new Date(progress.lastUpdatedAt).toLocaleTimeString() : '-'}</div>
+                  </div>
+                  {(progress?.errors?.length ?? 0) > 0 ? (
+                    <div className="task-list-container" style={{ marginTop: 10 }}>
+                      {progress!.errors.map(err => {
+                        const expanded = Boolean(expandedErrorIds[err.section_id]);
+                        return (
+                          <div key={err.section_id} className="task-item" style={{ cursor: 'default' }}>
+                            <div className="task-title" style={{ fontSize: '0.8rem', color: '#ef4444' }}>{err.section_name || err.section_id}</div>
+                            <div className="task-meta" style={{ fontSize: '0.7rem' }}>{err.message}</div>
+                            <button
+                              onClick={() => toggleErrorExpanded(err.section_id)}
+                              style={{
+                                marginTop: 4, width: '100%', border: '1px solid #e2e8f0',
+                                background: '#f8fafc', borderRadius: 4, cursor: 'pointer',
+                                fontSize: '0.7rem', color: '#2563eb', padding: '4px 10px',
+                                textAlign: 'center',
+                              }}
+                            >
+                              {expanded ? '收起详情' : '查看详情'}
+                            </button>
+                            {expanded && (
+                              <div style={{ marginTop: 6, padding: 8, background: '#f8fafc', borderRadius: 4, border: '1px solid #e2e8f0' }}>
+                                {err.detailError && <div className="task-meta" style={{ fontSize: '0.7rem', color: '#ef4444', marginBottom: 6 }}>{err.detailError}</div>}
+                                <pre style={{ fontSize: '0.68rem', margin: 0, whiteSpace: 'pre-wrap', color: '#64748b', lineHeight: 1.4, fontFamily: 'monospace' }}>{JSON.stringify(err.detail ?? err.raw ?? err, null, 2)}</pre>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="task-list-container" style={{ marginTop: 10 }}>
+                      <p className="empty-hint">暂无断面错误信息</p>
+                    </div>
+                  )}
+                  <button onClick={() => setProgressOpen(false)} className="delete-task-btn" style={{ width: '100%', marginTop: 10 }}>
+                    关闭进度
+                  </button>
+                </div>
+              ) : (
+                <p className="empty-hint" style={{ marginTop: 16 }}>请先选择一个任务查看进度</p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1505,72 +1690,6 @@ function ResultPage(props: ResultPageProps) {
           </div>
         )}
 
-        {progressOpen && selectedTask && (
-          <div className="progress-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="progress-modal progress-modal-drawer" >
-              <div className="progress-modal-header">
-                <div>
-                  <div className="progress-modal-title">计算进度</div>
-                  <div className="progress-modal-subtitle">
-                    任务: {progress?.taskName || selectedTask}
-                    {progress?.status ? ` | 状态: ${progress.status}` : ''}
-                  </div>
-                </div>
-                <button className="progress-modal-close" onClick={() => setProgressOpen(false)}>关闭</button>
-              </div>
-
-              <progress
-                className="progress-bar-native"
-                value={progress?.processedCount ?? 0}
-                max={Math.max(1, progress?.expectedTotal ?? 1)}
-              />
-
-              <div className="progress-stats">
-                <div>进度: {progressPercent}%</div>
-                <div>
-                  已处理: {progress?.processedCount ?? 0}/{progress?.expectedTotal ?? 0}
-                  {' | '}成功: {progress?.successCount ?? 0}
-                  {' | '}失败: {progress?.errorCount ?? 0}
-                </div>
-                <div className="progress-updated">最后更新: {progress?.lastUpdatedAt ? new Date(progress.lastUpdatedAt).toLocaleTimeString() : '-'}</div>
-              </div>
-
-              {(progress?.errors?.length ?? 0) > 0 ? (
-                <div className="progress-errors">
-                  <div className="progress-errors-title">出错断面</div>
-                  <div className="progress-errors-list">
-                    {progress!.errors.map(err => {
-                      const expanded = Boolean(expandedErrorIds[err.section_id]);
-                      return (
-                        <div key={err.section_id} className="progress-error-item">
-                          <div className="progress-error-row">
-                            <div className="progress-error-main">
-                              <div className="progress-error-id">{err.section_name || err.section_id}</div>
-                              <div className="progress-error-msg">{err.message}</div>
-                            </div>
-                            <button className="progress-error-toggle" onClick={() => toggleErrorExpanded(err.section_id)}>
-                              {expanded ? '收起' : '查看详情'}
-                            </button>
-                          </div>
-
-                          {expanded && (
-                            <div className="progress-error-detail">
-                              {err.detailError && <div className="progress-error-detail-error">{err.detailError}</div>}
-                              <pre className="progress-error-pre">{JSON.stringify(err.detail ?? err.raw ?? err, null, 2)}</pre>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="progress-no-errors">暂无断面错误信息</div>
-              )}
-            </div>
-          </div>
-        )}
-
         <button
           onClick={() => { setChatCollapsed(!chatCollapsed); setTimeout(() => setResizeTrigger(t => t + 1), 350); }}
           style={{
@@ -1598,6 +1717,27 @@ function ResultPage(props: ResultPageProps) {
                 if (i <= activeReportTab && activeReportTab > 0) {
                   setActiveReportTab(prev => Math.max(0, prev - 1));
                 }
+              }}
+              onUpdateTab={async (i, content) => {
+                const tab = reportTabs[i];
+                let filename = tab.filename;
+                if (!filename) {
+                  const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
+                  filename = `report_${tab.taskId}_${ts}.md`;
+                }
+                const res = await fetch(`/v0/bank/ai/reports/${encodeURIComponent(filename)}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ content }),
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || '保存失败');
+                setReportTabs(prev => {
+                  const next = [...prev];
+                  next[i] = { ...next[i], content, filename };
+                  return next;
+                });
+                fetchReportList();
               }}
               height={workspaceHeight}
             />
