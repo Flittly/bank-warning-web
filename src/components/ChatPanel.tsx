@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2, Send, MessageCircle } from 'lucide-react';
+import { Plus, Trash2, Send, MessageCircle, Save } from 'lucide-react';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -57,7 +57,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
       const res = await fetch('/v0/bank/ai/chat/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: '新会话' }),
+        body: JSON.stringify({ title: '' }),
       });
       const data = await res.json();
       if (data.success) {
@@ -81,6 +81,25 @@ function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
       }
     } catch (e) {
       console.error('删除会话失败', e);
+    }
+  };
+
+  const saveReport = async (content: string) => {
+    try {
+      const res = await fetch('/v0/bank/ai/reports/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.dispatchEvent(new CustomEvent('report-saved'));
+        alert('报告已保存: ' + data.filename);
+      } else {
+        alert('保存失败: ' + (data.error || '未知错误'));
+      }
+    } catch (e) {
+      alert('保存失败');
     }
   };
 
@@ -200,6 +219,19 @@ function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
                 }}>
                   {msg.content}
                 </div>
+                {msg.role === 'assistant' && msg.content.length > 20 && (
+                  <button
+                    onClick={() => saveReport(msg.content)}
+                    style={{
+                      marginTop: 4, padding: '2px 8px', fontSize: '0.7rem',
+                      background: '#f1f5f9', border: '1px solid #e2e8f0',
+                      borderRadius: 4, cursor: 'pointer', color: '#64748b',
+                      display: 'flex', alignItems: 'center', gap: 3,
+                    }}
+                  >
+                    <Save size={12} /> 保存为报告
+                  </button>
+                )}
               </div>
             ))}
             {loading && (

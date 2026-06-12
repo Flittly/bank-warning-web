@@ -709,6 +709,12 @@ function ResultPage(props: ResultPageProps) {
     fetchReportList();
   }, []);
 
+  useEffect(() => {
+    const handler = () => fetchReportList();
+    window.addEventListener('report-saved', handler);
+    return () => window.removeEventListener('report-saved', handler);
+  }, []);
+
   const parseResultsList = (data: any): any[] => {
     if (!data) return [];
     if (Array.isArray(data)) return data;
