@@ -181,6 +181,9 @@ function ResultPage(props: ResultPageProps) {
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'progress' | 'skills'>('tasks');
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [skillList, setSkillList] = useState<any[]>([]);
+  const [chatTaskId, setChatTaskId] = useState<string | null>(null);
+  const [chatTaskName, setChatTaskName] = useState<string>('');
+  const [chatTasks, setChatTasks] = useState<{ taskId: string; taskName: string }[]>([]);
 
   const profilesCacheRef = useRef<Record<string, Record<string, SectionProfile>>>({});
   const profilesPromiseRef = useRef<Record<string, Promise<Record<string, SectionProfile>> | null>>({});
@@ -1511,6 +1514,12 @@ function ResultPage(props: ResultPageProps) {
                     key={task.task_id} 
                     className={`task-item ${selectedTask === task.task_id ? 'active' : ''}`}
                     onClick={() => handleTaskClick(task.task_id)}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/task-id', task.task_id);
+                      e.dataTransfer.setData('application/task-name', task.task_name);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
                   >
                     <div className="task-title">{task.task_name}</div>
                     <div className="task-meta">
@@ -1854,7 +1863,7 @@ function ResultPage(props: ResultPageProps) {
         )}
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => { setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta))); setResizeTrigger(t => t + 1); }} />}
-      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} />
+      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} />
     </div>
   );
 }

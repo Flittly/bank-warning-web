@@ -19,9 +19,11 @@ interface ChatPanelProps {
   width: number;
   selectedSkills?: string[];
   setSelectedSkills?: (skills: string[]) => void;
+  chatTasks?: { taskId: string; taskName: string }[];
+  setChatTasks?: (tasks: { taskId: string; taskName: string }[]) => void;
 }
 
-function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSelectedSkills }: ChatPanelProps) {
+function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSelectedSkills, chatTasks, setChatTasks }: ChatPanelProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -129,7 +131,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
       const res = await fetch('/v0/bank/ai/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, sessionId: activeSessionId, skills: selectedSkills || [] }),
+        body: JSON.stringify({ question, sessionId: activeSessionId, skills: selectedSkills || [], taskIds: chatTasks ? chatTasks.map(t => t.taskId) : [] }),
       });
       const data = await res.json();
       if (data.success) {
@@ -164,6 +166,11 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
         e.preventDefault();
         const name = e.dataTransfer.getData('text/plain');
         if (name) addSkill(name);
+        const taskId = e.dataTransfer.getData('application/task-id');
+        if (taskId && setChatTasks) {
+          const taskName = e.dataTransfer.getData('application/task-name') || taskId;
+          setChatTasks([...(chatTasks || []), { taskId, taskName }]);
+        }
       }}
     >
       {!collapsed && (
@@ -265,13 +272,27 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
             <div ref={messagesEndRef} />
           </div>
 
-          {selectedSkills && selectedSkills.length > 0 && (
+          {((selectedSkills && selectedSkills.length > 0) || (chatTasks && chatTasks.length > 0)) && (
             <div style={{
               display: 'flex', flexWrap: 'wrap', gap: 4,
               padding: '6px 12px', background: '#f8fafc',
               borderTop: '1px solid #e2e8f0',
             }}>
-              {selectedSkills.map(name => (
+              {chatTasks && chatTasks.map((t, i) => (
+                <span key={t.taskId} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 8px', fontSize: '0.72rem',
+                  background: '#dcfce7', color: '#16a34a',
+                  borderRadius: 10, cursor: 'default',
+                }}>
+                  📋 {t.taskName || t.taskId}
+                  <button onClick={() => { if (setChatTasks) setChatTasks(chatTasks.filter((_, j) => j !== i)); }} style={{
+                    border: 'none', background: 'transparent', cursor: 'pointer',
+                    padding: 0, display: 'flex', color: '#16a34a', fontSize: '0.8rem',
+                  }}>×</button>
+                </span>
+              ))}
+              {selectedSkills && selectedSkills.map(name => (
                 <span key={name} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
                   padding: '2px 8px', fontSize: '0.72rem',
