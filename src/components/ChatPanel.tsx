@@ -17,9 +17,11 @@ interface ChatPanelProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
   width: number;
+  selectedSkills?: string[];
+  setSelectedSkills?: (skills: string[]) => void;
 }
 
-function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
+function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSelectedSkills }: ChatPanelProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -86,14 +88,16 @@ function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
 
   const saveReport = async (content: string) => {
     try {
+      const match = content.match(/task-(\d+)/);
+      const taskId = match ? match[0] : '';
       const res = await fetch('/v0/bank/ai/reports/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, taskId }),
       });
       const data = await res.json();
       if (data.success) {
-        window.dispatchEvent(new CustomEvent('report-saved'));
+        window.dispatchEvent(new CustomEvent('report-saved', { detail: { taskId } }));
         alert('报告已保存: ' + data.filename);
       } else {
         alert('保存失败: ' + (data.error || '未知错误'));
@@ -101,6 +105,18 @@ function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
     } catch (e) {
       alert('保存失败');
     }
+  };
+
+  const addSkill = (name: string) => {
+    if (!setSelectedSkills || !selectedSkills) return;
+    if (!selectedSkills.includes(name)) {
+      setSelectedSkills([...selectedSkills, name]);
+    }
+  };
+
+  const removeSkill = (name: string) => {
+    if (!setSelectedSkills || !selectedSkills) return;
+    setSelectedSkills(selectedSkills.filter(s => s !== name));
   };
 
   const sendMessage = async () => {
@@ -113,7 +129,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
       const res = await fetch('/v0/bank/ai/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, sessionId: activeSessionId }),
+        body: JSON.stringify({ question, sessionId: activeSessionId, skills: selectedSkills || [] }),
       });
       const data = await res.json();
       if (data.success) {
@@ -142,7 +158,14 @@ function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
       width: width,
       minWidth: width,
       overflow: 'hidden',
-    }}>
+    }}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+      onDrop={(e) => {
+        e.preventDefault();
+        const name = e.dataTransfer.getData('text/plain');
+        if (name) addSkill(name);
+      }}
+    >
       {!collapsed && (
         <>
           <div style={{
@@ -241,6 +264,29 @@ function ChatPanel({ collapsed, onToggleCollapse, width }: ChatPanelProps) {
             )}
             <div ref={messagesEndRef} />
           </div>
+
+          {selectedSkills && selectedSkills.length > 0 && (
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: 4,
+              padding: '6px 12px', background: '#f8fafc',
+              borderTop: '1px solid #e2e8f0',
+            }}>
+              {selectedSkills.map(name => (
+                <span key={name} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 8px', fontSize: '0.72rem',
+                  background: '#dbeafe', color: '#2563eb',
+                  borderRadius: 10, cursor: 'default',
+                }}>
+                  {name}
+                  <button onClick={() => removeSkill(name)} style={{
+                    border: 'none', background: 'transparent', cursor: 'pointer',
+                    padding: 0, display: 'flex', color: '#2563eb', fontSize: '0.8rem',
+                  }}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
 
           <div style={{
             display: 'flex', gap: 8, padding: '12px 16px',

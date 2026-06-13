@@ -9,7 +9,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { FileText, List, BarChart3, MessageCircle } from 'lucide-react';
+import { Box, FileText, List, BarChart3, MessageCircle } from 'lucide-react';
 
 // 与 EditorPage 保持一致的 Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -178,7 +178,9 @@ function ResultPage(props: ResultPageProps) {
   const [workspaceHeight, setWorkspaceHeight] = useState(300);
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [reportList, setReportList] = useState<any[]>([]);
-  const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'progress'>('tasks');
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'progress' | 'skills'>('tasks');
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [skillList, setSkillList] = useState<any[]>([]);
 
   const profilesCacheRef = useRef<Record<string, Record<string, SectionProfile>>>({});
   const profilesPromiseRef = useRef<Record<string, Promise<Record<string, SectionProfile>> | null>>({});
@@ -223,6 +225,14 @@ function ResultPage(props: ResultPageProps) {
       const res = await fetch('/v0/bank/ai/reports');
       const data = await res.json();
       if (data.success) setReportList(data.reports || []);
+    } catch (e) { /* ignore */ }
+  };
+
+  const fetchSkills = async () => {
+    try {
+      const res = await fetch('/v0/bank/ai/skill/list');
+      const data = await res.json();
+      if (data.success) setSkillList(data.skills || []);
     } catch (e) { /* ignore */ }
   };
 
@@ -710,7 +720,15 @@ function ResultPage(props: ResultPageProps) {
   }, []);
 
   useEffect(() => {
-    const handler = () => fetchReportList();
+    fetchSkills();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      fetchReportList();
+      const taskId = (e as CustomEvent).detail?.taskId;
+      if (taskId) handleTaskClick(taskId);
+    };
     window.addEventListener('report-saved', handler);
     return () => window.removeEventListener('report-saved', handler);
   }, []);
@@ -940,7 +958,6 @@ function ResultPage(props: ResultPageProps) {
     setProgressOpen(true);
     setProgress(null);
     setExpandedErrorIds({});
-    setActiveSidebarPanel('progress');
 
     // 清除地图上所有之前任务的图层和数据源
     const map = mapRef.current;
@@ -1448,6 +1465,18 @@ function ResultPage(props: ResultPageProps) {
             }}
           ><FileText size={16} /></button>
           <button
+            onClick={() => setActiveSidebarPanel('skills')}
+            title="Skills"
+            style={{
+              width: 38, height: 38, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 6, cursor: 'pointer',
+              background: activeSidebarPanel === 'skills' ? '#e0e7ff' : 'transparent',
+              color: activeSidebarPanel === 'skills' ? '#2563eb' : '#94a3b8',
+              gap: 1,
+            }}
+          ><Box size={16} /></button>
+          <button
             onClick={() => setActiveSidebarPanel('progress')}
             title="计算进度"
             style={{
@@ -1622,6 +1651,80 @@ function ResultPage(props: ResultPageProps) {
               )}
             </>
           )}
+
+    {/* === SKILLS PANEL === */}
+    {activeSidebarPanel === 'skills' && (
+      <>
+        <div className="sidebar-header">
+          <h4>Skills</h4>
+        </div>
+        <div className="task-list-container" style={{ maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
+          {skillList.length === 0 && <p className="empty-hint">暂无 Skills</p>}
+          {skillList.map((s: any) => (
+            <div
+              key={s.name}
+              className="task-item"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', s.name);
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+              style={{ cursor: 'grab', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <div style={{ flex: 1 }}>
+                <div className="task-title" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {s.source === 'local' ? '📁' : s.source === 'synced' ? '✅' : '☁️'} {s.name}
+                  <span style={{
+                    fontSize: '0.6rem', padding: '1px 5px', borderRadius: 3,
+                    background: s.source === 'local' ? '#dbeafe' : s.source === 'synced' ? '#dcfce7' : '#fef3c7',
+                    color: s.source === 'local' ? '#2563eb' : s.source === 'synced' ? '#16a34a' : '#d97706',
+                  }}>{s.source === 'local' ? '本地' : s.source === 'synced' ? '已同步' : 'Nacos'}</span>
+                  {s.source === 'local' && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        try {
+                          const res = await fetch(`/v0/bank/ai/skill/upload/${encodeURIComponent(s.name)}`, { method: 'POST' });
+                          const d = await res.json();
+                          if (d.success) { alert('上传成功！'); fetchSkills(); }
+                          else alert('上传失败: ' + (d.error || '未知错误'));
+                        } catch (err: any) { alert('网络错误'); }
+                      }}
+                      style={{
+                        marginLeft: 4, fontSize: '0.6rem', padding: '1px 6px',
+                        border: '1px solid #2563eb', background: '#dbeafe',
+                        color: '#2563eb', borderRadius: 3, cursor: 'pointer',
+                      }}
+                    >上传</button>
+                  )}
+                  {s.source === 'nacos' && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        try {
+                          const res = await fetch(`/v0/bank/ai/skill/download/${encodeURIComponent(s.name)}`, { method: 'POST' });
+                          const d = await res.json();
+                          if (d.success) alert('下载成功！重启后端后生效');
+                          else alert('下载失败: ' + (d.error || '未知错误'));
+                        } catch (err: any) { alert('下载失败: ' + (err.message || '网络错误')); }
+                      }}
+                      style={{
+                        marginLeft: 4, fontSize: '0.6rem', padding: '1px 6px',
+                        border: '1px solid #d97706', background: '#fef3c7',
+                        color: '#d97706', borderRadius: 3, cursor: 'pointer',
+                      }}
+                    >下载到本地</button>
+                  )}
+                </div>
+                <div className="task-meta" style={{ fontSize: '0.7rem' }}>{s.description || ''}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </>
+    )}
         </div>
       </div>
       <ResizeHandle onResize={(delta) => { setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta))); setResizeTrigger(t => t + 1); }} />
@@ -1751,7 +1854,7 @@ function ResultPage(props: ResultPageProps) {
         )}
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => { setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta))); setResizeTrigger(t => t + 1); }} />}
-      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} />
+      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} />
     </div>
   );
 }
