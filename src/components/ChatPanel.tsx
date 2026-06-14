@@ -29,11 +29,25 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [models, setModels] = useState<{ name: string; label: string }[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchSessions();
+    fetchModels();
   }, []);
+
+  const fetchModels = async () => {
+    try {
+      const res = await fetch('/v0/bank/ai/models');
+      const data = await res.json();
+      if (data.success && data.models) {
+        setModels(data.models);
+        if (!selectedModel && data.models.length > 0) setSelectedModel(data.models[0].key);
+      }
+    } catch (e) { /* ignore */ }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -131,7 +145,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
       const res = await fetch('/v0/bank/ai/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, sessionId: activeSessionId, skills: selectedSkills || [], taskIds: chatTasks ? chatTasks.map(t => t.taskId) : [] }),
+        body: JSON.stringify({ question, sessionId: activeSessionId, skills: selectedSkills || [], taskIds: chatTasks ? chatTasks.map(t => t.taskId) : [], model: selectedModel }),
       });
       const data = await res.json();
       if (data.success) {
@@ -310,8 +324,8 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
           )}
 
           <div style={{
-            display: 'flex', gap: 8, padding: '12px 16px',
-            borderTop: '1px solid #e2e8f0', background: '#ffffff',
+            display: 'flex', gap: 8, padding: '4px 16px 12px 16px',
+            background: '#ffffff',
           }}>
             <textarea
               value={input}
@@ -345,6 +359,24 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
               <Send size={16} />
             </button>
           </div>
+
+          {models.length > 0 && (
+            <div style={{ padding: '2px 16px 6px 16px', background: '#ffffff' }}>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                style={{
+                  border: 'none', background: 'transparent',
+                  fontSize: '0.68rem', color: '#94a3b8', outline: 'none',
+                  cursor: 'pointer', padding: 0,
+                }}
+              >
+                {models.map(m => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </>
       )}
     </div>
