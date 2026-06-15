@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef } from 'react';
 
 interface ResizeHandleProps {
   onResize: (delta: number) => void;
+  onDragEnd?: () => void;
 }
 
-function ResizeHandle({ onResize }: ResizeHandleProps) {
+function ResizeHandle({ onResize, onDragEnd }: ResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const lastX = useRef(0);
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
+  const onDragEndRef = useRef(onDragEnd);
+  onDragEndRef.current = onDragEnd;
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
@@ -22,6 +25,7 @@ function ResizeHandle({ onResize }: ResizeHandleProps) {
       dragging.current = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      onDragEndRef.current?.();
     };
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);

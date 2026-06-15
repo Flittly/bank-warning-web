@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef } from 'react';
 
 interface VerticalResizeHandleProps {
   onResize: (delta: number) => void;
+  onDragEnd?: () => void;
 }
 
-function VerticalResizeHandle({ onResize }: VerticalResizeHandleProps) {
+function VerticalResizeHandle({ onResize, onDragEnd }: VerticalResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const lastY = useRef(0);
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
+  const onDragEndRef = useRef(onDragEnd);
+  onDragEndRef.current = onDragEnd;
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
@@ -22,6 +25,7 @@ function VerticalResizeHandle({ onResize }: VerticalResizeHandleProps) {
       dragging.current = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      onDragEndRef.current?.();
     };
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);

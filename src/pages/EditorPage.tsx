@@ -1993,7 +1993,7 @@ function EditorPage(props: EditorPageProps) {
           handleSelectBasicParam={handleSelectBasicParam}
         />
       </div>
-      <ResizeHandle onResize={(delta) => { setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta))); setResizeTrigger(t => t + 1); }} />
+      <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
       <div className="editor-map-panel">
         <EditorMap
           perpendicularData={perpendicularData}
@@ -2041,7 +2041,7 @@ function EditorPage(props: EditorPageProps) {
           {chatCollapsed ? 'AI' : '收起'}
         </button>
       </div>
-      {!chatCollapsed && <ResizeHandle onResize={(delta) => { setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta))); setResizeTrigger(t => t + 1); }} />}
+      {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} />
 
       {/* 全局属性配置弹窗 */}

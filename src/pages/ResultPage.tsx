@@ -1736,7 +1736,7 @@ function ResultPage(props: ResultPageProps) {
     )}
         </div>
       </div>
-      <ResizeHandle onResize={(delta) => { setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta))); setResizeTrigger(t => t + 1); }} />
+      <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
       <div className="editor-map-panel" style={{ display: 'flex', flexDirection: 'column' }}>
         <div ref={mapContainer} className="map-full" style={{ flex: 1 }} />
 
@@ -1825,7 +1825,7 @@ function ResultPage(props: ResultPageProps) {
         </button>
         {reportTabs.length > 0 && (
           <>
-            <VerticalResizeHandle onResize={(delta) => { setWorkspaceHeight(h => Math.max(80, h + delta)); setResizeTrigger(t => t + 1); }} />
+            <VerticalResizeHandle onResize={(delta) => setWorkspaceHeight(h => Math.max(80, h + delta))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
             <WorkspacePanel
               tabs={reportTabs}
               activeTabIndex={activeReportTab}
@@ -1862,7 +1862,7 @@ function ResultPage(props: ResultPageProps) {
           </>
         )}
       </div>
-      {!chatCollapsed && <ResizeHandle onResize={(delta) => { setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta))); setResizeTrigger(t => t + 1); }} />}
+      {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} />
     </div>
   );
