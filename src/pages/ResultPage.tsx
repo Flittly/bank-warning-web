@@ -1825,7 +1825,7 @@ function ResultPage(props: ResultPageProps) {
         </button>
         {reportTabs.length > 0 && (
           <>
-            <VerticalResizeHandle onResize={(delta) => setWorkspaceHeight(h => Math.max(80, h + delta))} />
+            <VerticalResizeHandle onResize={(delta) => { setWorkspaceHeight(h => Math.max(80, h + delta)); setResizeTrigger(t => t + 1); }} />
             <WorkspacePanel
               tabs={reportTabs}
               activeTabIndex={activeReportTab}
