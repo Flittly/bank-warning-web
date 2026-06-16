@@ -1,27 +1,31 @@
 ﻿import { useState } from 'react';
-import { Edit3, BarChart2, Home, Layout } from 'lucide-react';
+import { Edit3, BarChart2, Home, Layout, BookOpen } from 'lucide-react';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import ResultPage from './pages/ResultPage';
+import KnowledgePage from './pages/KnowledgePage';
 import './App.css';
 
 type PageState = 
   | { type: 'home' }
   | { type: 'editor' }
-  | { type: 'result'; taskId?: string };
+  | { type: 'result'; taskId?: string }
+  | { type: 'knowledge' };
 
 function App() {
   const [pageState, setPageState] = useState<PageState>({ type: 'home' });
 
   const currentPage = pageState.type;
 
-  const setPage = (page: 'home' | 'editor' | 'result', taskId?: string) => {
+  const setPage = (page: 'home' | 'editor' | 'result' | 'knowledge', taskId?: string) => {
     if (page === 'home') {
       setPageState({ type: 'home' });
     } else if (page === 'editor') {
       setPageState({ type: 'editor' });
     } else if (page === 'result') {
       setPageState({ type: 'result', taskId });
+    } else if (page === 'knowledge') {
+      setPageState({ type: 'knowledge' });
     }
   };
 
@@ -52,6 +56,14 @@ function App() {
           <BarChart2 size={18} />
           结果查看器
         </button>
+        <button 
+          type="button"
+          className={`nav-tab ${currentPage === 'knowledge' ? 'active' : ''}`}
+          onClick={() => setPage('knowledge')}
+        >
+          <BookOpen size={18} />
+          知识库
+        </button>
       </div>
       <button className="nav-home" type="button" onClick={() => setPage('home')} title="返回首页" aria-label="返回首页">
         <Home size={18} />
@@ -59,18 +71,23 @@ function App() {
     </div>
   );
 
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'editor': return <EditorPage setPage={setPage} />;
+      case 'result': return <ResultPage initialTaskId={pageState.type === 'result' ? pageState.taskId : undefined} />;
+      case 'knowledge': return <KnowledgePage />;
+      default: return null;
+    }
+  };
+
   return (
     <div className="app-container">
       {renderNav()}
       <main className="app-main">
-        {currentPage === 'editor' 
-          ? <EditorPage setPage={setPage} /> 
-          : <ResultPage initialTaskId={pageState.type === 'result' ? pageState.taskId : undefined} />
-        }
+        {renderPage()}
       </main>
     </div>
   );
 }
 
 export default App;
-
