@@ -78,6 +78,9 @@ export async function uploadKnowledgePdf(file: File, type: string, title?: strin
     method: 'POST',
     body: formData,
   });
-  if (!res.ok) throw new Error(`Failed to upload PDF: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || `上传失败: ${res.status}`);
+  }
+  return data;
 }

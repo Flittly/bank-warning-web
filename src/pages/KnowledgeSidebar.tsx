@@ -43,7 +43,7 @@ export default function KnowledgeSidebar({ onSelectDoc, onSearch, style }: Props
     if (!file) return;
     const type = prompt('请输入文档分类（如 hydraulic / engineering）：', '文档') || '文档';
     try {
-      if (file.name.endsWith('.pdf')) {
+      if (file.name.endsWith('.pdf') || file.name.endsWith('.docx')) {
         await uploadKnowledgePdf(file, type);
       } else {
         const text = await file.text();
@@ -100,8 +100,8 @@ export default function KnowledgeSidebar({ onSelectDoc, onSearch, style }: Props
         fontWeight: 600, fontSize: 14, justifyContent: 'center', marginBottom: 12,
       }}>
         <Upload size={16} />
-        上传文档 (PDF / TXT)
-        <input type="file" accept=".pdf,.txt,.md" onChange={handleUpload} style={{ display: 'none' }} />
+        上传文档 (PDF / DOCX / TXT)
+        <input type="file" accept=".pdf,.docx,.txt,.md" onChange={handleUpload} style={{ display: 'none' }} />
       </label>
 
       {/* Search */}
