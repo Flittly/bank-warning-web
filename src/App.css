@@ -70,6 +70,28 @@
   cursor: pointer;
 }
 
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav-username {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+.nav-user {
+  display: flex;
+  align-items: center;
+}
+
+.nav-auth {
+  display: flex;
+  align-items: center;
+}
+
 .app-main {
   flex: 1;
   position: relative;

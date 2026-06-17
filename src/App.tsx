@@ -1,92 +1,153 @@
-﻿import { useState } from 'react';
+﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Edit3, BarChart2, Home, Layout, BookOpen } from 'lucide-react';
+import { Button, Tag, Space } from 'antd';
+import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import ResultPage from './pages/ResultPage';
 import KnowledgePage from './pages/KnowledgePage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import AdminUserPage from './pages/AdminUserPage';
+import AuthGuard from './auth/AuthGuard';
+import { useAuth } from './auth/useAuth';
 import './App.css';
 
-type PageState = 
-  | { type: 'home' }
-  | { type: 'editor' }
-  | { type: 'result'; taskId?: string }
-  | { type: 'knowledge' };
+function EditorPageWrapper() {
+  const navigate = useNavigate();
+  return <EditorPage setPage={(page, taskId) => {
+    if (page === 'result') navigate(`/result/${taskId || ''}`);
+    if (page === 'home') navigate('/');
+    if (page === 'editor') navigate('/editor');
+  }} />;
+}
 
-function App() {
-  const [pageState, setPageState] = useState<PageState>({ type: 'home' });
+function ResultPageWrapper() {
+  const { taskId } = useParams<{ taskId?: string }>();
+  return <ResultPage initialTaskId={taskId} />;
+}
 
-  const currentPage = pageState.type;
+function AppLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname;
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
 
-  const setPage = (page: 'home' | 'editor' | 'result' | 'knowledge', taskId?: string) => {
-    if (page === 'home') {
-      setPageState({ type: 'home' });
-    } else if (page === 'editor') {
-      setPageState({ type: 'editor' });
-    } else if (page === 'result') {
-      setPageState({ type: 'result', taskId });
-    } else if (page === 'knowledge') {
-      setPageState({ type: 'knowledge' });
-    }
-  };
-
-  if (currentPage === 'home') {
-    return <HomePage onNavigate={() => setPage('editor')} />;
-  }
-
-  const renderNav = () => (
-    <div className="main-nav">
-      <div className="nav-logo" onClick={() => setPage('home')}>
-        <Layout size={20} />
-        <span>崩岸计算器</span>
-      </div>
-      <div className="nav-tabs">
-        <button 
-          type="button"
-          className={`nav-tab ${currentPage === 'editor' ? 'active' : ''}`}
-          onClick={() => setPage('editor')}
-        >
-          <Edit3 size={18} />
-            断面编辑器
-        </button>
-        <button 
-          type="button"
-          className={`nav-tab ${currentPage === 'result' ? 'active' : ''}`}
-          onClick={() => setPage('result')}
-        >
-          <BarChart2 size={18} />
-          结果查看器
-        </button>
-        <button 
-          type="button"
-          className={`nav-tab ${currentPage === 'knowledge' ? 'active' : ''}`}
-          onClick={() => setPage('knowledge')}
-        >
-          <BookOpen size={18} />
-          知识库
-        </button>
-      </div>
-      <button className="nav-home" type="button" onClick={() => setPage('home')} title="返回首页" aria-label="返回首页">
-        <Home size={18} />
-      </button>
-    </div>
-  );
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'editor': return <EditorPage setPage={setPage} />;
-      case 'result': return <ResultPage initialTaskId={pageState.type === 'result' ? pageState.taskId : undefined} />;
-      case 'knowledge': return <KnowledgePage />;
-      default: return null;
-    }
+  const handleLogout = () => {
+    logout();
+    navigate('/');
   };
 
   return (
     <div className="app-container">
-      {renderNav()}
+      <div className="main-nav">
+        <div className="nav-logo" onClick={() => navigate('/')}>
+          <Layout size={20} />
+          <span>崩岸计算器</span>
+        </div>
+        <div className="nav-tabs">
+          <button
+            type="button"
+            className={`nav-tab ${currentPath.startsWith('/editor') ? 'active' : ''}`}
+            onClick={() => navigate('/editor')}
+          >
+            <Edit3 size={18} />
+            断面编辑器
+          </button>
+          <button
+            type="button"
+            className={`nav-tab ${currentPath.startsWith('/result') ? 'active' : ''}`}
+            onClick={() => navigate('/result')}
+          >
+            <BarChart2 size={18} />
+            结果查看器
+          </button>
+          <button
+            type="button"
+            className={`nav-tab ${currentPath.startsWith('/knowledge') ? 'active' : ''}`}
+            onClick={() => navigate('/knowledge')}
+          >
+            <BookOpen size={18} />
+            知识库
+          </button>
+        </div>
+        <div className="nav-right">
+          <button className="nav-home" type="button" onClick={() => navigate('/')} title="返回首页" aria-label="返回首页">
+            <Home size={18} />
+          </button>
+          {!isLoading && (
+            isAuthenticated ? (
+              <div className="nav-user">
+                <Space size="small">
+                  <UserOutlined style={{ color: '#64748b' }} />
+                  <span className="nav-username">{user?.username}</span>
+                  <Tag color={user?.role === 'ADMIN' ? 'blue' : 'default'}>{user?.role}</Tag>
+                  {user?.role === 'ADMIN' && (
+                    <Button
+                      size="small"
+                      onClick={() => navigate('/admin/users')}
+                      icon={<SettingOutlined />}
+                    >
+                      用户管理
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    onClick={handleLogout}
+                    icon={<LogoutOutlined />}
+                  >
+                    登出
+                  </Button>
+                </Space>
+              </div>
+            ) : (
+              <div className="nav-auth">
+                <Space size="small">
+                  <Button
+                    size="small"
+                    onClick={() => navigate('/login')}
+                    icon={<LoginOutlined />}
+                  >
+                    登录
+                  </Button>
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => navigate('/register')}
+                  >
+                    注册
+                  </Button>
+                </Space>
+              </div>
+            )
+          )}
+        </div>
+      </div>
       <main className="app-main">
-        {renderPage()}
+        <Outlet />
       </main>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route element={<AuthGuard />}>
+        <Route index element={<HomePage />} />
+        <Route element={<AppLayout />}>
+          <Route path="/editor" element={<EditorPageWrapper />} />
+          <Route path="/result" element={<ResultPageWrapper />} />
+          <Route path="/result/:taskId" element={<ResultPageWrapper />} />
+          <Route path="/knowledge" element={<KnowledgePage />} />
+        </Route>
+        <Route element={<AuthGuard requireAdmin />}>
+          <Route path="/admin/users" element={<AdminUserPage />} />
+        </Route>
+      </Route>
+    </Routes>
   );
 }
 
