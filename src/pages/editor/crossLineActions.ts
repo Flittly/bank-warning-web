@@ -1,5 +1,6 @@
 import * as turf from '@turf/turf';
 import type { Dispatch, SetStateAction } from 'react';
+import { authHeaders } from '../../utils/apiClient';
 import type { SectionParams } from '../../types/sections';
 import { ensureDefaultBasicParams } from '../../services/basicParamsService';
 import { fetchSectionParams } from './sectionApi';
@@ -55,7 +56,7 @@ export async function reverseSelectedCrossLineAction(params: {
   try {
     const response = await fetch(`/v0/bank/sections/${sectionId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ reverse: true }),
     });
 
@@ -175,7 +176,7 @@ export async function reverseCrossLinesInGroupAction(params: {
     sectionsToSync.map((sectionId) =>
       fetch(`/v0/bank/sections/${sectionId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ reverse: true }),
       }).then((res) => {
         if (!res.ok) throw new Error(res.statusText);
@@ -284,6 +285,7 @@ export async function deleteCrossLinesInGroupAction(params: {
     sectionIdsToDelete.map((sectionId) =>
       fetch(`/v0/bank/sections/${sectionId}`, {
         method: 'DELETE',
+        headers: { ...authHeaders() },
       }).then((res) => {
         if (!res.ok) throw new Error(res.statusText);
         return true;
@@ -389,7 +391,7 @@ export async function createCrossLineAtPointAction(params: {
 
     const response = await fetch('/v0/bank/sections', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(sectionsPayload),
     });
 
@@ -476,6 +478,7 @@ export async function deleteSelectedCrossLineAction(params: {
   try {
     const response = await fetch(`/v0/bank/sections/${sectionId}`, {
       method: 'DELETE',
+      headers: { ...authHeaders() },
     });
 
     if (!response.ok) {
@@ -554,6 +557,7 @@ export async function deleteSelectedCrossLinesAction(params: {
     sectionIds.map((sectionId) =>
       fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}`, {
         method: 'DELETE',
+        headers: { ...authHeaders() },
       }).then((res) => {
         if (!res.ok) throw new Error(res.statusText);
         return true;
@@ -650,7 +654,7 @@ export async function translateSelectedCrossLineAction(params: {
   try {
     const response = await fetch(`/v0/bank/sections/${sectionId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         distance: newDistance,
         geometry: newGeometry,
@@ -703,7 +707,7 @@ export async function configureSelectedCrossLinePropertiesAction(params: {
   }
 
   try {
-    const response = await fetch(`/v0/bank/sections/${sectionId}`);
+    const response = await fetch(`/v0/bank/sections/${sectionId}`, { headers: { ...authHeaders() } });
     if (!response.ok) {
       throw new Error(`获取断面参数失败: ${response.statusText}`);
     }
@@ -737,7 +741,7 @@ export async function persistCrossLineGeometryAction(params: {
   try {
     const response = await fetch(`/v0/bank/sections/${sectionId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         geometry,
         section_geometry: geometry,
@@ -931,7 +935,7 @@ export async function createCrossLineByEndpointsAction(params: {
 
     const response = await fetch('/v0/bank/sections', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(sectionsPayload),
     });
 

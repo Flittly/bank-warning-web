@@ -1,3 +1,5 @@
+import { authHeaders } from '../utils/apiClient';
+
 let currentBasicParamId: number | null = null;
 
 export const setCurrentBasicParamId = (id: number | null) => {
@@ -10,7 +12,7 @@ export const ensureDefaultBasicParams = async (): Promise<number | null> => {
   }
 
   try {
-    const listResponse = await fetch('/v0/bank/basic-params');
+    const listResponse = await fetch('/v0/bank/basic-params', { headers: { ...authHeaders() } });
     if (listResponse.ok) {
       const listData = await listResponse.json();
       console.log('基础参数列表响应:', listData);
@@ -82,7 +84,7 @@ export const ensureDefaultBasicParams = async (): Promise<number | null> => {
 
     const createResponse = await fetch('/v0/bank/basic-params', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(defaultParams),
     });
 

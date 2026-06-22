@@ -1,8 +1,9 @@
+import { authHeaders } from '../../utils/apiClient';
 import type { SectionParams } from '../../types/sections';
 
 export async function fetchSectionParams(sectionId: string): Promise<SectionParams | null> {
   try {
-    const response = await fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}`);
+    const response = await fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}`, { headers: { ...authHeaders() } });
     if (!response.ok) {
       console.error(`获取断面参数失败: ${response.statusText}`);
       return null;
@@ -45,7 +46,7 @@ export async function updateSectionParams(
 ): Promise<void> {
   const response = await fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(sectionParams),
   });
 

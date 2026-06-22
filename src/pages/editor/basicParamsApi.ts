@@ -1,4 +1,5 @@
 import type { SectionParams } from '../../types/sections';
+import { getAccessToken } from '../../auth/tokenManager';
 
 export interface BasicParamListItem {
   id?: number;
@@ -7,8 +8,15 @@ export interface BasicParamListItem {
   [key: string]: any;
 }
 
+function authHeaders(): Record<string, string> {
+  const token = getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function fetchBasicParamsList(): Promise<BasicParamListItem[]> {
-  const res = await fetch('/v0/bank/basic-params');
+  const res = await fetch('/v0/bank/basic-params', {
+    headers: { ...authHeaders() },
+  });
   if (!res.ok) {
     throw new Error(`获取基础参数模板列表失败: ${res.statusText}`);
   }
@@ -41,7 +49,9 @@ export async function fetchBasicParamDetailAsSectionParams(paramId: string): Pro
   numericId: number | null;
   sectionParams: SectionParams;
 }> {
-  const res = await fetch(`/v0/bank/basic-params/${encodeURIComponent(paramId)}`);
+  const res = await fetch(`/v0/bank/basic-params/${encodeURIComponent(paramId)}`, {
+    headers: { ...authHeaders() },
+  });
   if (!res.ok) {
     throw new Error(`获取模板详情失败: ${res.status}`);
   }
@@ -62,7 +72,7 @@ export async function updateBasicParamAsSectionParams(
 ): Promise<void> {
   const res = await fetch(`/v0/bank/basic-params/${encodeURIComponent(paramId)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(sectionParams),
   });
 

@@ -1,3 +1,5 @@
+import { authHeaders } from '../utils/apiClient';
+
 export interface TiffResource {
   tiff_key: string;
   segment?: string;
@@ -92,7 +94,7 @@ export async function fetchTiffResources(forceRefresh = false): Promise<TiffReso
   }
 
   cachedTiffPromise = (async () => {
-    const res = await fetch(TIFF_ENDPOINT);
+    const res = await fetch(TIFF_ENDPOINT, { headers: { ...authHeaders() } });
     if (!res.ok) {
       throw new Error(`获取 TIFF 列表失败: ${res.status} ${res.statusText}`);
     }
@@ -116,6 +118,7 @@ export async function fetchTiffResources(forceRefresh = false): Promise<TiffReso
 export async function uploadTiffResource(formData: FormData): Promise<TiffResource> {
   const res = await fetch(`${TIFF_ENDPOINT}/upload`, {
     method: 'POST',
+    headers: { ...authHeaders() },
     body: formData,
   });
 
@@ -157,6 +160,7 @@ export async function deleteTiffResource(tiffKey: string): Promise<void> {
 
   const res = await fetch(`${TIFF_ENDPOINT}?tiff_key=${encodeURIComponent(key)}`, {
     method: 'DELETE',
+    headers: { ...authHeaders() },
   });
 
   if (!res.ok) {
@@ -172,7 +176,7 @@ const formatOptional = (value: string | undefined) => (value ? value : '未知')
 
 export async function fetchTiffBounds(): Promise<GeoJSON.FeatureCollection | null> {
   try {
-    const res = await fetch('/v0/bank/tiff-bounds');
+    const res = await fetch('/v0/bank/tiff-bounds', { headers: { ...authHeaders() } });
     if (!res.ok) return null;
     const json = await res.json();
     if (json?.success && json?.data) {

@@ -1,3 +1,5 @@
+import { authHeaders } from '../utils/apiClient';
+
 export interface KnowledgeDoc {
   docId: string;
   type: string;
@@ -31,30 +33,30 @@ export interface KnowledgeStats {
 const BASE = '/v0/bank/ai';
 
 export async function fetchKnowledgeList(): Promise<KnowledgeDoc[]> {
-  const res = await fetch(`${BASE}/knowledge/list`);
+  const res = await fetch(`${BASE}/knowledge/list`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error(`Failed to fetch knowledge list: ${res.status}`);
   return res.json();
 }
 
 export async function fetchDocumentDetail(id: string): Promise<KnowledgeDocDetail> {
-  const res = await fetch(`${BASE}/knowledge/${encodeURIComponent(id)}`);
+  const res = await fetch(`${BASE}/knowledge/${encodeURIComponent(id)}`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error(`Failed to fetch document: ${res.status}`);
   return res.json();
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/knowledge/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}/knowledge/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { ...authHeaders() } });
   if (!res.ok) throw new Error(`Failed to delete document: ${res.status}`);
 }
 
 export async function searchKnowledge(query: string, topK = 5): Promise<SearchResult[]> {
-  const res = await fetch(`${BASE}/search?query=${encodeURIComponent(query)}&topK=${topK}`);
+  const res = await fetch(`${BASE}/search?query=${encodeURIComponent(query)}&topK=${topK}`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error(`Failed to search: ${res.status}`);
   return res.json();
 }
 
 export async function fetchKnowledgeStats(): Promise<KnowledgeStats> {
-  const res = await fetch(`${BASE}/knowledge/stats`);
+  const res = await fetch(`${BASE}/knowledge/stats`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error(`Failed to fetch stats: ${res.status}`);
   return res.json();
 }
@@ -62,7 +64,7 @@ export async function fetchKnowledgeStats(): Promise<KnowledgeStats> {
 export async function uploadKnowledgeText(type: string, title: string, content: string): Promise<{ success: boolean; docId: string }> {
   const res = await fetch(`${BASE}/knowledge`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ type, title, content }),
   });
   if (!res.ok) throw new Error(`Failed to upload text: ${res.status}`);
@@ -76,6 +78,7 @@ export async function uploadKnowledgePdf(file: File, type: string, title?: strin
   if (title) formData.append('title', title);
   const res = await fetch(`${BASE}/knowledge/upload`, {
     method: 'POST',
+    headers: { ...authHeaders() },
     body: formData,
   });
   const data = await res.json();

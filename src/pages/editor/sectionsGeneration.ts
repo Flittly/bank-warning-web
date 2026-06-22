@@ -1,3 +1,4 @@
+import { authHeaders } from '../../utils/apiClient';
 import * as turf from '@turf/turf';
 import { generatePerpendicularLines } from '../../utils/geometry';
 import { ensureDefaultBasicParams } from '../../services/basicParamsService';
@@ -145,7 +146,7 @@ async function generateSectionsAndCreateTaskCore(params: {
       const payload = { banks: [bank], overwrite: false };
       const res = await fetch('/v0/bank/banks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -277,7 +278,7 @@ async function generateSectionsAndCreateTaskCore(params: {
     console.log('创建任务:', taskPayload);
     const taskResponse = await fetch('/v0/bank/tasks', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(taskPayload),
     });
 
@@ -419,7 +420,7 @@ async function generateSectionsAndCreateTaskCore(params: {
     console.log('发送到后端的数据:', JSON.stringify(sectionsPayload, null, 2));
     const sectionsResponse = await fetch('/v0/bank/sections', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(sectionsPayload),
     });
 
@@ -515,7 +516,7 @@ export async function runCurrentTask(params: {
 
     const response = await fetch(`/v0/bank/tasks/${taskId}/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     });
 
     if (!response.ok) {
