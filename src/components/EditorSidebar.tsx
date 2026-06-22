@@ -31,6 +31,8 @@ interface EditorSidebarProps {
   smoothSelectedShoreLines: () => void;
   selectedBankGroup: string[];
   setSelectedBankGroup: (v: string[]) => void;
+  onBankSelect?: (bankIds: string[]) => void;
+  loadBankById?: (bankId: string) => Promise<void>;
   deleteBankGroup: () => void;
   loadedBanks: any[];
   selectedLoadedBanks: Set<string>;
@@ -100,6 +102,8 @@ function EditorSidebar(props: EditorSidebarProps) {
     bankGroups,
     selectedBankGroup,
     setSelectedBankGroup,
+    onBankSelect,
+    loadBankById,
     deleteBankGroup,
     bankList,
     deleteBankById,
@@ -205,35 +209,41 @@ function EditorSidebar(props: EditorSidebarProps) {
 
             <div className={`${styles.inputGroup} ${styles.bankSelectGroup}`}>
               <div className={styles.bankSelectHeader}>
-                <span className={styles.bankSelectLabel}>获取岸段:</span>
+                <span className={styles.bankSelectLabel}>已有岸段:</span>
                 {selectedBankGroup.length > 0 && (
                   <span className={styles.bankSelectCount}>已选 {selectedBankGroup.length} 条</span>
                 )}
               </div>
-              <select
-                className={styles.bankSelect}
-                multiple
-                value={selectedBankGroup}
-                onChange={(e) => {
-                  const values = Array.from(e.target.selectedOptions)
-                    .map((o) => o.value)
-                    .filter((v) => v);
-                  setSelectedBankGroup(values);
-                }}
-              >
-                {/* 优先显示按 bank_id 列表 */}
+              <div className={styles.bankSelect}>
                 {bankList && bankList.length > 0
                   ? bankList.map((b) => (
-                      <option key={String(b.bank_id)} value={String(b.bank_id)}>
-                        岸段: {String(b.bank_id)}
-                      </option>
+                      <div
+                        key={String(b.bank_id)}
+                        className={`${styles.loadedBankItem} ${selectedBankGroup.includes(String(b.bank_id)) ? styles.selected : ''}`}
+                        onClick={() => {
+                          const bankId = String(b.bank_id);
+                          const next = selectedBankGroup.includes(bankId)
+                            ? selectedBankGroup.filter(v => v !== bankId)
+                            : [...selectedBankGroup, bankId];
+                          setSelectedBankGroup(next);
+                          loadBankById?.(bankId);
+                        }}
+                      >
+                        <div className={styles.loadedBankItemMain}>
+                          <span className={styles.loadedBankItemName}>{b.bank_name || b.bank_id}</span>
+                          <span className={styles.loadedBankItemId}>{b.bank_id}</span>
+                        </div>
+                      </div>
                     ))
                   : bankGroups.map((g) => (
-                      <option key={g.region_code} value={g.region_code}>
-                        {g.region_code}（{g.count} 条）
-                      </option>
+                      <div
+                        key={g.region_code}
+                        className={styles.loadedBankItem}
+                      >
+                        <span>{g.region_code}（{g.count} 条）</span>
+                      </div>
                     ))}
-              </select>
+              </div>
             </div>
             <div className={`${styles.mt12} ${styles.buttonGrid}`}>
               <button

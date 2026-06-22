@@ -543,9 +543,9 @@ function EditorPage(props: EditorPageProps) {
   };
 
   const loadBankById = async (bankId: string) => {
+    console.log('[loadBankById] 加载岸段:', bankId);
     if (!bankId) return;
     try {
-      // 尝试按 REST 资源路径获取单条
       let res = await fetch(`/v0/bank/banks/${encodeURIComponent(bankId)}`);
       if (!res.ok) {
         // 退回到查询参数形式
@@ -1087,7 +1087,7 @@ function EditorPage(props: EditorPageProps) {
   };
 
   const handleSelectBanksFromDropdown = async (nextSelected: string[]) => {
-    // 计算增量，只加载“新选中的”条目
+    console.log('[dropdown] 选中岸段:', nextSelected);
     const prev = prevSelectedBankGroupRef.current;
     prevSelectedBankGroupRef.current = nextSelected;
     setSelectedBankGroup(nextSelected);
@@ -1941,6 +1941,7 @@ function EditorPage(props: EditorPageProps) {
           smoothSelectedShoreLines={smoothSelectedShoreLines}
           selectedBankGroup={selectedBankGroup}
           setSelectedBankGroup={handleSelectBanksFromDropdown}
+          loadBankById={loadBankById}
           deleteBankGroup={deleteBankGroup}
           loadedBanks={loadedBanks}
           selectedLoadedBanks={selectedLoadedBanks}

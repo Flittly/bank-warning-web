@@ -57,8 +57,9 @@ export function uploadMainGeoJsonAction(params: {
             region_code: feature.properties.region_code || regionCode,
             description: feature.properties.description || `从 ${fileName} 导入的岸线`,
             geometry: feature.geometry,
+            bank_geometry: feature.geometry,
             reversed: !!(feature.properties.reversed === true || feature.properties.reversed === 'true'),
-            from_backend: false, // 标记为前端上传
+            from_backend: false,
           };
 
           newBanks.push(bank);
