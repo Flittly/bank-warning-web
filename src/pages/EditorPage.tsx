@@ -514,8 +514,7 @@ function EditorPage(props: EditorPageProps) {
 
   const fetchBankGroups = async () => {
     try {
-      // 目前岸段仅使用：GET /v0/bank/banks?region_code=...
-      const res = await fetch('/v0/bank/banks?region_code=Mzs');
+      const res = await fetch('/v0/bank/banks');
       if (!res.ok) {
         throw new Error(`${res.status} ${res.statusText}`);
       }
@@ -523,7 +522,19 @@ function EditorPage(props: EditorPageProps) {
       const banks = (data?.banks || data?.data || data) as any[];
       const list = Array.isArray(banks) ? banks : [];
 
-      setBankGroups([{ region_code: 'Mzs', count: list.length }]);
+      // 按 region_code 分组
+      const groupMap: Record<string, any[]> = {};
+      list.forEach((b: any) => {
+        const rc = b.region_code || 'Unknown';
+        if (!groupMap[rc]) groupMap[rc] = [];
+        groupMap[rc].push(b);
+      });
+      const groups = Object.entries(groupMap).map(([region_code, items]) => ({
+        region_code,
+        count: items.length,
+      }));
+
+      setBankGroups(groups);
       setBankList(list);
     } catch (err) {
       console.error('获取岸段组失败:', err);

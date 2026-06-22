@@ -25,14 +25,16 @@ export function uploadMainGeoJsonAction(params: {
   const file = e.target.files?.[0];
   if (!file) return;
 
+  const regionCode = window.prompt('请输入岸段代码（如 Mzs，留空则使用 Unknown_region）：')?.trim() || 'Unknown_region';
+
   const reader = new FileReader();
-  reader.onload = (event) => {
+  reader.onload = async (event) => {
     try {
       const json = JSON.parse(event.target?.result as string);
       const geojsonRaw = json.type === 'FeatureCollection' ? json : turf.featureCollection([json]);
       const geojson = stripZFromGeoJSON(geojsonRaw as any);
 
-      const fileName = file.name.split('.')[0]; // 不含扩展名的文件名
+      const fileName = file.name.split('.')[0];
 
       const lineStringFeatures: any[] = [];
       const newBanks: any[] = [];
@@ -52,7 +54,7 @@ export function uploadMainGeoJsonAction(params: {
           const bank = {
             bank_id: bankId,
             bank_name: bankName,
-            region_code: feature.properties.region_code || 'uploaded',
+            region_code: feature.properties.region_code || regionCode,
             description: feature.properties.description || `从 ${fileName} 导入的岸线`,
             geometry: feature.geometry,
             reversed: !!(feature.properties.reversed === true || feature.properties.reversed === 'true'),
@@ -74,6 +76,21 @@ export function uploadMainGeoJsonAction(params: {
           lineStringFeatures.push(feature);
         }
       });
+
+      // 保存到后端数据库
+      if (newBanks.length > 0) {
+        for (const bank of newBanks) {
+          try {
+            await fetch('/v0/bank/banks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ banks: [bank], overwrite: false }),
+            });
+          } catch (e) {
+            console.warn('自动保存岸段到后端失败:', bank.bank_id, e);
+          }
+        }
+      }
 
       setUploadedData(turf.featureCollection(lineStringFeatures) as any);
       setSelectedLines(new Set());
