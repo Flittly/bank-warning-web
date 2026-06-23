@@ -449,7 +449,7 @@ function EditorSidebar(props: EditorSidebarProps) {
               </button>
             </div>
 
-            <div className={styles.inputGroup}>
+            <div className={`${styles.inputGroup} ${styles.mt8}`}>
               <label>参数模板:</label>
               <select
                 value={selectedBasicParamIdState ?? ''}
