@@ -277,6 +277,28 @@
   transition: all 0.2s;
   margin: 0 auto;
   position: relative;
+  z-index: 1;
+}
+
+.analysisButton::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: conic-gradient(#2563eb, #8b5cf6, #ec4899, #f59e0b, #2563eb);
+  filter: blur(10px);
+  opacity: 0.5;
+  z-index: -1;
+  animation: spin 4s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.analysisButton:hover::before {
+  opacity: 0.75;
+  filter: blur(14px);
 }
 
 .analysisButton:hover {
