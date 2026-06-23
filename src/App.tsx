@@ -1,5 +1,5 @@
 ﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Edit3, BarChart2, Home, Layout, BookOpen } from 'lucide-react';
+import { Edit3, BarChart2, Home, BookOpen } from 'lucide-react';
 import { Button, Tag, Space } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
@@ -42,8 +42,8 @@ function AppLayout() {
     <div className="app-container">
       <div className="main-nav">
         <div className="nav-logo" onClick={() => navigate('/')}>
-          <Layout size={20} />
-          <span>崩岸计算器</span>
+          <img src="/logo.svg" alt="YRCW" width="36" height="42" style={{ flexShrink: 0 }} />
+          <span>长江崩岸监测预警应用系统</span>
         </div>
         <div className="nav-tabs">
           <button

@@ -16,10 +16,37 @@
   height: 100%;
   overflow: hidden;
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-right: 1px solid rgba(255, 255, 255, 0.3);
+  position: relative;
+}
+
+.sidebarContainer::before {
+  content: '';
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  top: 5%;
+  right: -100px;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.22) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(24px);
+  pointer-events: none;
+}
+
+.sidebarContainer::after {
+  content: '';
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  bottom: 25%;
+  left: -80px;
+  background: radial-gradient(circle, rgba(253, 230, 138, 0.2) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(28px);
+  pointer-events: none;
 }
 
 .sidebarHeader {
@@ -58,11 +85,32 @@
 }
 
 .card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.35) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(168, 210, 255, 0.2) 0%, transparent 50%),
+    rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px) saturate(1.6) brightness(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 22px;
   padding: 16px;
   margin-bottom: 12px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.15),
+    0 4px 24px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+  position: relative;
+}
+
+.card:hover {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03);
 }
 
 .inputGroup {
@@ -163,11 +211,15 @@
 }
 
 .primaryButton {
-  background: var(--primary-color);
-  color: white;
-  border: none;
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(254, 243, 199, 0.2) 100%);
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  color: #1e293b;
+  border: 1.5px solid rgba(251, 191, 36, 0.5);
   padding: 8px 4px;
-  border-radius: 10px;
+  border-radius: 14px;
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
@@ -175,9 +227,22 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  transition: opacity 0.2s;
+  transition: all 0.2s;
   width: 100%;
   box-sizing: border-box;
+  box-shadow:
+    0 0 10px rgba(251, 191, 36, 0.1),
+    inset 0 1px 0 rgba(255,255,255,0.5);
+}
+
+.primaryButton:hover {
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(254, 243, 199, 0.3) 100%);
+  border-color: rgba(251, 191, 36, 0.7);
+  box-shadow:
+    0 0 18px rgba(251, 191, 36, 0.18),
+    inset 0 1px 0 rgba(255,255,255,0.6);
 }
 
 .primaryButton:hover {
@@ -190,11 +255,15 @@
 }
 
 .outlineButton {
-  background: white;
-  color: var(--primary-color);
-  border: 1px solid var(--primary-color);
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(254, 243, 199, 0.15) 100%);
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  color: #1e293b;
+  border: 1.5px solid rgba(251, 191, 36, 0.5);
   padding: 8px 4px;
-  border-radius: 10px;
+  border-radius: 14px;
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
@@ -204,15 +273,31 @@
   gap: 4px;
   width: 100%;
   box-sizing: border-box;
+  box-shadow:
+    0 0 10px rgba(251, 191, 36, 0.08),
+    inset 0 1px 0 rgba(255,255,255,0.5);
+  transition: all 0.2s;
 }
 
 .outlineButton:hover {
-  background: #eff6ff;
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.4) 0%,
+    rgba(254, 243, 199, 0.22) 100%);
+  border-color: rgba(251, 191, 36, 0.65);
+  box-shadow:
+    0 0 16px rgba(251, 191, 36, 0.15),
+    inset 0 1px 0 rgba(255,255,255,0.6);
 }
 
 .outlineButton.active {
-  background: var(--primary-color);
-  color: white;
+  background: linear-gradient(135deg,
+    rgba(59, 130, 246, 0.12) 0%,
+    rgba(147, 197, 253, 0.1) 100%);
+  border: 1.5px solid rgba(59, 130, 246, 0.5);
+  color: #2563eb;
+  box-shadow:
+    0 0 10px rgba(59, 130, 246, 0.1),
+    inset 0 1px 0 rgba(255,255,255,0.5);
 }
 
 .dangerButton {
@@ -255,7 +340,8 @@
 .sidebarFooter {
   padding: 20px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
   display: flex;
   flex-direction: column;
   align-items: center;

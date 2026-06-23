@@ -1529,10 +1529,17 @@ function ResultPage(props: ResultPageProps) {
                       onClick={(e) => { e.stopPropagation(); handleGenerateReport(task.task_id, task.task_name); }}
                       disabled={generatingTaskId === task.task_id}
                       style={{
-                        marginTop: 6, padding: '3px 10px', fontSize: '0.75rem',
-                        background: generatingTaskId === task.task_id ? '#94a3b8' : '#2563eb',
-                        color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer',
+                        marginTop: 6, padding: '5px 14px', fontSize: '0.8rem',
+                        background: generatingTaskId === task.task_id
+                          ? '#94a3b8'
+                          : 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(59,130,246,0.22) 100%)',
+                        color: generatingTaskId === task.task_id ? '#fff' : '#1E40AF',
+                        border: generatingTaskId === task.task_id ? 'none' : '1.5px solid rgba(59,130,246,0.45)',
+                        borderRadius: 14, cursor: generatingTaskId === task.task_id ? 'default' : 'pointer',
                         display: 'flex', alignItems: 'center', gap: 4,
+                        backdropFilter: 'blur(8px) saturate(1.3)',
+                        WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
+                        boxShadow: '0 0 10px rgba(59,130,246,0.1), inset 0 1px 0 rgba(255,255,255,0.4)',
                       }}
                     >
                       <FileText size={12} />

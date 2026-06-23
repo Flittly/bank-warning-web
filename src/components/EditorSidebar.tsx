@@ -177,10 +177,6 @@ function EditorSidebar(props: EditorSidebarProps) {
 
   return (
     <div className={styles.sidebarContainer}>
-      <div className={styles.sidebarHeader}>
-        <h2>断面设计</h2>
-      </div>
-
       <div className={styles.sidebarContent}>
         {/* 数据加载 */}
         <section className={styles.configSection}>
