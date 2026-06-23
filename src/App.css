@@ -112,12 +112,36 @@
   transition: all 0.2s;
   outline: none;
   box-shadow: none;
+  position: relative;
+  overflow: hidden;
 }
 
 .nav-tab:focus,
 .nav-tab:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+.nav-tab.active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 255, 255, 0.5),
+    transparent);
+  transform: skewX(-25deg);
+  animation: tabShine 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes tabShine {
+  0% { left: -150%; }
+  50% { left: 120%; }
+  100% { left: 120%; }
 }
 
 .nav-tab:hover {
@@ -686,6 +710,61 @@
   overflow-y: auto;
 }
 
+/* 蓝圆光斑 — 结果查看器左侧面板 */
+.editor-sidebar-panel {
+  position: relative;
+  overflow: hidden;
+}
+.editor-sidebar-panel::before {
+  content: '';
+  position: absolute;
+  width: 260px; height: 260px;
+  top: 10%; right: -90px;
+  background: radial-gradient(circle, rgba(59,130,246,0.16) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(28px);
+  pointer-events: none;
+  z-index: 0;
+}
+.editor-sidebar-panel::after {
+  content: '';
+  position: absolute;
+  width: 200px; height: 200px;
+  bottom: 25%; left: -70px;
+  background: radial-gradient(circle, rgba(147,197,253,0.13) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(32px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 知识库绿圆光斑 */
+.knowledge-sidebar {
+  position: relative;
+}
+.knowledge-sidebar::before {
+  content: '';
+  position: absolute;
+  width: 220px; height: 220px;
+  top: 10%; right: -70px;
+  background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(24px);
+  pointer-events: none;
+  z-index: 0;
+}
+.knowledge-sidebar::after {
+  content: '';
+  position: absolute;
+  width: 160px; height: 160px;
+  bottom: 25%; left: -50px;
+  background: radial-gradient(circle, rgba(52,211,153,0.1) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(30px);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .task-list-container {
   display: flex;
   flex-direction: column;
@@ -697,20 +776,32 @@
 }
 
 .task-item {
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 16px;
   cursor: pointer;
   transition: all 0.2s;
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(8px) saturate(1.3);
-  -webkit-backdrop-filter: blur(8px) saturate(1.3);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.3) 0%, transparent 50%),
+    rgba(255,255,255,0.12);
+  backdrop-filter: blur(12px) saturate(1.4) brightness(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4) brightness(1.05);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.1),
+    0 4px 16px rgba(0,0,0,0.05),
+    inset 0 1px 0 rgba(255,255,255,0.4);
+  position: relative;
 }
 
 .task-item:hover {
-  border-color: rgba(59, 130, 246, 0.3);
-  background: rgba(239, 246, 255, 0.35);
+  border-color: rgba(59,130,246,0.35);
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.4) 0%, transparent 50%),
+    rgba(239,246,255,0.2);
+  box-shadow:
+    0 0 0 1px rgba(59,130,246,0.15),
+    0 6px 24px rgba(0,0,0,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.5);
 }
 
 .task-item.active {

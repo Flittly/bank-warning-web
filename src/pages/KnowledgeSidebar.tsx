@@ -88,16 +88,24 @@ export default function KnowledgeSidebar({ onSelectDoc, onSearch, style }: Props
   };
 
   return (
-    <div style={{
+    <div className="knowledge-sidebar" style={{
       overflowY: 'auto', padding: '16px', width: '100%', height: '100%',
-      background: '#ffffff', borderRight: '1px solid #e2e8f0',
+      background: 'rgba(255,255,255,0.6)',
+      backdropFilter: 'blur(12px)',
+      WebkitBackdropFilter: 'blur(12px)',
+      borderRight: '1px solid rgba(255,255,255,0.3)',
       ...style,
     }}>
       {/* Upload */}
       <label style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-        background: '#3b82f6', color: '#fff', borderRadius: 8, cursor: 'pointer',
-        fontWeight: 600, fontSize: 14, justifyContent: 'center', marginBottom: 12,
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(16,185,129,0.2) 100%)',
+        backdropFilter: 'blur(8px) saturate(1.3)',
+        WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
+        border: '1.5px solid rgba(16,185,129,0.4)',
+        color: '#065F46', borderRadius: 14, cursor: 'pointer',
+        fontWeight: 500, fontSize: 14, justifyContent: 'center', marginBottom: 12,
+        boxShadow: '0 0 10px rgba(16,185,129,0.08), inset 0 1px 0 rgba(255,255,255,0.5)',
       }}>
         <Upload size={16} />
         上传文档 (PDF / DOCX / TXT)
@@ -113,14 +121,20 @@ export default function KnowledgeSidebar({ onSelectDoc, onSearch, style }: Props
           onChange={e => setSearchQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           style={{
-            flex: 1, padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 6,
-            fontSize: 13, outline: 'none',
+            flex: 1, padding: '8px 12px', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10,
+            fontSize: 13, outline: 'none', background: 'rgba(255,255,255,0.4)',
           }}
         />
         <button onClick={handleSearch}
           style={{
-            padding: '8px 12px', background: '#6366f1', color: '#fff', border: 'none',
-            borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center',
+            padding: '8px 12px',
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(239,68,68,0.2) 100%)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1.5px solid rgba(239,68,68,0.4)',
+            color: '#DC2626', borderRadius: 10, cursor: 'pointer',
+            display: 'flex', alignItems: 'center',
+            boxShadow: '0 0 8px rgba(239,68,68,0.08), inset 0 1px 0 rgba(255,255,255,0.4)',
           }}>
           <Search size={14} />
         </button>

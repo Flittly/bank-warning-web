@@ -174,6 +174,10 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
       width: width,
       minWidth: width,
       overflow: 'hidden',
+      background: 'rgba(255, 255, 255, 0.6)',
+      backdropFilter: 'blur(16px) saturate(1.3)',
+      WebkitBackdropFilter: 'blur(16px) saturate(1.3)',
+      borderLeft: '1px solid rgba(255, 255, 255, 0.3)',
     }}
       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
       onDrop={(e) => {
@@ -191,10 +195,11 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
         <>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '12px 16px', borderBottom: '1px solid #e2e8f0',
+            padding: '10px 16px',
+            borderBottom: '1px solid rgba(0,0,0,0.06)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-              <MessageCircle size={16} />
+              <MessageCircle size={14} color="#94A3B8" />
               <select
                 value={activeSessionId || ''}
                 onChange={(e) => {
@@ -202,11 +207,13 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
                   setMessages([]);
                 }}
                 style={{
-                  flex: 1, border: 'none', background: 'transparent',
-                  fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer',
-                  maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis',
+                  flex: 1, border: '1px solid rgba(0,0,0,0.08)',
+                  background: 'rgba(0,0,0,0.02)',
+                  fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                  borderRadius: 10, padding: '6px 8px',
+                  maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis',
                   outline: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
-                  appearance: 'none',
+                  appearance: 'none', color: '#334155',
                 }}
               >
                 {sessions.map(s => (
@@ -220,24 +227,42 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
               <button
                 onClick={createSession}
                 style={{
-                  border: 'none', background: 'transparent', cursor: 'pointer',
-                  padding: 4, borderRadius: 4, color: '#64748b',
+                  width: 30, height: 30, minWidth: 30, minHeight: 30,
+                  flexShrink: 0, padding: 0, boxSizing: 'border-box',
+                  border: '1px solid rgba(0,0,0,0.08)',
+                  background: 'rgba(255,255,255,0.5)',
+                  backdropFilter: 'blur(6px)',
+                  WebkitBackdropFilter: 'blur(6px)',
+                  cursor: 'pointer',
+                  borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.6)',
+                  transition: 'all 0.2s',
                 }}
                 title="新建会话"
               >
-                <Plus size={16} />
+                <Plus size={14} color="#64748B" />
               </button>
               <button
                 onClick={() => activeSessionId && deleteSession(activeSessionId)}
                 disabled={!activeSessionId}
                 style={{
-                  border: 'none', background: 'transparent', cursor: 'pointer',
-                  padding: 4, borderRadius: 4, color: '#64748b',
+                  width: 30, height: 30, minWidth: 30, minHeight: 30,
+                  flexShrink: 0, padding: 0, boxSizing: 'border-box',
+                  border: '1px solid rgba(0,0,0,0.08)',
+                  background: 'rgba(255,255,255,0.5)',
+                  backdropFilter: 'blur(6px)',
+                  WebkitBackdropFilter: 'blur(6px)',
+                  cursor: activeSessionId ? 'pointer' : 'default',
+                  borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   opacity: activeSessionId ? 1 : 0.3,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.6)',
+                  transition: 'all 0.2s',
                 }}
                 title="删除会话"
               >
-                <Trash2 size={16} />
+                <Trash2 size={16} color="#64748B" />
               </button>
             </div>
           </div>
@@ -350,8 +375,14 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
               onClick={sendMessage}
               disabled={loading || !input.trim()}
               style={{
-                border: 'none', background: loading ? '#94a3b8' : '#2563eb',
-                color: '#ffffff', borderRadius: 8, padding: '8px 12px',
+                border: loading ? 'none' : '1.5px solid rgba(148,163,184,0.5)',
+                background: loading ? '#94a3b8'
+                  : 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(203,213,225,0.2) 30%, rgba(148,163,184,0.15) 70%, rgba(255,255,255,0.1) 100%)',
+                backdropFilter: loading ? 'none' : 'blur(8px) saturate(1.2)',
+                WebkitBackdropFilter: loading ? 'none' : 'blur(8px) saturate(1.2)',
+                color: loading ? '#ffffff' : '#475569',
+                borderRadius: 14, padding: '8px 12px',
+                boxShadow: loading ? 'none' : '0 2px 6px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.3), inset 0 1px 0 rgba(255,255,255,0.5)',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center',
               }}
