@@ -16,12 +16,16 @@
   height: 100%;
   overflow: hidden;
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .sidebarHeader {
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color);
-  background: #fdfdfd;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: transparent;
 }
 
 .sidebarHeader h2 {
@@ -56,7 +60,7 @@
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 16px;
   margin-bottom: 12px;
 }
@@ -82,7 +86,7 @@
   width: 100%;
   padding: 8px 12px;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 10px;
   font-size: 0.875rem;
   outline: none;
   transition: border-color 0.2s;
@@ -163,7 +167,7 @@
   color: white;
   border: none;
   padding: 8px 4px;
-  border-radius: 6px;
+  border-radius: 10px;
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
@@ -190,8 +194,8 @@
   color: var(--primary-color);
   border: 1px solid var(--primary-color);
   padding: 8px 4px;
-  border-radius: 6px;
-  font-size: 0.875rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   display: flex;
@@ -250,24 +254,43 @@
 
 .sidebarFooter {
   padding: 20px;
-  border-top: 1px solid var(--border-color);
-  background: #fdfdfd;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .analysisButton {
-  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #1e293b;
   color: white;
-  border: none;
-  padding: 14px;
-  border-radius: 8px;
-  width: 100%;
-  font-weight: 600;
+  border: 3px solid #334155;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.2s;
+  margin: 0 auto;
+  position: relative;
+}
+
+.analysisButton:hover {
+  background: #0f172a;
+  border-color: #475569;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: scale(1.05);
+}
+
+.analysisButton:disabled {
+  background: #94a3b8;
+  border-color: #cbd5e1;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .uploadButtonWrapper {

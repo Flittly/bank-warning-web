@@ -748,8 +748,9 @@ function EditorSidebar(props: EditorSidebarProps) {
           title="执行岸线分析"
           aria-label="执行岸线分析"
         >
-          <Zap size={18} /> 执行岸线分析
+          <Zap size={28} />
         </button>
+        <span className={styles.hintText}>执行岸线分析</span>
       </div>
     </div>
   );
