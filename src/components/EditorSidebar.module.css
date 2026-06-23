@@ -92,7 +92,7 @@
 }
 
 .bankSelect {
-  min-height: 120px;
+  max-height: 260px;
   background-color: #fff;
   border: 1px solid var(--border-color);
   border-radius: 8px !important;

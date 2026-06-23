@@ -33,6 +33,7 @@ interface EditorSidebarProps {
   setSelectedBankGroup: (v: string[]) => void;
   onBankSelect?: (bankIds: string[]) => void;
   loadBankById?: (bankId: string) => Promise<void>;
+  removeBankFromMap?: (bankId: string) => void;
   deleteBankGroup: () => void;
   loadedBanks: any[];
   selectedLoadedBanks: Set<string>;
@@ -104,6 +105,7 @@ function EditorSidebar(props: EditorSidebarProps) {
     setSelectedBankGroup,
     onBankSelect,
     loadBankById,
+    removeBankFromMap,
     deleteBankGroup,
     bankList,
     deleteBankById,
@@ -222,11 +224,14 @@ function EditorSidebar(props: EditorSidebarProps) {
                         className={`${styles.loadedBankItem} ${selectedBankGroup.includes(String(b.bank_id)) ? styles.selected : ''}`}
                         onClick={() => {
                           const bankId = String(b.bank_id);
-                          const next = selectedBankGroup.includes(bankId)
-                            ? selectedBankGroup.filter(v => v !== bankId)
-                            : [...selectedBankGroup, bankId];
-                          setSelectedBankGroup(next);
-                          loadBankById?.(bankId);
+                          const isSelected = selectedBankGroup.includes(bankId);
+                          if (isSelected) {
+                            setSelectedBankGroup(selectedBankGroup.filter(v => v !== bankId));
+                            removeBankFromMap?.(bankId);
+                          } else {
+                            setSelectedBankGroup([...selectedBankGroup, bankId]);
+                            loadBankById?.(bankId);
+                          }
                         }}
                       >
                         <div className={styles.loadedBankItemMain}>

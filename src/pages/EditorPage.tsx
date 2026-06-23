@@ -610,6 +610,18 @@ function EditorPage(props: EditorPageProps) {
     }
   };
 
+  const removeBankFromMap = (bankId: string) => {
+    setUploadedData((prev) => {
+      if (!prev) return prev;
+      const features = (prev.features || []).filter((f: any) => {
+        const p = f?.properties || {};
+        return String(p.bank_id || p.bankId || '') !== String(bankId);
+      });
+      return { ...prev, features } as any;
+    });
+    setLoadedBanks((prev) => prev.filter((b) => String(b.bank_id) !== bankId));
+  };
+
   const deleteBankById = async (bankId: string) => {
     if (!bankId) return;
     const ok = window.confirm(`确认删除岸段 bank_id=${bankId} ?`);
@@ -1942,6 +1954,7 @@ function EditorPage(props: EditorPageProps) {
           selectedBankGroup={selectedBankGroup}
           setSelectedBankGroup={handleSelectBanksFromDropdown}
           loadBankById={loadBankById}
+          removeBankFromMap={removeBankFromMap}
           deleteBankGroup={deleteBankGroup}
           loadedBanks={loadedBanks}
           selectedLoadedBanks={selectedLoadedBanks}
