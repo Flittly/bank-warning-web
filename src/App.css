@@ -704,6 +704,29 @@
 }
 
 /* ���ҳ�����б���ʽ */
+/* ====== Mapbox 缩放按钮毛玻璃 ====== */
+.mapboxgl-ctrl-group {
+  background: rgba(255,255,255,0.7) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(0,0,0,0.08) !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+  margin: 12px !important;
+}
+.mapboxgl-ctrl-group button {
+  width: 32px !important;
+  height: 32px !important;
+  border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+}
+.mapboxgl-ctrl-group button:last-child {
+  border-bottom: none !important;
+}
+.mapboxgl-ctrl-group button:hover {
+  background: rgba(0,0,0,0.04) !important;
+}
+
 .result-sidebar {
   width: 280px;
   max-height: 85vh;

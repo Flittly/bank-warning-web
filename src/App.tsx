@@ -1,5 +1,5 @@
 ﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Edit3, BarChart2, Home, BookOpen } from 'lucide-react';
+import { Edit3, BarChart2, BookOpen } from 'lucide-react';
 import { Button, Tag, Space } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
@@ -72,9 +72,6 @@ function AppLayout() {
           </button>
         </div>
         <div className="nav-right">
-          <button className="nav-home" type="button" onClick={() => navigate('/')} title="返回首页" aria-label="返回首页">
-            <Home size={18} />
-          </button>
           {!isLoading && (
             isAuthenticated ? (
               <div className="nav-user">

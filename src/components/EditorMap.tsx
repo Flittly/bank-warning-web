@@ -112,6 +112,7 @@ interface EditorMapProps {
   tiffBoundsData: GeoJSON.FeatureCollection | null;
   showTiffBounds: boolean;
   resizeTrigger: number;
+  satellite?: boolean;
 }
 
 function EditorMap(props: EditorMapProps) {
@@ -462,6 +463,16 @@ function EditorMap(props: EditorMapProps) {
     }
   }, [selectedCrossLineIndex, selectedCrossLineIndices, perpendicularData]);
 
+  // 底图切换
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const style = props.satellite
+      ? 'mapbox://styles/mapbox/satellite-v9'
+      : 'mapbox://styles/mapbox/light-v10';
+    map.setStyle(style);
+  }, [props.satellite]);
+
   // 初始化地图和交互
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -474,7 +485,7 @@ function EditorMap(props: EditorMapProps) {
     });
 
     mapRef.current = map;
-    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.addControl(new mapboxgl.NavigationControl(), 'top-left');
 
     map.on('load', () => {
       map.addSource('perpendicular-lines', { type: 'geojson', data: turf.featureCollection([]) });

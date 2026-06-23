@@ -9,7 +9,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, BarChart3, MessageCircle } from 'lucide-react';
+import { Box, FileText, List, BarChart3, MessageCircle, Globe } from 'lucide-react';
 
 // 与 EditorPage 保持一致的 Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -170,6 +170,7 @@ function ResultPage(props: ResultPageProps) {
   const [matrixDetail, setMatrixDetail] = useState<any | null>(null);
 
   const [chatCollapsed, setChatCollapsed] = useState<boolean>(false);
+  const [satellite, setSatellite] = useState<boolean>(false);
   const [resizeTrigger, setResizeTrigger] = useState(0);
   const [leftPanelWidth, setLeftPanelWidth] = useState(350);
   const [rightPanelWidth, setRightPanelWidth] = useState(350);
@@ -1378,6 +1379,16 @@ function ResultPage(props: ResultPageProps) {
     });
   };
 
+  // 底图切换
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const style = satellite
+      ? 'mapbox://styles/mapbox/satellite-v9'
+      : 'mapbox://styles/mapbox/light-v10';
+    map.setStyle(style);
+  }, [satellite]);
+
   // 初始化地图（沿用 EditorPage 的风格）
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -1390,7 +1401,7 @@ function ResultPage(props: ResultPageProps) {
     });
 
     mapRef.current = map;
-    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.addControl(new mapboxgl.NavigationControl(), 'top-left');
 
     map.on('load', () => {
       // 与 EditorPage 一样预留 uploaded-data 源供岸段使用
@@ -1816,18 +1827,38 @@ function ResultPage(props: ResultPageProps) {
         )}
 
         <button
+          onClick={() => setSatellite(!satellite)}
+          title={satellite ? '平面地图' : '卫星影像'}
+          style={{
+            position: 'absolute', top: 12, right: 12, zIndex: 10,
+            background: 'rgba(255,255,255,0.7)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(0,0,0,0.08)',
+            borderRadius: 14, padding: '6px 12px', cursor: 'pointer',
+            fontSize: '0.8rem', color: '#334155',
+            display: 'flex', alignItems: 'center', gap: 4,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          }}
+        >
+          <Globe size={14} /> {satellite ? '平面' : '卫星'}
+        </button>
+        <button
           onClick={() => { setChatCollapsed(!chatCollapsed); setTimeout(() => setResizeTrigger(t => t + 1), 350); }}
           style={{
-            position: 'absolute', top: 140, right: 12, zIndex: 10,
-            background: '#ffffff', border: '1px solid #e2e8f0',
-            borderRadius: 6, padding: '6px 10px', cursor: 'pointer',
-            fontSize: '0.8rem', color: '#64748b',
+            position: 'absolute', top: 50, right: 12, zIndex: 10,
+            background: 'rgba(255,255,255,0.7)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(0,0,0,0.08)',
+            borderRadius: 14, padding: '6px 12px', cursor: 'pointer',
+            fontSize: '0.8rem', color: '#334155',
             display: 'flex', alignItems: 'center', gap: 4,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
           }}
           title={chatCollapsed ? '展开聊天' : '收起聊天'}
         >
-          <MessageCircle size={16} />
+          <MessageCircle size={14} />
           {chatCollapsed ? 'AI' : '收起'}
         </button>
         {reportTabs.length > 0 && (

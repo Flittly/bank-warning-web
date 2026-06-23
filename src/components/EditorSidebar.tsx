@@ -16,6 +16,7 @@ import {
   Eraser,
   Check,
   Zap,
+  Globe,
   Layout,
   Download
 } from 'lucide-react';
@@ -89,6 +90,8 @@ interface EditorSidebarProps {
   setShowCrossLines: (v: boolean) => void;
   showTiffBounds: boolean;
   setShowTiffBounds: (v: boolean) => void;
+  satellite?: boolean;
+  setSatellite?: (v: boolean) => void;
   handleStartAnalysis: () => void;
   onClear: () => void;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -161,6 +164,8 @@ function EditorSidebar(props: EditorSidebarProps) {
     setShowCrossLines,
     showTiffBounds,
     setShowTiffBounds,
+    satellite,
+    setSatellite,
     handleStartAnalysis,
     onClear,
     handleFileUpload,

@@ -7,7 +7,7 @@ import EditorSidebar from '../components/EditorSidebar';
 import EditorMap from '../components/EditorMap';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, Globe } from 'lucide-react';
 import { setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
 import type { SelectionGroup } from '../types/selection';
@@ -75,6 +75,7 @@ function EditorPage(props: EditorPageProps) {
   const [resizeTrigger, setResizeTrigger] = useState(0);
   const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
   const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [satellite, setSatellite] = useState<boolean>(false);
 
   // 全局属性配置
   const [globalProperties, setGlobalProperties] = useState<SectionParams | null>(null);
@@ -2010,6 +2011,8 @@ function EditorPage(props: EditorPageProps) {
           setShowCrossLines={setShowCrossLines}
           showTiffBounds={showTiffBounds}
           setShowTiffBounds={setShowTiffBounds}
+          satellite={satellite}
+          setSatellite={setSatellite}
           handleStartAnalysis={handleStartAnalysis}
           onClear={onClear}
           handleFileUpload={handleFileUpload}
@@ -2049,20 +2052,41 @@ function EditorPage(props: EditorPageProps) {
           tiffBoundsData={filteredTiffBoundsData}
           showTiffBounds={showTiffBounds}
           resizeTrigger={resizeTrigger}
+          satellite={satellite}
         />
+        <button
+          onClick={() => setSatellite(!satellite)}
+          title={satellite ? '标准底图' : '卫星影像'}
+          style={{
+            position: 'absolute', top: 12, right: 12, zIndex: 10,
+            background: 'rgba(255,255,255,0.7)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(0,0,0,0.08)',
+            borderRadius: 14, padding: '6px 12px', cursor: 'pointer',
+            fontSize: '0.8rem', color: '#334155',
+            display: 'flex', alignItems: 'center', gap: 4,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          }}
+        >
+          <Globe size={14} /> {satellite ? '平面' : '卫星'}
+        </button>
         <button
           onClick={() => { setChatCollapsed(!chatCollapsed); setTimeout(() => setResizeTrigger(t => t + 1), 350); }}
           style={{
-            position: 'absolute',             top: 140, right: 12, zIndex: 10,
-            background: '#ffffff', border: '1px solid #e2e8f0',
-            borderRadius: 6, padding: '6px 10px', cursor: 'pointer',
-            fontSize: '0.8rem', color: '#64748b',
+            position: 'absolute', top: 50, right: 12, zIndex: 10,
+            background: 'rgba(255,255,255,0.7)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(0,0,0,0.08)',
+            borderRadius: 14, padding: '6px 12px', cursor: 'pointer',
+            fontSize: '0.8rem', color: '#334155',
             display: 'flex', alignItems: 'center', gap: 4,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
           }}
           title={chatCollapsed ? '展开聊天' : '收起聊天'}
         >
-          <MessageCircle size={16} />
+          <MessageCircle size={14} />
           {chatCollapsed ? 'AI' : '收起'}
         </button>
       </div>
