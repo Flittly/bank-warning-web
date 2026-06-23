@@ -722,6 +722,7 @@ function EditorSidebar(props: EditorSidebarProps) {
           <div className={styles.sectionTitle}>
             <Settings size={14} /> 视图与工具
           </div>
+          <div className={styles.card}>
           <div className={styles.buttonGrid}>
             <button type="button" className={styles.outlineButton} onClick={() => setShowCrossLines(!showCrossLines)} title={showCrossLines ? '隐藏设计' : '显示设计'} aria-label={showCrossLines ? '隐藏设计' : '显示设计'}>
               {showCrossLines ? <EyeOff size={16} /> : <Eye size={16} />} 
@@ -733,6 +734,7 @@ function EditorSidebar(props: EditorSidebarProps) {
             <button type="button" className={styles.outlineButton} onClick={onClear} title="清空" aria-label="清空">
               <Eraser size={16} /> 清空
             </button>
+          </div>
           </div>
         </section>
       </div>

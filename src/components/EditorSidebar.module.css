@@ -72,6 +72,7 @@
 .inputGroup label {
   display: block;
   font-size: 0.875rem;
+  font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 4px;
 }
@@ -122,9 +123,7 @@
 }
 
 .bankSelectGroup {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--border-color);
+  margin-top: 12px;
 }
 
 .bankSelectHeader {
@@ -163,17 +162,18 @@
   background: var(--primary-color);
   color: white;
   border: none;
-  padding: 10px 16px;
+  padding: 8px 4px;
   border-radius: 6px;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 4px;
   transition: opacity 0.2s;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .primaryButton:hover {
@@ -189,7 +189,7 @@
   background: white;
   color: var(--primary-color);
   border: 1px solid var(--primary-color);
-  padding: 8px 16px;
+  padding: 8px 4px;
   border-radius: 6px;
   font-size: 0.875rem;
   font-weight: 500;
@@ -197,7 +197,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .outlineButton:hover {
