@@ -1458,8 +1458,11 @@ function ResultPage(props: ResultPageProps) {
       <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex' }}>
         {/* Activity Bar - narrow icon column */}
         <div style={{
-          width: 44, minWidth: 44, background: '#f1f5f9',
-          borderRight: '1px solid #e2e8f0',
+          width: 44, minWidth: 44,
+          background: 'rgba(255,255,255,0.3)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          borderRight: '1px solid rgba(255,255,255,0.3)',
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           paddingTop: 12, gap: 2,
         }}>
@@ -1514,7 +1517,7 @@ function ResultPage(props: ResultPageProps) {
         </div>
 
         {/* Content panel - shows the active section only */}
-        <div className="upload-control result-sidebar" style={{ position: 'static', flex: 1, height: '100%', top: 0, left: 0 }}>
+        <div className="upload-control result-sidebar" style={{ position: 'static', flex: 1, height: '100%', top: 0, left: 0, background: 'transparent' }}>
           {/* === TASKS PANEL === */}
           {activeSidebarPanel === 'tasks' && (
             <>

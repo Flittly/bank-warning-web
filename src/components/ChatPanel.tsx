@@ -229,19 +229,22 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
                 style={{
                   width: 30, height: 30, minWidth: 30, minHeight: 30,
                   flexShrink: 0, padding: 0, boxSizing: 'border-box',
-                  border: '1px solid rgba(0,0,0,0.08)',
-                  background: 'rgba(255,255,255,0.5)',
-                  backdropFilter: 'blur(6px)',
-                  WebkitBackdropFilter: 'blur(6px)',
+                  border: 'none',
+                  background:
+                    'radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.3) 0%, transparent 40%), ' +
+                    'radial-gradient(ellipse at 80% 100%, rgba(16,185,129,0.2) 0%, transparent 50%), ' +
+                    'rgba(255,255,255,0.1)',
+                  backdropFilter: 'blur(10px) saturate(1.4)',
+                  WebkitBackdropFilter: 'blur(10px) saturate(1.4)',
                   cursor: 'pointer',
                   borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.6)',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.5)',
                   transition: 'all 0.2s',
                 }}
                 title="新建会话"
               >
-                <Plus size={14} color="#64748B" />
+                <Plus size={14} color="#065F46" />
               </button>
               <button
                 onClick={() => activeSessionId && deleteSession(activeSessionId)}
@@ -249,15 +252,18 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
                 style={{
                   width: 30, height: 30, minWidth: 30, minHeight: 30,
                   flexShrink: 0, padding: 0, boxSizing: 'border-box',
-                  border: '1px solid rgba(0,0,0,0.08)',
-                  background: 'rgba(255,255,255,0.5)',
-                  backdropFilter: 'blur(6px)',
-                  WebkitBackdropFilter: 'blur(6px)',
+                  border: 'none',
+                  background:
+                    'radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.3) 0%, transparent 40%), ' +
+                    'radial-gradient(ellipse at 80% 100%, rgba(239,68,68,0.18) 0%, transparent 50%), ' +
+                    'rgba(255,255,255,0.1)',
+                  backdropFilter: 'blur(10px) saturate(1.4)',
+                  WebkitBackdropFilter: 'blur(10px) saturate(1.4)',
                   cursor: activeSessionId ? 'pointer' : 'default',
                   borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   opacity: activeSessionId ? 1 : 0.3,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.6)',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.5)',
                   transition: 'all 0.2s',
                 }}
                 title="删除会话"
