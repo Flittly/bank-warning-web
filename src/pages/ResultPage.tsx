@@ -39,7 +39,8 @@ interface SectionResult {
   vertical_foot_point?: { type: 'Point'; coordinates: [number, number] } | null;
   // legacy compatibility
   anchorPoint?: number[] | null;
-  risk_level?: string | number; // 字符串(high, medium, low, no) 或 数字(1, 2, 3, 4)
+  risk_level?: string | number;
+  indicator_result?: number | null; // 字符串(high, medium, low, no) 或 数字(1, 2, 3, 4)
   risk_score?: number;
 }
 
@@ -146,6 +147,8 @@ function ResultPage(props: ResultPageProps) {
   const pollTimerRef = useRef<number | null>(null);
   const activePollTaskIdRef = useRef<string | null>(null);
   const lastSectionsByTaskRef = useRef<Record<string, SectionResult[]>>({});
+  const sectionIndicatorResultCacheRef = useRef<Record<string, Record<string, number | null>>>({});
+  const sectionIndicatorResultPromiseRef = useRef<Record<string, Record<string, Promise<number | null> | null>>>({});
 
   const sectionClickHandlerRef = useRef<((e: any) => void) | null>(null);
   const sectionEnterHandlerRef = useRef<(() => void) | null>(null);
@@ -671,25 +674,68 @@ function ResultPage(props: ResultPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 风险解析辅助：判断 risk_level 是否为 0-3 的有效数字
-  const getRiskInfo = (risk: any) => {
-    if (risk === null || risk === undefined) {
-      return { valid: false, color: RISK_COLORS.default, label: '未知', level: null };
-    }
-
-    const n = Number(risk);
-    if (!isNaN(n) && Number.isFinite(n) && n >= 0 && n <= 3) {
-      return { valid: true, color: RISK_COLORS[String(n)] || RISK_COLORS.default, label: n, level: n };
-    }
-
-    // 非 0-3 的值视为未知（灰色）
-    return { valid: false, color: RISK_COLORS.default, label: '未知', level: null };
+  // 风险解析辅助：根据 /v0/bank/results/{sectionId} 的 indicators.result(0-1) 映射到 0-3 风险等级
+  const mapIndicatorResultToRiskLevel = (value: any) => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 1) return null;
+    if (n < 0.25) return 0;
+    if (n < 0.5) return 1;
+    if (n < 0.75) return 2;
+    return 3;
   };
 
-  // 颜色展示回退：仅按四级风险颜色展示（result 数值暂不参与）
+  const getRiskInfo = (indicatorResult: any) => {
+    const level = mapIndicatorResultToRiskLevel(indicatorResult);
+    if (level === null) {
+      return { valid: false, color: RISK_COLORS.default, label: '未知', level: null };
+    }
+    return { valid: true, color: RISK_COLORS[String(level)] || RISK_COLORS.default, label: level, level };
+  };
+
+  const parseIndicatorResultFromSectionDetail = (payload: any): number | null => {
+    const indicators =
+      payload?.indicators ??
+      payload?.result?.indicators ??
+      payload?.data?.indicators ??
+      payload?.data?.result?.indicators;
+    const raw = indicators?.result;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 1) return null;
+    return n;
+  };
+
+  // 颜色展示：按 indicators.result 对应的四级风险颜色展示
   // 不同等级之间的过渡（岸线/中线）仍由 Mapbox 的 line-gradient 插值完成
-  const computeColorWithMatrix = (baseLevel: any) => {
-    return getRiskInfo(baseLevel);
+  const computeColorWithMatrix = (indicatorResult: any) => {
+    return getRiskInfo(indicatorResult);
+  };
+
+  const ensureSectionIndicatorResultLoaded = async (taskId: string, sectionId: string): Promise<number | null> => {
+    if (!taskId || !sectionId) return null;
+    if (!sectionIndicatorResultCacheRef.current[taskId]) {
+      sectionIndicatorResultCacheRef.current[taskId] = {};
+    }
+    if (!sectionIndicatorResultPromiseRef.current[taskId]) {
+      sectionIndicatorResultPromiseRef.current[taskId] = {};
+    }
+    if (Object.prototype.hasOwnProperty.call(sectionIndicatorResultCacheRef.current[taskId], sectionId)) {
+      return sectionIndicatorResultCacheRef.current[taskId][sectionId] ?? null;
+    }
+    const pending = sectionIndicatorResultPromiseRef.current[taskId][sectionId];
+    if (pending) return pending;
+    const promise = (async () => {
+      const res = await fetch(`/v0/bank/results/${encodeURIComponent(sectionId)}`);
+      const text = await res.text();
+      let json: any = null;
+      try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${text?.slice(0, 500)}`);
+      const value = parseIndicatorResultFromSectionDetail(json ?? text);
+      sectionIndicatorResultCacheRef.current[taskId][sectionId] = value;
+      return value;
+    })();
+    sectionIndicatorResultPromiseRef.current[taskId][sectionId] = promise;
+    try { return await promise; } finally { sectionIndicatorResultPromiseRef.current[taskId][sectionId] = null; }
   };
 
   // 获取所有任务列表
@@ -882,6 +928,19 @@ function ResultPage(props: ResultPageProps) {
       return { ...s, risk_level: hit.riskLevel ?? s.risk_level };
     });
 
+    const detailSectionIds = Object.keys(latestBySection);
+    if (detailSectionIds.length > 0) {
+      await Promise.allSettled(
+        detailSectionIds.map(sectionId => ensureSectionIndicatorResultLoaded(taskId, sectionId))
+      );
+    }
+
+    const sectionsWithIndicatorResult = mergedSections.map(s => {
+      const cached = sectionIndicatorResultCacheRef.current[taskId]?.[s.section_id];
+      if (cached === undefined) return s;
+      return { ...s, indicator_result: cached };
+    });
+
     // 注：result 的数值意义尚不明确，暂不再轮询 /matrix（避免高频额外请求）
 
     // 统计成功数：以 risk_level(0-3) 为准
@@ -941,8 +1000,8 @@ function ResultPage(props: ResultPageProps) {
 
     // 轮询驱动地图刷新（断面颜色 + 岸段插值）
     if (map) {
-      renderSections(mergedSections);
-      applyShorelineGradient(mergedSections);
+      renderSections(sectionsWithIndicatorResult);
+      applyShorelineGradient(sectionsWithIndicatorResult);
     }
 
     const shouldStop = completed || (expectedTotal > 0 && processedCount >= expectedTotal);
@@ -1010,7 +1069,8 @@ function ResultPage(props: ResultPageProps) {
           vertical_foot_point: getVerticalFootPointFromAny(s) ?? null,
           // legacy compatibility
           anchorPoint: (s.anchorPoint ?? s.anchor_point ?? s.anchor) ?? null,
-          risk_level: s.risk_level
+          risk_level: s.risk_level,
+          indicator_result: null
         }));
 
       // 打印处理后的断面列表 JSON，便于调试（也可在控制台查看）
@@ -1137,7 +1197,7 @@ function ResultPage(props: ResultPageProps) {
 
     // 转换断面数据为 GeoJSON
     const features = sections.filter(s => s.geometry).map(s => {
-      const info = computeColorWithMatrix(s.risk_level);
+      const info = computeColorWithMatrix(s.indicator_result);
       const color = info.color;
       const displayRisk = info.valid ? info.level : info.label;
 
@@ -1316,7 +1376,7 @@ function ResultPage(props: ResultPageProps) {
                 (coords[0][0] + coords[1][0]) / 2,
                 (coords[0][1] + coords[1][1]) / 2,
               ];
-          const info = computeColorWithMatrix(s.risk_level);
+          const info = computeColorWithMatrix(s.indicator_result);
           return { mid, color: info.color, section: s, valid: info.valid };
         })
         .filter(Boolean) as Array<{ mid: number[]; color: string; section: SectionResult; valid: boolean }>;
