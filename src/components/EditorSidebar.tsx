@@ -20,6 +20,7 @@ import {
   Layout,
   Download
 } from 'lucide-react';
+import { useState } from 'react';
 import type { SelectionGroup } from '../types/selection';
 import styles from './EditorSidebar.module.css';
 
@@ -178,6 +179,7 @@ function EditorSidebar(props: EditorSidebarProps) {
     deleteLoadedBanks,
   } = props;
 
+  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
   const activeSelectedBank = selectedBankGroup[selectedBankGroup.length - 1] || '';
 
   return (
@@ -223,16 +225,26 @@ function EditorSidebar(props: EditorSidebarProps) {
                       <div
                         key={String(b.bank_id)}
                         className={`${styles.loadedBankItem} ${selectedBankGroup.includes(String(b.bank_id)) ? styles.selected : ''}`}
-                        onClick={() => {
+                        onClick={(e) => {
                           const bankId = String(b.bank_id);
                           const isSelected = selectedBankGroup.includes(bankId);
-                          if (isSelected) {
+                          const currentIndex = (bankList || []).indexOf(b);
+
+                          if (e.shiftKey && lastClickedIndex !== null && lastClickedIndex !== currentIndex && currentIndex !== -1) {
+                            const start = Math.min(lastClickedIndex, currentIndex);
+                            const end = Math.max(lastClickedIndex, currentIndex);
+                            const rangeIds = (bankList || []).slice(start, end + 1).map(bk => String(bk.bank_id));
+                            const newSelected = [...new Set([...selectedBankGroup, ...rangeIds])];
+                            setSelectedBankGroup(newSelected);
+                            rangeIds.forEach(id => { if (!selectedBankGroup.includes(id)) loadBankById?.(id); });
+                          } else if (isSelected) {
                             setSelectedBankGroup(selectedBankGroup.filter(v => v !== bankId));
                             removeBankFromMap?.(bankId);
                           } else {
                             setSelectedBankGroup([...selectedBankGroup, bankId]);
                             loadBankById?.(bankId);
                           }
+                          setLastClickedIndex(currentIndex);
                         }}
                       >
                         <div className={styles.loadedBankItemMain}>
