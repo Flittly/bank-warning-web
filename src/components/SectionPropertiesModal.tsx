@@ -6,10 +6,11 @@ import { updateSectionParams } from '../pages/editor/sectionApi';
 
 interface SectionPropertiesModalProps {
   config: SectionParams | null;
-  onSave: (newConfig: SectionParams) => void | Promise<void>;
+  onSave: (newConfig: SectionParams, scope?: string, bankIds?: string[]) => void | Promise<void>;
   onClose: () => void;
   title: string;
   sectionId?: string;
+  bankList?: any[];
 }
 
 function SectionPropertiesModal({
@@ -17,10 +18,13 @@ function SectionPropertiesModal({
   onSave,
   onClose,
   title,
-  sectionId
+  sectionId,
+  bankList = [],
 }: SectionPropertiesModalProps) {
   const [params, setParams] = useState<SectionParams>(config || {});
   const [isSaving, setIsSaving] = useState(false);
+  const [applyScope, setApplyScope] = useState<string>('all');
+  const [selectedBankIds, setSelectedBankIds] = useState<string[]>([]);
 
   const updateDemField = (field: 'bench_id' | 'ref_id', nextValue: string) => {
     setParams((prev) => {
@@ -77,11 +81,11 @@ function SectionPropertiesModal({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      if (sectionId) {
+      if (sectionId && applyScope === 'single') {
         await updateSectionParams(sectionId, params);
       }
-
-      await Promise.resolve(onSave(params));
+      const bankIds = applyScope === 'selected' ? selectedBankIds : undefined;
+      await Promise.resolve(onSave(params, applyScope, bankIds));
       onClose();
     } catch (err: any) {
       console.error('保存参数失败:', err);
@@ -95,6 +99,30 @@ function SectionPropertiesModal({
     <div className={styles.overlay}>
       <div className={styles.container}>
         <h3 className={styles.title}>{title}</h3>
+
+        {/* 应用范围 */}
+        <div className={styles.scopeSection}>
+          <label className={styles.label}>应用范围:</label>
+          <select value={applyScope} onChange={e => setApplyScope(e.target.value)} className={styles.select}>
+            <option value="all">全部断面</option>
+            {bankList.length > 0 && <option value="selected">已选岸段</option>}
+            {sectionId && <option value="single">仅当前断面</option>}
+          </select>
+          {applyScope === 'selected' && bankList.length > 0 && (
+            <div className={styles.bankSelectList}>
+              {bankList.map((b: any) => (
+                <label key={b.bank_id} className={styles.bankCheck}>
+                  <input type="checkbox" checked={selectedBankIds.includes(b.bank_id)}
+                    onChange={e => {
+                      if (e.target.checked) setSelectedBankIds(prev => [...prev, b.bank_id]);
+                      else setSelectedBankIds(prev => prev.filter(id => id !== b.bank_id));
+                    }} />
+                  {b.bank_name || b.bank_id}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* 基础信息 */}
         <fieldset className={styles.fieldset}>

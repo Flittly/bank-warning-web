@@ -36,6 +36,7 @@ interface EditorSidebarProps {
   onBankSelect?: (bankIds: string[]) => void;
   loadBankById?: (bankId: string) => Promise<void>;
   removeBankFromMap?: (bankId: string) => void;
+  onBankParamsView?: (bankId: string) => void;
   deleteBankGroup: () => void;
   loadedBanks: any[];
   selectedLoadedBanks: Set<string>;
@@ -110,6 +111,7 @@ function EditorSidebar(props: EditorSidebarProps) {
     onBankSelect,
     loadBankById,
     removeBankFromMap,
+    onBankParamsView,
     deleteBankGroup,
     bankList,
     deleteBankById,
@@ -222,35 +224,41 @@ function EditorSidebar(props: EditorSidebarProps) {
               <div className={styles.bankSelect}>
                 {bankList && bankList.length > 0
                   ? bankList.map((b) => (
-                      <div
+                        <div
                         key={String(b.bank_id)}
                         className={`${styles.loadedBankItem} ${selectedBankGroup.includes(String(b.bank_id)) ? styles.selected : ''}`}
-                        onClick={(e) => {
-                          const bankId = String(b.bank_id);
-                          const isSelected = selectedBankGroup.includes(bankId);
-                          const currentIndex = (bankList || []).indexOf(b);
-
-                          if (e.shiftKey && lastClickedIndex !== null && lastClickedIndex !== currentIndex && currentIndex !== -1) {
-                            const start = Math.min(lastClickedIndex, currentIndex);
-                            const end = Math.max(lastClickedIndex, currentIndex);
-                            const rangeIds = (bankList || []).slice(start, end + 1).map(bk => String(bk.bank_id));
-                            const newSelected = [...new Set([...selectedBankGroup, ...rangeIds])];
-                            setSelectedBankGroup(newSelected);
-                            rangeIds.forEach(id => { if (!selectedBankGroup.includes(id)) loadBankById?.(id); });
-                          } else if (isSelected) {
-                            setSelectedBankGroup(selectedBankGroup.filter(v => v !== bankId));
-                            removeBankFromMap?.(bankId);
-                          } else {
-                            setSelectedBankGroup([...selectedBankGroup, bankId]);
-                            loadBankById?.(bankId);
-                          }
-                          setLastClickedIndex(currentIndex);
-                        }}
                       >
-                        <div className={styles.loadedBankItemMain}>
+                        <div className={styles.loadedBankItemMain}
+                          onClick={(e: React.MouseEvent) => {
+                            const bankId = String(b.bank_id);
+                            const isSelected = selectedBankGroup.includes(bankId);
+                            const currentIndex = (bankList || []).indexOf(b);
+
+                            if (e.shiftKey && lastClickedIndex !== null && lastClickedIndex !== currentIndex && currentIndex !== -1) {
+                              const start = Math.min(lastClickedIndex, currentIndex);
+                              const end = Math.max(lastClickedIndex, currentIndex);
+                              const rangeIds = (bankList || []).slice(start, end + 1).map(bk => String(bk.bank_id));
+                              const newSelected = [...new Set([...selectedBankGroup, ...rangeIds])];
+                              setSelectedBankGroup(newSelected);
+                              rangeIds.forEach(id => { if (!selectedBankGroup.includes(id)) loadBankById?.(id); });
+                            } else if (isSelected) {
+                              setSelectedBankGroup(selectedBankGroup.filter(v => v !== bankId));
+                              removeBankFromMap?.(bankId);
+                            } else {
+                              setSelectedBankGroup([...selectedBankGroup, bankId]);
+                              loadBankById?.(bankId);
+                            }
+                            setLastClickedIndex(currentIndex);
+                          }}
+                        >
                           <span className={styles.loadedBankItemName}>{b.bank_name || b.bank_id}</span>
                           <span className={styles.loadedBankItemId}>{b.bank_id}</span>
                         </div>
+                        <button
+                          className={styles.bankParamsBtn}
+                          onClick={(e) => { e.stopPropagation(); onBankParamsView?.(String(b.bank_id)); }}
+                          title="查看参数配置"
+                        ><Settings size={14} /></button>
                       </div>
                     ))
                   : bankGroups.map((g) => (

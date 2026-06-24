@@ -1956,6 +1956,36 @@ function EditorPage(props: EditorPageProps) {
           setSelectedBankGroup={handleSelectBanksFromDropdown}
           loadBankById={loadBankById}
           removeBankFromMap={removeBankFromMap}
+          onBankParamsView={(bankId) => {
+            const features = perpendicularData?.features || [];
+            const section = features.find((f: any) => f.properties?.bank_id === bankId);
+            if (section) {
+              const sid = section.properties?.sectionId || section.properties?.section_id;
+              if (sid) {
+                const lineProps: any = section.properties || {};
+                setEditingPropertiesGroupId(`cross-line-view-${sid}`);
+                const currentConfig = {
+                  param_name: lineProps.paramName || lineProps.param_name || '',
+                  segment: lineProps.segment || '',
+                  current_timepoint: lineProps.currentTimepoint || lineProps.current_timepoint || '',
+                  set_name: lineProps.setName || lineProps.set_name || '',
+                  water_qs: lineProps.waterQs || lineProps.water_qs || '',
+                  tidal_level: lineProps.tidalLevel || lineProps.tidal_level || '',
+                  bench_id: lineProps.benchId || lineProps.bench_id || '',
+                  ref_id: lineProps.refId || lineProps.ref_id || '',
+                  hs: lineProps.hs,
+                  hc: lineProps.hc,
+                  protection_level: lineProps.protectionLevel || lineProps.protection_level || '',
+                  control_level: lineProps.controlLevel || lineProps.control_level || '',
+                  comparison_timepoint: lineProps.comparisonTimepoint || lineProps.comparison_timepoint || '',
+                  risk_thresholds: lineProps.riskThresholds || lineProps.risk_thresholds || {},
+                  weights: lineProps.weights || {},
+                  other_params: lineProps.otherParams || lineProps.other_params || {},
+                } as any;
+                setEditingPropertiesGroupConfig(currentConfig);
+              }
+            }
+          }}
           deleteBankGroup={deleteBankGroup}
           loadedBanks={loadedBanks}
           selectedLoadedBanks={selectedLoadedBanks}
@@ -2098,25 +2128,45 @@ function EditorPage(props: EditorPageProps) {
         <SectionPropertiesModal
           config={globalProperties}
           title="全局属性配置"
-          onSave={async (newConfig) => {
+          bankList={bankList}
+          onSave={async (newConfig, scope, bankIds) => {
             const paramIdStr = selectedBasicParamIdState === null ? '' : String(selectedBasicParamIdState);
-            if (!paramIdStr) {
-              throw new Error('未选择可保存的参数模板');
-            }
+            if (!paramIdStr) throw new Error('未选择可保存的参数模板');
 
             await updateBasicParamAsSectionParams(paramIdStr, newConfig);
             setGlobalProperties(newConfig);
             setBasicParamsList((prev) =>
               prev.map((item) => {
                 const itemId = String(item.param_id ?? item.id ?? '');
-                if (itemId !== paramIdStr) return item;
-                return {
-                  ...item,
-                  ...newConfig,
-                };
+                return itemId !== paramIdStr ? item : { ...item, ...newConfig };
               }),
             );
-            alert('参数模板已保存到后端');
+
+            // 批量应用到断面上
+            if (scope === 'all' || scope === 'selected') {
+              const features = perpendicularData?.features || [];
+              let targetIds: string[] = [];
+              if (scope === 'all') {
+                targetIds = features
+                  .map((f: any) => f.properties?.sectionId || f.properties?.section_id)
+                  .filter(Boolean);
+              } else if (bankIds && bankIds.length > 0) {
+                targetIds = features
+                  .filter((f: any) => bankIds.includes(f.properties?.bank_id))
+                  .map((f: any) => f.properties?.sectionId || f.properties?.section_id)
+                  .filter(Boolean);
+              }
+              if (targetIds.length > 0) {
+                await fetch('/v0/bank/sections/batch-params', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ section_ids: targetIds, params: newConfig }),
+                });
+              }
+              alert(`参数模板已保存，并应用到 ${targetIds.length} 个断面`);
+            } else {
+              alert('参数模板已保存到后端');
+            }
           }}
           onClose={() => setShowGlobalPropertiesModal(false)}
         />
