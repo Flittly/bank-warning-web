@@ -172,12 +172,15 @@ export default function KnowledgeSidebar({ onSelectDoc, onSearch, style }: Props
             key={doc.docId}
             onClick={() => onSelectDoc(doc.docId)}
             style={{
-              padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
-              border: '1px solid #e2e8f0', marginBottom: 8, transition: 'all 0.15s',
-              background: '#fff',
+              padding: '12px 14px', borderRadius: 16, cursor: 'pointer',
+              border: '1px solid rgba(255,255,255,0.3)', marginBottom: 8, transition: 'all 0.2s',
+              background: 'rgba(255,255,255,0.15)',
+              backdropFilter: 'blur(12px) saturate(1.4) brightness(1.05)',
+              WebkitBackdropFilter: 'blur(12px) saturate(1.4) brightness(1.05)',
+              boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 4px 16px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.4)',
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
-            onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(16,185,129,0.35)'; e.currentTarget.style.background = 'rgba(239,246,255,0.2)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'; e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', minWidth: 0 }}>

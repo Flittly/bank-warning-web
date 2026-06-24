@@ -221,6 +221,93 @@
   align-items: center;
 }
 
+/* 导航栏右键按钮 + 标签毛玻璃 */
+.nav-right .ant-btn {
+  background: rgba(255,255,255,0.4) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+  border-radius: 14px !important;
+  color: #475569 !important;
+  font-size: 0.8rem !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5) !important;
+  transition: all 0.2s !important;
+}
+.nav-right .ant-btn:hover {
+  background: rgba(255,255,255,0.6) !important;
+  border-color: rgba(0,0,0,0.1) !important;
+}
+.nav-right .ant-tag {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.3);
+  font-size: 0.75rem;
+}
+
+/* 结果页区块标题 */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+.sidebar-header h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+/* 删除选中任务 — 改为图标按钮 */
+.delete-task-btn {
+  display: none;
+}
+.task-delete-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.task-delete-btn:hover {
+  color: #ef4444;
+  background: rgba(239,68,68,0.1);
+}
+.toggle-sections-btn {
+  background: rgba(255,255,255,0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 14px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: #64748b;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  margin-left: auto;
+  transition: all 0.2s;
+}
+.toggle-sections-btn:hover {
+  background: rgba(255,255,255,0.6);
+  border-color: rgba(0,0,0,0.1);
+}
+.toggle-sections-btn.hidden {
+  color: #2563eb;
+  border-color: rgba(59,130,246,0.3);
+}
+
 .app-main {
   flex: 1;
   position: relative;

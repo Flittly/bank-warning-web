@@ -1121,6 +1121,15 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
+  const handleDeleteTaskById = async (taskId: string) => {
+    try {
+      const res = await fetch(`/v0/bank/tasks/${taskId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('删除任务失败');
+      setTaskList(prev => prev.filter(t => t.task_id !== taskId));
+      if (selectedTask === taskId) { stopPolling(); setSelectedTask(null); }
+    } catch (e: any) { setError(e.message); }
+  };
+
   // 渲染断面集合几何并在地图显示
   const renderSections = (sections: SectionResult[]) => {
     const map = mapRef.current;
@@ -1510,13 +1519,8 @@ function ResultPage(props: ResultPageProps) {
           {activeSidebarPanel === 'tasks' && (
             <>
               <div className="sidebar-header">
+                <List size={14} />
                 <h4>任务列表</h4>
-                <button 
-                  className={`toggle-sections-btn ${!showSections ? 'hidden' : ''}`}
-                  onClick={() => setShowSections(!showSections)}
-                >
-                  {showSections ? '隐藏断面' : '显示断面'}
-                </button>
               </div>
               <div className="task-list-container">
                 {taskList.length === 0 && !loading && <p className="empty-hint">暂无任务</p>}
@@ -1532,9 +1536,18 @@ function ResultPage(props: ResultPageProps) {
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                   >
-                    <div className="task-title">{task.task_name}</div>
-                    <div className="task-meta">
-                      ID: {task.task_id} | {new Date(task.created_at).toLocaleDateString()}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div className="task-title">{task.task_name}</div>
+                        <div className="task-meta">
+                          ID: {task.task_id} | {new Date(task.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button className="task-delete-btn" onClick={(e) => {
+                        e.stopPropagation();
+                        if (!confirm(`确认删除任务「${task.task_name}」？`)) return;
+                        handleDeleteTaskById(task.task_id);
+                      }} title="删除任务">×</button>
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleGenerateReport(task.task_id, task.task_name); }}
@@ -1560,8 +1573,11 @@ function ResultPage(props: ResultPageProps) {
                 ))}
               </div>
 
-              <button className="delete-task-btn" disabled={!selectedTask || loading} onClick={handleDeleteTask}>
-                删除选中任务
+              <button 
+                className="toggle-sections-btn"
+                onClick={() => setShowSections(!showSections)}
+              >
+                {showSections ? '隐藏断面' : '显示断面'}
               </button>
 
               {loading && <div className="loading-spinner">数据加载中...</div>}
@@ -1585,6 +1601,7 @@ function ResultPage(props: ResultPageProps) {
           {activeSidebarPanel === 'reports' && (
             <>
               <div className="sidebar-header">
+                <FileText size={14} />
                 <h4>报告查看</h4>
               </div>
               <div className="task-list-container" style={{ maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
@@ -1617,6 +1634,7 @@ function ResultPage(props: ResultPageProps) {
           {activeSidebarPanel === 'progress' && (
             <>
               <div className="sidebar-header">
+                <BarChart3 size={14} />
                 <h4>计算进度</h4>
               </div>
               {progressOpen && selectedTask ? (
@@ -1683,6 +1701,7 @@ function ResultPage(props: ResultPageProps) {
     {activeSidebarPanel === 'skills' && (
       <>
         <div className="sidebar-header">
+          <Box size={14} />
           <h4>Skills</h4>
         </div>
         <div className="task-list-container" style={{ maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
