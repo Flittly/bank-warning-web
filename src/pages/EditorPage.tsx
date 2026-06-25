@@ -82,6 +82,7 @@ function EditorPage(props: EditorPageProps) {
   // 属性配置弹窗状态
   const [showGlobalPropertiesModal, setShowGlobalPropertiesModal] = useState<boolean>(false);
   const [editingPropertiesGroupId, setEditingPropertiesGroupId] = useState<string | null>(null);
+  const [editingBankParams, setEditingBankParams] = useState<{bankId: string; bankName: string; config: any} | null>(null);
 
   // 新增状态：控制岸段选择模式
   const [isSelectingShoreLines, setIsSelectingShoreLines] = useState<boolean>(false);
@@ -730,6 +731,7 @@ function EditorPage(props: EditorPageProps) {
     if (!ok) return;
 
     setLoadedBanks((prev) => prev.filter((bank) => !selected.includes(String(bank.bank_id))));
+    setSelectedBankGroup((prev) => prev.filter((id) => !selected.includes(String(id))));
 
     setUploadedData((prev) => {
       if (!prev) return prev;
@@ -1959,32 +1961,31 @@ function EditorPage(props: EditorPageProps) {
           onBankParamsView={(bankId) => {
             const features = perpendicularData?.features || [];
             const section = features.find((f: any) => f.properties?.bank_id === bankId);
-            if (section) {
-              const sid = section.properties?.sectionId || section.properties?.section_id;
-              if (sid) {
-                const lineProps: any = section.properties || {};
-                setEditingPropertiesGroupId(`cross-line-view-${sid}`);
-                const currentConfig = {
-                  param_name: lineProps.paramName || lineProps.param_name || '',
-                  segment: lineProps.segment || '',
-                  current_timepoint: lineProps.currentTimepoint || lineProps.current_timepoint || '',
-                  set_name: lineProps.setName || lineProps.set_name || '',
-                  water_qs: lineProps.waterQs || lineProps.water_qs || '',
-                  tidal_level: lineProps.tidalLevel || lineProps.tidal_level || '',
-                  bench_id: lineProps.benchId || lineProps.bench_id || '',
-                  ref_id: lineProps.refId || lineProps.ref_id || '',
-                  hs: lineProps.hs,
-                  hc: lineProps.hc,
-                  protection_level: lineProps.protectionLevel || lineProps.protection_level || '',
-                  control_level: lineProps.controlLevel || lineProps.control_level || '',
-                  comparison_timepoint: lineProps.comparisonTimepoint || lineProps.comparison_timepoint || '',
-                  risk_thresholds: lineProps.riskThresholds || lineProps.risk_thresholds || {},
-                  weights: lineProps.weights || {},
-                  other_params: lineProps.otherParams || lineProps.other_params || {},
-                } as any;
-                setEditingPropertiesGroupConfig(currentConfig);
-              }
+            if (!section) {
+              alert('该岸段暂无断面数据，请先生成断面');
+              return;
             }
+            const lineProps: any = section.properties || {};
+            const bankName = lineProps.bank_name || lineProps.bankName || bankId;
+            const currentConfig = {
+              param_name: lineProps.paramName || lineProps.param_name || '',
+              segment: lineProps.segment || '',
+              current_timepoint: lineProps.currentTimepoint || lineProps.current_timepoint || '',
+              set_name: lineProps.setName || lineProps.set_name || '',
+              water_qs: lineProps.waterQs || lineProps.water_qs || '',
+              tidal_level: lineProps.tidalLevel || lineProps.tidal_level || '',
+              bench_id: lineProps.benchId || lineProps.bench_id || '',
+              ref_id: lineProps.refId || lineProps.ref_id || '',
+              hs: lineProps.hs,
+              hc: lineProps.hc,
+              protection_level: lineProps.protectionLevel || lineProps.protection_level || '',
+              control_level: lineProps.controlLevel || lineProps.control_level || '',
+              comparison_timepoint: lineProps.comparisonTimepoint || lineProps.comparison_timepoint || '',
+              risk_thresholds: lineProps.riskThresholds || lineProps.risk_thresholds || {},
+              weights: lineProps.weights || {},
+              other_params: lineProps.otherParams || lineProps.other_params || {},
+            } as any;
+            setEditingBankParams({ bankId, bankName, config: currentConfig });
           }}
           deleteBankGroup={deleteBankGroup}
           loadedBanks={loadedBanks}
@@ -2169,6 +2170,39 @@ function EditorPage(props: EditorPageProps) {
             }
           }}
           onClose={() => setShowGlobalPropertiesModal(false)}
+        />
+      )}
+
+      {/* 岸段参数配置弹窗 */}
+      {editingBankParams && (
+        <SectionPropertiesModal
+          config={editingBankParams.config}
+          title={`岸段 ${editingBankParams.bankName} 参数配置`}
+          onSave={async (newConfig) => {
+            const features = perpendicularData?.features || [];
+            const sections = features.filter((f: any) => f.properties?.bank_id === editingBankParams.bankId);
+            const sectionIds = sections
+              .map((f: any) => f.properties?.sectionId || f.properties?.section_id)
+              .filter(Boolean);
+            if (sectionIds.length > 0) {
+              await fetch('/v0/bank/sections/batch-params', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ section_ids: sectionIds, params: newConfig }),
+              });
+              // 更新本地
+              sections.forEach((f: any) => {
+                for (const [key, val] of Object.entries(newConfig as Record<string, any>)) {
+                  if (f.properties) f.properties[key] = val;
+                }
+              });
+            }
+            setEditingBankParams(null);
+            alert(`${sectionIds.length} 个断面已更新`);
+          }}
+          onClose={() => setEditingBankParams(null)}
+          bankList={bankList}
+          hideScope={true}
         />
       )}
 

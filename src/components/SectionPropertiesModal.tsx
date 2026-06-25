@@ -11,6 +11,7 @@ interface SectionPropertiesModalProps {
   title: string;
   sectionId?: string;
   bankList?: any[];
+  hideScope?: boolean;
 }
 
 function SectionPropertiesModal({
@@ -20,6 +21,7 @@ function SectionPropertiesModal({
   title,
   sectionId,
   bankList = [],
+  hideScope = false,
 }: SectionPropertiesModalProps) {
   const [params, setParams] = useState<SectionParams>(config || {});
   const [isSaving, setIsSaving] = useState(false);
@@ -78,6 +80,24 @@ function SectionPropertiesModal({
     }
   };
 
+  const handleCopy = async () => {
+    const newName = window.prompt('复制为（参数名称）：', (params.param_name || '') + '_副本');
+    if (!newName) return;
+    const newParamId = (params.param_name || 'param') + '_copy_' + Date.now();
+    try {
+      const payload = { ...params, param_id: newParamId, param_name: newName };
+      await fetch('/v0/bank/basic-params', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params: [payload], overwrite: false }),
+      });
+      alert('模板已复制：' + newName);
+      onClose();
+    } catch (err: any) {
+      alert('复制失败：' + err.message);
+    }
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -100,10 +120,12 @@ function SectionPropertiesModal({
       <div className={styles.container}>
         <h3 className={styles.title}>{title}</h3>
 
-        {/* 应用范围 */}
+        {!hideScope && (
+        /* 应用范围 */
         <div className={styles.scopeSection}>
           <label className={styles.label}>应用范围:</label>
           <select value={applyScope} onChange={e => setApplyScope(e.target.value)} className={styles.select}>
+            <option value="none">仅保存模板</option>
             <option value="all">全部断面</option>
             {bankList.length > 0 && <option value="selected">已选岸段</option>}
             {sectionId && <option value="single">仅当前断面</option>}
@@ -123,6 +145,7 @@ function SectionPropertiesModal({
             </div>
           )}
         </div>
+        )}
 
         {/* 基础信息 */}
         <fieldset className={styles.fieldset}>
@@ -346,6 +369,12 @@ function SectionPropertiesModal({
             className={styles.cancelButton}
           >
             取消
+          </button>
+          <button
+            onClick={handleCopy}
+            className={styles.cancelButton}
+          >
+            复制
           </button>
           <button
             onClick={handleExport}

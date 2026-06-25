@@ -87,15 +87,16 @@
 }
 
 .cancelButton {
-  padding: 8px 16px;
+  padding: 8px 20px;
   background: rgba(255,255,255,0.4);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   border: 1px solid rgba(0,0,0,0.08);
-  border-radius: 12px;
+  border-radius: 14px;
   color: #64748b;
   font-size: 0.85rem;
   cursor: pointer;
+  font-weight: 500;
 }
 
 .primaryButton {
