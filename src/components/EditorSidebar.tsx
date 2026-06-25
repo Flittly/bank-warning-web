@@ -190,11 +190,11 @@ function EditorSidebar(props: EditorSidebarProps) {
         {/* 数据加载 */}
         <section className={styles.configSection}>
           <div className={styles.sectionTitle}>
-            <Upload size={14} /> 数据加载与配置
+            <Upload size={14} /> 创建岸段
           </div>
           <div className={styles.card}>
             <div className={styles.buttonGrid}>
-              <label className={styles.primaryButton}>
+              <label className={styles.primaryButton} style={{ gridColumn: '1 / -1' }}>
                 <Upload size={16} /> 上传岸段
                 <input
                   type="file"
@@ -203,20 +203,11 @@ function EditorSidebar(props: EditorSidebarProps) {
                   onChange={handleFileUpload}
                 />
               </label>
-              <label className={styles.outlineButton}>
-                <Upload size={16} /> 上传断面
-                <input
-                  type="file"
-                  className={styles.fileInput}
-                  accept=".geojson,application/json"
-                  onChange={handleSectionsFileUpload}
-                />
-              </label>
             </div>
 
             <div className={`${styles.inputGroup} ${styles.bankSelectGroup}`}>
               <div className={styles.bankSelectHeader}>
-                <span className={styles.bankSelectLabel}>已有岸段:</span>
+                <span className={styles.bankSelectLabel}>本地岸段:</span>
                 {selectedBankGroup.length > 0 && (
                   <span className={styles.bankSelectCount}>已选 {selectedBankGroup.length} 条</span>
                 )}
@@ -426,30 +417,27 @@ function EditorSidebar(props: EditorSidebarProps) {
         {/* 岸段配置 */}
         <section className={styles.configSection}>
           <div className={styles.sectionTitle}>
-            <Layers size={14} /> 岸段与断面规则
+            <Layers size={14} /> 生成断面
           </div>
+
+          {/* 方式一：上传断面 JSON */}
           <div className={styles.card}>
-            <div className={styles.inputGroup}>
-              <label>断面间距 (m):</label>
+              <div className={styles.hintText} style={{ marginBottom: 8, color: '#1e293b', fontSize: '0.85rem', fontWeight: 700 }}>
+                方式一：上传断面（JSON）
+              </div>
+              <label className={styles.primaryButton} style={{ width: '100%', marginBottom: 16 }}>
+              <Upload size={16} /> 上传断面
               <input
-                type="number"
-                value={globalInterval}
-                onChange={(e) => setGlobalInterval(Number(e.target.value))}
-                min="10"
-                step="10"
+                type="file"
+                className={styles.fileInput}
+                accept=".geojson,application/json"
+                onChange={handleSectionsFileUpload}
               />
-            </div>
-            <div className={styles.inputGroup}>
-              <label>断面长度 (m):</label>
-              <input
-                type="number"
-                value={globalLength}
-                onChange={(e) => setGlobalLength(Number(e.target.value))}
-                min="100"
-                step="100"
-              />
-            </div>
-            
+            </label>
+
+              <div className={styles.hintText} style={{ marginBottom: 8, color: '#1e293b', fontSize: '0.85rem', fontWeight: 700 }}>
+                方式二：手动创建断面
+              </div>
             <div className={styles.buttonGrid}>
               <button
                 type="button"
@@ -457,7 +445,7 @@ function EditorSidebar(props: EditorSidebarProps) {
                 onClick={toggleShoreLineSelection}
               >
                 {isSelectingShoreLines ? <Check size={16} /> : <MousePointer2 size={16} />}
-                {isSelectingShoreLines ? '选择中' : '拾取岸段'}
+                {isSelectingShoreLines ? '选择中' : '选择岸段'}
               </button>
               <button 
                 type="button" 
@@ -470,23 +458,27 @@ function EditorSidebar(props: EditorSidebarProps) {
               </button>
             </div>
 
-            <div className={`${styles.inputGroup} ${styles.mt8}`}>
-              <label>参数模板:</label>
-              <select
-                value={selectedBasicParamIdState ?? ''}
-                onChange={(e) => handleSelectBasicParam(e.target.value || null)}
-              >
-                <option value="">（不使用模板）</option>
-                {basicParamsList.map((p: any, idx: number) => {
-                  const paramId = p.param_id ?? p.id ?? idx;
-                  const name = p.param_name || p.paramName || String(paramId);
-                  return (
-                    <option key={String(paramId)} value={String(paramId)}>
-                      {name}
-                    </option>
-                  );
-                })}
-              </select>
+            <div className={styles.inlineGroup}>
+              <div className={styles.inlineField}>
+                <label>断面间距 (m):</label>
+                <input
+                  type="number"
+                  value={globalInterval}
+                  onChange={(e) => setGlobalInterval(Number(e.target.value))}
+                  min="10"
+                  step="10"
+                />
+              </div>
+              <div className={styles.inlineField}>
+                <label>断面长度 (m):</label>
+                <input
+                  type="number"
+                  value={globalLength}
+                  onChange={(e) => setGlobalLength(Number(e.target.value))}
+                  min="100"
+                  step="100"
+                />
+              </div>
             </div>
 
             <div className={styles.mt12}>
@@ -528,11 +520,36 @@ function EditorSidebar(props: EditorSidebarProps) {
               </div>
             )}
 
-            <div className={styles.mt12}>
-              <button type="button" className={styles.outlineButton} onClick={openGlobalPropertiesModal} title="先选择参数模板，再编辑全局属性" aria-label="全局属性配置">
-                <Settings size={14} /> 模板属性配置
-              </button>
+          </div>
+        </section>
+
+        {/* 参数配置 */}
+        <section className={styles.configSection}>
+          <div className={styles.sectionTitle}>
+            <Settings size={14} /> 参数配置
+          </div>
+          <div className={styles.card}>
+            <div className={styles.inputGroup}>
+              <label>参数模板:</label>
+              <select
+                value={selectedBasicParamIdState ?? ''}
+                onChange={(e) => handleSelectBasicParam(e.target.value || null)}
+              >
+                <option value="">（不使用模板）</option>
+                {basicParamsList.map((p: any, idx: number) => {
+                  const paramId = p.param_id ?? p.id ?? idx;
+                  const name = p.param_name || p.paramName || String(paramId);
+                  return (
+                    <option key={String(paramId)} value={String(paramId)}>
+                      {name}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
+            <button type="button" className={styles.primaryButton} onClick={openGlobalPropertiesModal} title="编辑全局属性" aria-label="全局属性配置" style={{ width: '100%' }}>
+              <Settings size={14} /> 模板属性配置
+            </button>
           </div>
         </section>
 
@@ -771,7 +788,7 @@ function EditorSidebar(props: EditorSidebarProps) {
         >
           <Zap size={28} />
         </button>
-        <span className={styles.hintText}>执行岸线分析</span>
+        <span className={styles.hintText}>执行风险分析</span>
       </div>
     </div>
   );

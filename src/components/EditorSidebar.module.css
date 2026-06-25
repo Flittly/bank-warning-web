@@ -123,9 +123,9 @@
 
 .inputGroup label {
   display: block;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
   margin-bottom: 4px;
 }
 
@@ -208,6 +208,32 @@
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 8px;
+  margin-bottom: 10px;
+}
+
+.inlineGroup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.inlineField label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.inlineField input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 0.8rem;
+  outline: none;
 }
 
 .primaryButton {
