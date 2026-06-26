@@ -96,6 +96,10 @@ interface EditorSidebarProps {
   setSatellite?: (v: boolean) => void;
   handleStartAnalysis: () => void;
   onClear: () => void;
+  onSelectBanksByTiff?: () => void;
+  onClipBank?: () => void;
+  colorBanks?: boolean;
+  setColorBanks?: (v: boolean) => void;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleSectionsFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleSelectBasicParam: (id: string | null) => void;
@@ -171,6 +175,10 @@ function EditorSidebar(props: EditorSidebarProps) {
     setSatellite,
     handleStartAnalysis,
     onClear,
+    onSelectBanksByTiff,
+    onClipBank,
+    colorBanks,
+    setColorBanks,
     handleFileUpload,
     handleSectionsFileUpload,
     handleSelectBasicParam,
@@ -304,43 +312,11 @@ function EditorSidebar(props: EditorSidebarProps) {
               </button>
             </div>
 
-            {perpendicularData && perpendicularData.features.length > 0 && (
-              <div className={styles.mt12}>
-                <button
-                  type="button"
-                  className={styles.outlineButton}
-                  onClick={validateAllPendingSections}
-                  title="强制重新校验全部断面（接口 500 时可重试；用于编辑移动后刷新状态）"
-                  aria-label="断面检查"
-                >
-                  <CheckCircle2 size={16} /> 断面检查
-                </button>
-              </div>
-            )}
-
-            {perpendicularData && perpendicularData.features.length > 0 && (
-              <div className={styles.mt12}>
-                <button
-                  type="button"
-                  className={styles.outlineButton}
-                  onClick={() => {
-                    void deleteAllInvalidSections();
-                  }}
-                  title="一键删除所有未通过检查的断面（仅保留未验证与已通过）"
-                  aria-label="一键删除错误断面"
-                >
-                  <Trash2 size={16} /> 一键删除
-                </button>
-              </div>
-            )}
-
-            {perpendicularData && perpendicularData.features.length > 0 && (
-              <div className={styles.mt12}>
-                <button type="button" className={styles.outlineButton} onClick={onExportSections} title="导出断面样例" aria-label="导出断面样例">
-                  <Download size={16} /> 导出断面样例
-                </button>
-              </div>
-            )}
+            <div className={styles.mt12}>
+              <button type="button" className={styles.outlineButton} onClick={onSelectBanksByTiff} title="根据当前模板 DEM 范围自动选择岸段">
+                <Layers size={14} /> 按TIF选岸段
+              </button>
+            </div>
 
             {/* 已加载岸段管理 */}
             {loadedBanks && loadedBanks.length > 0 && (
@@ -493,32 +469,30 @@ function EditorSidebar(props: EditorSidebarProps) {
               </button>
             </div>
 
-            {perpendicularData && perpendicularData.features.length > 0 && (
-              <div className={styles.mt12}>
-                <div className={styles.buttonGrid}>
-                  <button
-                    type="button"
-                    className={`${styles.outlineButton} ${isFixingShoreLineReversed ? styles.active : ''}`}
-                    onClick={toggleFixShoreLineReversed}
-                    title="开启岸段修正：仅对已选岸段点击生效；每次点击岸段都会反转该岸段上全部断面并同步后端，同时切换岸段 properties.reversed（true/false）"
-                    aria-label="修正选择"
-                    disabled={!uploadedData || selectedLinesSize === 0}
-                  >
-                    <MousePointer2 size={16} /> 修正选择
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.outlineButton}
-                    onClick={sendSelectedShoreLinesGeoJson}
-                    title="发送已选岸段 GeoJSON（含修正后的 reversed 标记）到后端"
-                    aria-label="发送"
-                    disabled={!uploadedData || selectedLinesSize === 0}
-                  >
-                    <Upload size={16} /> 上传岸段
-                  </button>
+              {perpendicularData && perpendicularData.features.length > 0 && (
+                <div className={styles.mt12}>
+                  <div className={styles.hintText} style={{ marginBottom: 6, color: '#1e293b', fontSize: '0.85rem', fontWeight: 700 }}>
+                    断面编辑
+                  </div>
+                  <div className={styles.buttonGrid}>
+                    <button type="button" className={styles.outlineButton} onClick={validateAllPendingSections} title="强制重新校验全部断面" aria-label="断面检查">
+                      <CheckCircle2 size={16} /> 断面检查
+                    </button>
+                    <button type="button" className={styles.outlineButton} onClick={() => { void deleteAllInvalidSections(); }} title="一键删除所有未通过检查的断面" aria-label="一键删除错误断面">
+                      <Trash2 size={16} /> 一键删除
+                    </button>
+                    <button type="button" className={styles.outlineButton} onClick={onExportSections} title="导出断面样例" aria-label="导出断面样例">
+                      <Download size={16} /> 导出断面样例
+                    </button>
+                    <button type="button" className={`${styles.outlineButton} ${isFixingShoreLineReversed ? styles.active : ''}`} onClick={toggleFixShoreLineReversed} disabled={!uploadedData || selectedLinesSize === 0} title="修正选择" aria-label="修正选择">
+                      <MousePointer2 size={16} /> 修正选择
+                    </button>
+                    <button type="button" className={styles.outlineButton} onClick={sendSelectedShoreLinesGeoJson} title="上传岸段" aria-label="上传岸段">
+                      <Upload size={16} /> 上传岸段
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
           </div>
         </section>
@@ -553,10 +527,10 @@ function EditorSidebar(props: EditorSidebarProps) {
           </div>
         </section>
 
-        {/* 起止点选择 */}
+        {/* 截取岸段 */}
         <section className={styles.configSection}>
           <div className={styles.sectionTitle}>
-            <Activity size={14} /> 段落起止控制
+            <Activity size={14} /> 截取岸段
           </div>
           <div className={styles.card}>
             <button
@@ -565,86 +539,14 @@ function EditorSidebar(props: EditorSidebarProps) {
               onClick={toggleStartEndSelection}
             >
               <MousePointer2 size={16} /> 
-              {isSelectingStartEnd ? '正在接收点击' : '拾取段落位置'}
+              {isSelectingStartEnd ? '正在接收点击' : '拾取位置截取岸段'}
             </button>
-            
-            {groups.length > 0 && (
-              <div className={styles.mt12}>
-                {groups.map((g, idx) => (
-                  <div key={g.id} className={styles.groupItem}>
-                    <div className={styles.groupHeader} onClick={() => handleEditGroup(g.id)}>
-                      <span className={styles.groupHeaderTitle}>
-                        段落 {idx + 1}: {g.end === null ? '等点终点' : `${g.start.toFixed(0)}m - ${g.end.toFixed(0)}m`}
-                      </span>
-                      {editingGroupId === g.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </div>
-                    {editingGroupId === g.id && (
-                      <div className={styles.groupConfig}>
-                        <div className={styles.inputGroup}>
-                          <label>间距 (m):</label>
-                          <input
-                            type="number"
-                            value={g.interval}
-                            onChange={(e) => updateGroupConfig(g.id, 'interval', Number(e.target.value))}
-                          />
-                        </div>
-                        <div className={styles.inputGroup}>
-                          <label>长度 (m):</label>
-                          <input
-                            type="number"
-                            value={g.length}
-                            onChange={(e) => updateGroupConfig(g.id, 'length', Number(e.target.value))}
-                          />
-                        </div>
-                        <div className={styles.buttonGrid}>
-                          <button
-                            type="button"
-                            className={styles.outlineButton}
-                            onClick={() => setEditingPropertiesGroupId(g.id)}
-                          >
-                            <Settings size={14} /> 属性
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.outlineButton}
-                            onClick={() => reverseCrossLinesInGroup(g.id)}
-                            disabled={!perpendicularData || perpendicularData.features.length === 0 || g.end === null}
-                            title={g.end === null ? '请先拾取终点' : '反切该段落范围内的所有断面'}
-                            aria-label={`反切第 ${idx + 1} 段断面方向`}
-                          >
-                            <RotateCw size={14} /> 反切
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.outlineButton}
-                            onClick={() => deleteCrossLinesInGroup(g.id)}
-                            disabled={!perpendicularData || perpendicularData.features.length === 0 || g.end === null}
-                            title={g.end === null ? '请先拾取终点' : '删除该段落范围内的所有断面'}
-                            aria-label={`删除第 ${idx + 1} 段断面`}
-                          >
-                            <Trash2 size={14} /> 删除
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.primaryButton}
-                            onClick={handleApplyCustomSegments}
-                          >
-                            <Check size={14} /> 应用
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => deleteGroup(g.id)}
-                          className={styles.dangerTextButton}
-                          title="删除此段"
-                          aria-label={`删除第 ${idx + 1} 段`}
-                        >
-                          删除此段
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+            {isSelectingStartEnd && (
+              <div className={styles.mt8}>
+                <p className={styles.hintText}>先在底图岸段上点击起点，再点击终点，自动截取</p>
+                <button type="button" className={styles.outlineButton} onClick={onClipBank} style={{ width: '100%' }}>
+                  <Check size={14} /> 确认截取
+                </button>
               </div>
             )}
           </div>
@@ -768,6 +670,9 @@ function EditorSidebar(props: EditorSidebarProps) {
             </button>
             <button type="button" className={styles.outlineButton} onClick={() => setShowTiffBounds(!showTiffBounds)} title={showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'} aria-label={showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'}>
               <Layers size={16} /> {showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'}
+            </button>
+            <button type="button" className={`${styles.outlineButton} ${colorBanks ? styles.active : ''}`} onClick={() => setColorBanks?.(!colorBanks)} title="区分岸段颜色">
+              <Eye size={14} /> 岸段着色
             </button>
             <button type="button" className={styles.outlineButton} onClick={onClear} title="清空" aria-label="清空">
               <Eraser size={16} /> 清空

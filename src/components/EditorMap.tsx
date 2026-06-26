@@ -113,6 +113,7 @@ interface EditorMapProps {
   showTiffBounds: boolean;
   resizeTrigger: number;
   satellite?: boolean;
+  colorBanks?: boolean;
 }
 
 function EditorMap(props: EditorMapProps) {
@@ -154,6 +155,11 @@ function EditorMap(props: EditorMapProps) {
   useEffect(() => {
     perpendicularDataRef.current = perpendicularData;
   }, [perpendicularData]);
+
+  const uploadedDataRef = useRef<GeoJSON.FeatureCollection | null>(uploadedData);
+  const tiffBoundsDataRef = useRef<GeoJSON.FeatureCollection | null>(tiffBoundsData);
+  useEffect(() => { uploadedDataRef.current = uploadedData; }, [uploadedData]);
+  useEffect(() => { tiffBoundsDataRef.current = tiffBoundsData; }, [tiffBoundsData]);
 
   const groupsRef = useRef<SelectionGroup[]>(groups);
   useEffect(() => {
@@ -259,6 +265,7 @@ function EditorMap(props: EditorMapProps) {
   }, [selectedCrossLineIndices]);
 
   const configRef = useRef({ interval: globalInterval, length: globalLength });
+  const lastCenterRef = useRef({ lng: 119.896, lat: 32.229, zoom: 7 });
   useEffect(() => {
     configRef.current = { interval: globalInterval, length: globalLength };
   }, [globalInterval, globalLength]);
@@ -463,15 +470,29 @@ function EditorMap(props: EditorMapProps) {
     }
   }, [selectedCrossLineIndex, selectedCrossLineIndices, perpendicularData]);
 
-  // 底图切换
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    const style = props.satellite
-      ? 'mapbox://styles/mapbox/satellite-v9'
-      : 'mapbox://styles/mapbox/light-v10';
-    map.setStyle(style);
-  }, [props.satellite]);
+    if (!map || !map.getLayer('uploaded-lines')) return;
+    if (props.colorBanks) {
+      const src = map.getSource('uploaded-data') as mapboxgl.GeoJSONSource;
+      if (!src) return;
+      const data = uploadedDataRef.current;
+      if (!data) return;
+      const colors = ['#ef4444','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f97316'];
+      const hashBankId = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0; return Math.abs(h); };
+      const updated = { ...data, features: data.features?.map((f: any) => ({
+        ...f,
+        properties: { ...f.properties, _color: colors[hashBankId(String(f.properties?.bank_id || '')) % colors.length] }
+      })) };
+      src.setData(updated);
+      map.setPaintProperty('uploaded-lines', 'line-color', ['get', '_color']);
+    } else {
+      map.setPaintProperty('uploaded-lines', 'line-color', '#94a3b8');
+    }
+  }, [props.colorBanks]);
+
+  let mapStyle = 'mapbox://styles/mapbox/light-v10';
+  if (props.satellite) mapStyle = 'mapbox://styles/mapbox/satellite-v9';
 
   // 初始化地图和交互
   useEffect(() => {
@@ -479,9 +500,9 @@ function EditorMap(props: EditorMapProps) {
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v10',
-      center: [119.89600633, 32.22907004],
-      zoom: 7,
+      style: mapStyle,
+      center: [lastCenterRef.current.lng, lastCenterRef.current.lat],
+      zoom: lastCenterRef.current.zoom,
     });
 
     mapRef.current = map;
@@ -496,6 +517,19 @@ function EditorMap(props: EditorMapProps) {
       map.addSource('active-line', { type: 'geojson', data: turf.featureCollection([]), lineMetrics: true });
       map.addSource('selected-shore-lines', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('tiff-bounds', { type: 'geojson', data: turf.featureCollection([]) });
+      // 如果已有数据，立刻恢复
+      if (tiffBoundsDataRef.current) {
+        const src = map.getSource('tiff-bounds') as mapboxgl.GeoJSONSource;
+        if (src) src.setData(tiffBoundsDataRef.current);
+      }
+      if (uploadedDataRef.current) {
+        const src = map.getSource('uploaded-data') as mapboxgl.GeoJSONSource;
+        if (src) src.setData(uploadedDataRef.current);
+      }
+      if (perpendicularDataRef.current) {
+        const src = map.getSource('perpendicular-lines') as mapboxgl.GeoJSONSource;
+        if (src) src.setData(perpendicularDataRef.current);
+      }
 
       map.addLayer({
         id: 'uploaded-lines-hit-target',
@@ -1311,10 +1345,12 @@ function EditorMap(props: EditorMapProps) {
     });
 
     return () => {
+      const c = map.getCenter();
+      lastCenterRef.current = { lng: c.lng, lat: c.lat, zoom: map.getZoom() };
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [mapStyle]);
 
   return <div ref={mapContainer} className="map-full" />;
 }

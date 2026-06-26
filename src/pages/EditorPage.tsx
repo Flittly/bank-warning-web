@@ -76,6 +76,7 @@ function EditorPage(props: EditorPageProps) {
   const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
   const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
   const [satellite, setSatellite] = useState<boolean>(false);
+  const [colorBanks, setColorBanks] = useState<boolean>(false);
 
   // 全局属性配置
   const [globalProperties, setGlobalProperties] = useState<SectionParams | null>(null);
@@ -217,6 +218,81 @@ function EditorPage(props: EditorPageProps) {
     );
     return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
   }, [tiffBoundsData, selectedBasicParamIdState, basicParamsList]);
+
+  const clipSelectedBank = async () => {
+    const groupsList = groups || [];
+    const g = groupsList[groupsList.length - 1];
+    if (!g || g.end === null || g.start === null) {
+      alert('请先拾取起点和终点');
+      return;
+    }
+    const bankId = selectedLines.size === 1 ? [...selectedLines][0] : (selectedBankGroup[0] || '');
+    if (!bankId) { alert('请先选择一条岸段'); return; }
+    const bank = bankList.find((b: any) => String(b.bank_id) === bankId);
+    const geom = bank?.bank_geometry || bank?.geometry;
+    if (!geom) { alert('岸段无几何数据'); return; }
+    try {
+      const bankLine = turf.lineString(geom.coordinates);
+      // 用组里记录的距离作为大致位置，在线上找实际最近点
+      const fakePt = turf.along(bankLine, g.start, { units: 'meters' });
+      const snappedStart = turf.nearestPointOnLine(bankLine, fakePt, { units: 'meters' });
+      const fakeEnd = turf.along(bankLine, g.end, { units: 'meters' });
+      const snappedEnd = turf.nearestPointOnLine(bankLine, fakeEnd, { units: 'meters' });
+      const startDist = Math.min(snappedStart.properties.location, snappedEnd.properties.location);
+      const endDist = Math.max(snappedStart.properties.location, snappedEnd.properties.location);
+      const actualStart = turf.along(bankLine, startDist, { units: 'meters' });
+      const actualEnd = turf.along(bankLine, endDist, { units: 'meters' });
+      const slice = turf.lineSlice(actualStart, actualEnd, bankLine);
+      if (!slice || slice.geometry.coordinates.length < 2) {
+        alert('截取结果无效，请确保起终点在岸段范围内');
+        return;
+      }
+      const newBankName = (bank.bank_name || bankId) + '_截取段';
+      const newBankId = bankId + '_clip_' + Date.now();
+      const payload = {
+        banks: [{ bank_id: newBankId, bank_name: newBankName, region_code: bank.region_code || 'Mzs', geometry: slice.geometry, bank_geometry: slice.geometry, description: `截取自 ${bankId}` }],
+        overwrite: false,
+      };
+      await fetch('/v0/bank/banks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      alert(`已保存新岸段: ${newBankName}`);
+      fetchBankGroups();
+
+      // 构造新岸段 feature
+      const newFeature = {
+        type: 'Feature' as const,
+        geometry: slice.geometry,
+        properties: { bank_id: newBankId, bank_name: newBankName, region_code: bank.region_code || 'Mzs', from_backend: true },
+      };
+
+      // 一次性更新：删旧岸段 + 加新岸段
+      setUploadedData((prev) => {
+        const features = (prev?.features || []).filter((f: any) =>
+          String(f.properties?.bank_id || '') !== bankId
+        );
+        return { type: 'FeatureCollection', features: [...features, newFeature] } as any;
+      });
+
+      setSelectedLines((prev: Set<string>) => { const next = new Set(prev); next.delete(bankId); return next; });
+      setSelectedBankGroup((prev: string[]) => prev.filter((id: string) => id !== bankId));
+      setGroups([]);
+      setIsSelectingStartEnd(false);
+    } catch (err: any) { alert('截取失败: ' + err.message); }
+  };
+
+  const selectBanksByTiffRange = () => {
+    const bounds = filteredTiffBoundsData?.features?.[0];
+    if (!bounds) { alert('请先选择一个带 DEM 的参数模板'); return; }
+    const banks = bankList.filter((b: any) => {
+      const geom = b.bank_geometry || b.geometry;
+      try {
+        return turf.booleanIntersects(geom, bounds.geometry);
+      } catch { return false; }
+    });
+    if (banks.length === 0) { alert('没有岸段在所选 DEM 范围内'); return; }
+    const ids = banks.map((b: any) => String(b.bank_id));
+    ids.forEach(id => loadBankById(id));
+    alert(`已加载 ${banks.length} 条岸段到地图`);
+  };
 
   const validateSectionAsync = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
     try {
@@ -2046,6 +2122,10 @@ function EditorPage(props: EditorPageProps) {
           setSatellite={setSatellite}
           handleStartAnalysis={handleStartAnalysis}
           onClear={onClear}
+          onSelectBanksByTiff={selectBanksByTiffRange}
+          onClipBank={clipSelectedBank}
+          colorBanks={colorBanks}
+          setColorBanks={setColorBanks}
           handleFileUpload={handleFileUpload}
           handleSectionsFileUpload={handleSectionsFileUpload}
           onExportSections={handleExportSections}
@@ -2084,6 +2164,7 @@ function EditorPage(props: EditorPageProps) {
           showTiffBounds={showTiffBounds}
           resizeTrigger={resizeTrigger}
           satellite={satellite}
+          colorBanks={colorBanks}
         />
         <button
           onClick={() => setSatellite(!satellite)}

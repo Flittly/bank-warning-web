@@ -1472,22 +1472,20 @@ function ResultPage(props: ResultPageProps) {
     mapRef.current = map;
     map.addControl(new mapboxgl.NavigationControl(), 'top-left');
 
-    map.on('load', () => {
-      // 与 EditorPage 一样预留 uploaded-data 源供岸段使用
+    const initLayers = () => {
       map.addSource('uploaded-data', { type: 'geojson', data: turf.featureCollection([]) });
       map.addLayer({
         id: 'uploaded-lines-base',
         type: 'line',
         source: 'uploaded-data',
         filter: ['==', '$type', 'LineString'],
-        paint: {
-          'line-color': '#94a3b8',
-          'line-width': 2
-        }
+        paint: { 'line-color': '#94a3b8', 'line-width': 2 }
       });
-      // 标记地图加载完成，以触发自动点击逻辑
       setMapReady(true);
-    });
+    };
+
+    map.on('load', initLayers);
+    map.on('style.load', initLayers);
 
     return () => {
       map.remove();
