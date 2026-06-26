@@ -1,91 +1,39 @@
-.login-page {
+.register-page {
   width: 100%;
-  height: 100vh;
+  min-height: 100vh;
   background: linear-gradient(180deg, #0F172A 0%, #1E3A5F 40%, #2563EB 100%);
   display: flex;
-  overflow: hidden;
-  position: relative;
-}
-
-/* ====== 左侧：长江动态曲线区 ====== */
-.login-left {
-  flex: 1;
-  position: relative;
-  overflow: hidden;
-  display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.left-card {
-  width: calc(100% - 40px);
-  height: calc(100% - 40px);
-  border-radius: 24px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background:
-    radial-gradient(ellipse at 30% 40%, rgba(59,130,246,0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 70%, rgba(147,197,253,0.04) 0%, transparent 50%),
-    rgba(255,255,255,0.05);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow:
-    0 4px 24px rgba(0,0,0,0.15),
-    inset 0 1px 0 rgba(255,255,255,0.08);
-  position: relative;
   overflow: hidden;
+  position: relative;
 }
 
-.left-canvas {
+.register-light-beam {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* 卡片上方标题覆盖 */
-.left-overlay {
-  position: absolute;
-  bottom: 40px;
-  left: 36px;
-  z-index: 2;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  height: 140%;
+  background: radial-gradient(ellipse at center, rgba(147,197,253,0.15) 0%, transparent 70%);
   pointer-events: none;
+  z-index: 0;
 }
 
-.left-title {
-  font-size: 2rem;
-  font-weight: 700;
-  color: rgba(255,255,255,0.85);
-  text-shadow: 0 2px 20px rgba(59,130,246,0.35);
-  margin: 0 0 4px;
-  letter-spacing: 4px;
-}
-
-.left-subtitle {
-  font-size: 0.85rem;
-  color: rgba(147,197,253,0.5);
-  letter-spacing: 2px;
-  margin: 0;
-}
-
-/* ====== 右侧登录区（50% 居中） ====== */
-.login-right {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.register-container {
   position: relative;
   z-index: 1;
-}
-
-.login-container {
-  width: 380px;
-  padding: 48px 40px;
+  width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 40px 36px;
   border-radius: 20px;
   border: 1px solid rgba(255,255,255,0.1);
   background:
     radial-gradient(ellipse at top left, rgba(59,130,246,0.08) 0%, transparent 60%),
     radial-gradient(ellipse at bottom right, rgba(147,197,253,0.05) 0%, transparent 60%),
-    rgba(255,255,255,0.11);
+    rgba(255,255,255,0.06);
   backdrop-filter: blur(24px) saturate(120%);
   -webkit-backdrop-filter: blur(24px) saturate(120%);
   box-shadow:
@@ -94,85 +42,77 @@
     0 0 60px rgba(59,130,246,0.06);
 }
 
-/* ====== 头部欢迎语 ====== */
-.login-header {
+.register-header {
   text-align: center;
   margin-bottom: 32px;
 }
 
-.login-welcome-en {
-  font-size: 2.4rem;
-  font-weight: 300;
+.register-title {
+  font-size: 1.6rem;
+  font-weight: 700;
   color: #ffffff;
-  margin: 0 0 0;
-  line-height: 1.2;
-  letter-spacing: 1px;
-}
-
-.login-welcome-zh {
-  font-size: 1.2rem;
-  font-weight: 400;
-  color: rgba(147,197,253,0.55);
-  margin: 2px 0 16px;
-  letter-spacing: 2px;
-}
-
-.login-brand {
-  font-size: 0.75rem;
-  color: rgba(147,197,253,0.4);
   margin: 0;
-  letter-spacing: 2px;
+  text-shadow: 0 2px 20px rgba(59,130,246,0.3);
 }
 
-/* ====== 表单 ====== */
-.login-form .ant-form-item {
-  margin-bottom: 20px;
+/* ====== Ant Design Form label ====== */
+.register-form .ant-form-item-label > label {
+  color: rgba(147,197,253,0.8) !important;
+  font-size: 0.85rem !important;
 }
 
-.login-form .ant-input-affix-wrapper {
+.register-form .ant-form-item {
+  margin-bottom: 18px;
+}
+
+/* ====== 输入框毛玻璃 ====== */
+.register-form .ant-input-affix-wrapper,
+.register-form .ant-input {
   background: rgba(255,255,255,0.06) !important;
   border: 1px solid rgba(255,255,255,0.12) !important;
   border-radius: 12px !important;
-  padding: 4px 12px !important;
-  height: 44px !important;
+  color: #e8edf2 !important;
+  font-size: 0.9rem !important;
+  height: 42px !important;
   transition: all 0.25s !important;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.04) !important;
 }
 
-.login-form .ant-input-affix-wrapper:hover {
+.register-form .ant-input-affix-wrapper:hover,
+.register-form .ant-input:hover {
   border-color: rgba(147,197,253,0.3) !important;
   background: rgba(255,255,255,0.08) !important;
 }
 
-.login-form .ant-input-affix-wrapper-focused,
-.login-form .ant-input-affix-wrapper:focus-within {
+.register-form .ant-input-affix-wrapper-focused,
+.register-form .ant-input-affix-wrapper:focus-within,
+.register-form .ant-input:focus {
   border-color: rgba(59,130,246,0.5) !important;
   background: rgba(255,255,255,0.1) !important;
   box-shadow: 0 0 0 2px rgba(59,130,246,0.12), inset 0 1px 0 rgba(255,255,255,0.06) !important;
 }
 
-.login-form .ant-input-affix-wrapper input,
-.login-form .ant-input-affix-wrapper .ant-input {
+.register-form .ant-input-affix-wrapper input {
   background: transparent !important;
   color: #e8edf2 !important;
-  font-size: 0.9rem !important;
 }
 
-.login-form .ant-input-affix-wrapper input::placeholder,
-.login-form .ant-input-affix-wrapper .ant-input::placeholder {
+.register-form .ant-input::placeholder,
+.register-form .ant-input-affix-wrapper input::placeholder {
   color: rgba(147,197,253,0.4) !important;
 }
 
-.login-form .ant-input-prefix {
+.register-form .ant-input-prefix {
   color: rgba(147,197,253,0.5) !important;
   margin-right: 8px !important;
 }
 
-.login-form .ant-input-suffix .anticon-close-circle {
+.register-form .ant-input-suffix .anticon-close-circle {
   color: rgba(147,197,253,0.4) !important;
 }
 
-.login-form .ant-btn-primary {
+/* ====== 注册按钮 ====== */
+.register-form .ant-btn-primary {
   height: 44px !important;
   border-radius: 12px !important;
   border: 1px solid rgba(147,197,253,0.25) !important;
@@ -187,9 +127,10 @@
     0 4px 16px rgba(59,130,246,0.2),
     inset 0 1px 0 rgba(255,255,255,0.15) !important;
   transition: all 0.25s !important;
+  margin-top: 4px;
 }
 
-.login-form .ant-btn-primary:hover {
+.register-form .ant-btn-primary:hover {
   border-color: rgba(147,197,253,0.45) !important;
   background:
     linear-gradient(135deg, rgba(59,130,246,0.65) 0%, rgba(37,99,235,0.55) 100%) !important;
@@ -198,36 +139,34 @@
     inset 0 1px 0 rgba(255,255,255,0.2) !important;
 }
 
-.login-form .ant-btn-primary:active {
+.register-form .ant-btn-primary:active {
   background:
     linear-gradient(135deg, rgba(59,130,246,0.4) 0%, rgba(37,99,235,0.3) 100%) !important;
 }
 
-.login-footer {
+/* ====== 底部链接 ====== */
+.register-footer {
   text-align: center;
   margin-top: 20px;
   color: rgba(147,197,253,0.6);
   font-size: 0.85rem;
 }
 
-.login-footer a {
+.register-footer a {
   color: #69b1ff;
   margin-left: 6px;
   transition: color 0.2s;
 }
 
-.login-footer a:hover {
+.register-footer a:hover {
   color: #93c5fd;
 }
 
-.login-page .ant-message-notice-content {
+/* ====== message ====== */
+.register-page .ant-message-notice-content {
   background: rgba(15,23,42,0.85) !important;
   backdrop-filter: blur(12px) !important;
   -webkit-backdrop-filter: blur(12px) !important;
   border: 1px solid rgba(255,255,255,0.08) !important;
   color: #e8edf2 !important;
-}
-
-@media (max-width: 800px) {
-  .login-left { display: none; }
 }

@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import type { RegisterRequest } from '../auth/types';
 
+import './RegisterPage.css';
+
 interface FormValues extends RegisterRequest {
   confirmPassword: string;
 }
@@ -25,12 +27,16 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <h1 className="auth-title">用户注册</h1>
+    <div className="register-page">
+      <div className="register-light-beam" />
+      <div className="register-container">
+        <div className="register-header">
+          <h1 className="register-title">用户注册</h1>
+        </div>
         <Form
           form={form}
           layout="vertical"
+          className="register-form"
           onFinish={handleSubmit}
           autoComplete="off"
           size="large"
@@ -111,7 +117,7 @@ export default function RegisterPage() {
           </Form.Item>
         </Form>
 
-        <div className="auth-footer">
+        <div className="register-footer">
           已有账号？
           <Link to="/login">去登录</Link>
         </div>
