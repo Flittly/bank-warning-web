@@ -99,17 +99,59 @@ function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdat
         ))}
         <div style={{ flex: 1 }} />
         {!editing ? (
-          <button
-            onClick={startEdit}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              padding: '4px 10px', marginRight: 4,
-              border: 'none', background: 'transparent',
-              cursor: 'pointer', fontSize: '0.75rem', color: '#64748b',
-            }}
-          >
-            <Edit3 size={14} /> 编辑
-          </button>
+          <>
+            {activeTab.filename && (
+              <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/v0/bank/ai/reports/${encodeURIComponent(activeTab.filename)}/export`)
+                      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                      const blob = await res.blob()
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = activeTab.filename.replace('.md', '.docx')
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    } catch (e) {
+                      console.error('导出Word失败:', e)
+                    }
+                  }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  padding: '5px 12px', marginRight: 6,
+                  border: '1.5px solid rgba(59,130,246,0.35)',
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(59,130,246,0.12) 100%)',
+                  backdropFilter: 'blur(6px)',
+                  WebkitBackdropFilter: 'blur(6px)',
+                  cursor: 'pointer', fontSize: '0.75rem', color: '#2563eb',
+                  borderRadius: 12,
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.4)',
+                  transition: 'all 0.15s',
+                }}
+                title="导出Word"
+              >
+                ⬇ 导出Word
+              </button>
+            )}
+            <button
+              onClick={startEdit}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                padding: '5px 12px', marginRight: 6,
+                border: '1.5px solid rgba(0,0,0,0.08)',
+                background: 'rgba(255,255,255,0.4)',
+                backdropFilter: 'blur(6px)',
+                WebkitBackdropFilter: 'blur(6px)',
+                cursor: 'pointer', fontSize: '0.75rem', color: '#64748b',
+                borderRadius: 12,
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)',
+                transition: 'all 0.15s',
+              }}
+            >
+              <Edit3 size={14} /> 编辑
+            </button>
+          </>
         ) : (
           <>
             <button

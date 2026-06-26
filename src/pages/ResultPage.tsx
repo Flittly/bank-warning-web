@@ -1634,7 +1634,7 @@ function ResultPage(props: ResultPageProps) {
                 ))}
               </div>
 
-              <button 
+                    <button
                 className="toggle-sections-btn"
                 onClick={() => setShowSections(!showSections)}
               >
