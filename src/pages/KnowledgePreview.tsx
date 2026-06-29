@@ -10,9 +10,10 @@ interface Props {
   searchResults: SearchResult[] | null;
   searchQuery: string;
   style?: React.CSSProperties;
+  onCloseDoc?: () => void;
 }
 
-export default function KnowledgePreview({ selectedDocId, searchResults, searchQuery, style }: Props) {
+export default function KnowledgePreview({ selectedDocId, searchResults, searchQuery, onCloseDoc, style }: Props) {
   const [doc, setDoc] = useState<KnowledgeDocDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,16 +87,28 @@ export default function KnowledgePreview({ selectedDocId, searchResults, searchQ
 
           {doc && !loading && (
             <>
-              <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #e2e8f0' }}>
-                <h2 style={{ margin: '0 0 8px', fontSize: 20, color: '#0f172a' }}>
-                  <FileText size={20} style={{ marginRight: 8, verticalAlign: -4, color: '#3b82f6' }} />
-                  {doc.fileName || doc.docId}
-                </h2>
-                <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#64748b' }}>
-                  <span>分类: {doc.type || '-'}</span>
-                  <span>分块数: {doc.chunks}</span>
-                  <span>ID: {doc.docId}</span>
+              <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h2 style={{ margin: '0 0 8px', fontSize: 20, color: '#0f172a' }}>
+                    <FileText size={20} style={{ marginRight: 8, verticalAlign: -4, color: '#3b82f6' }} />
+                    {doc.fileName || doc.docId}
+                  </h2>
+                  <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#64748b' }}>
+                    <span>分类: {doc.type || '-'}</span>
+                    <span>分块数: {doc.chunks}</span>
+                    <span>ID: {doc.docId}</span>
+                  </div>
                 </div>
+                {onCloseDoc && (
+                  <button onClick={onCloseDoc} style={{
+                    background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.08)',
+                    borderRadius: 8, width: 32, height: 32, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 16, color: '#64748b', flexShrink: 0,
+                  }}>
+                    ✕
+                  </button>
+                )}
               </div>
               <div style={{
                 background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0',

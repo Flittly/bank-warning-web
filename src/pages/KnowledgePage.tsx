@@ -48,6 +48,7 @@ export default function KnowledgePage() {
         selectedDocId={selectedDocId}
         searchResults={searchResults}
         searchQuery={searchQuery}
+        onCloseDoc={() => setSelectedDocId(null)}
         style={{ flex: 1, height: '100%', minWidth: 0 }}
       />
     </div>
