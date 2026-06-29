@@ -124,10 +124,9 @@ function LoginPage() {
       <div className="login-left">
         <div className="left-card">
           <canvas ref={canvasRef} className="left-canvas" />
-        </div>
-        <div className="left-overlay">
-          <h1 className="left-title">长江崩岸</h1>
-          <p className="left-subtitle">监测预警应用系统</p>
+          <div className="left-overlay">
+            <span className="left-title">长江</span>
+          </div>
         </div>
       </div>
 
