@@ -105,6 +105,12 @@ export default function AdminUserPage() {
   };
 
   const isSelf = (targetUser: UserResponse) => user?.id === targetUser.id;
+  const isSuperAdmin = (targetUser: UserResponse) => targetUser.username === 'admin';
+
+  const roleLabel = (role: string, targetUser: UserResponse) => {
+    if (role === 'ADMIN' && isSuperAdmin(targetUser)) return '超级管理员';
+    return role === 'ADMIN' ? '管理员' : '普通用户';
+  };
 
   const columns: ColumnsType<UserResponse> = [
     {
@@ -133,13 +139,21 @@ export default function AdminUserPage() {
       dataIndex: 'role',
       key: 'role',
       render: (role: string, record: UserResponse) => {
-        if (isSelf(record)) {
-          return <Tag color="blue">{role === 'ADMIN' ? '管理员' : '普通用户'}</Tag>;
+        const label = roleLabel(role, record);
+        const color = isSuperAdmin(record) ? 'gold' : role === 'ADMIN' ? 'blue' : 'default';
+
+        if (isSelf(record) || isSuperAdmin(record)) {
+          return <Tag color={color}>{label}</Tag>;
         }
         return (
           <Select
             value={role}
-            style={{ width: 120 }}
+            style={{
+              width: 130,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 12,
+            }}
             disabled={updating === record.id}
             onChange={(value) => handleRoleChange(record, value)}
             options={[
