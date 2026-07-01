@@ -10,9 +10,14 @@ import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
 import { Box, FileText, List, BarChart3, MessageCircle, Globe } from 'lucide-react';
+import { ConfigProvider, Modal } from 'antd';
 
-// 与 EditorPage 保持一致的 Mapbox token
+// —— Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+
+// ============================================================
+//  类型定义
+// ============================================================
 
 // 后端返回的任务结构
 interface Task {
@@ -100,7 +105,40 @@ const RISK_COLORS: Record<string, string> = {
   'default': '#94a3b8'
 };
 
+// ============================================================
+//  模块级常量 & 工具函数
+// ============================================================
+
+// 风险等级中文标签
+const RISK_LABELS: Record<number, string> = { 3: '极高风险', 2: '高风险', 1: '一般风险', 0: '低/无风险' };
+
+// 中线闭合距离阈值（米）
 const CLOSE_LOOP_DISTANCE_METERS = 2000;
+
+// 通用 fetch + JSON 解析 + 错误处理
+async function fetchJSON(url: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(url, init);
+  const text = await res.text();
+  let json: any = null;
+  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text?.slice(0, 500)}`);
+  return json ?? text;
+}
+
+// 通用列表解析：从后端多种返回格式中提取数组
+function parseList(data: any, key?: string): any[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (key && Array.isArray(data[key])) return data[key];
+  if (Array.isArray(data.profiles)) return data.profiles;
+  if (Array.isArray(data.results)) return data.results;
+  if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.items)) return data.items;
+  if (key && Array.isArray(data.data?.[key])) return data.data[key];
+  return [];
+}
+
+// 矩阵指标分组配置
 
 const MATRIX_GROUPS = [
   {
@@ -138,6 +176,10 @@ interface ResultPageProps {
 
 function ResultPage(props: ResultPageProps) {
   const { initialTaskId } = props;
+
+  // ============================================================
+  //  Refs & State
+  // ============================================================
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
@@ -194,37 +236,47 @@ function ResultPage(props: ResultPageProps) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileDetail, setProfileDetail] = useState<SectionProfile | null>(null);
+  const [regenerateTarget, setRegenerateTarget] = useState<{ taskId: string; taskName: string } | null>(null);
 
-  const handleGenerateReport = async (taskId: string, taskName: string) => {
+  // ============================================================
+  //  API 请求 & 报告生成
+  // ============================================================
+
+  const doGenerateReport = async (taskId: string, taskName: string) => {
     setGeneratingTaskId(taskId);
+    const ts = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    console.log(`[doGenerateReport] 开始生成报告: taskId=${taskId}, 时间=${ts}`);
     try {
       const res = await fetch(`/v0/bank/ai/agent/report/task/${taskId}`, { method: 'POST' });
       const data = await res.json();
+      console.log(`[doGenerateReport] API 响应:`, data);
       if (data.success && data.data) {
         const content = String(data.data).replace(/\.\/([^\s)]+\.png)/g, '/v0/bank/ai/viz-output/$1');
-        setReportTabs(prev => {
-          const existing = prev.findIndex(t => t.taskId === taskId);
-          const newTab: ReportTab = { taskId, taskName, content, filename: data.filename };
-          if (existing >= 0) {
-            const next = [...prev];
-            next[existing] = newTab;
-            setActiveReportTab(existing);
-            return next;
-          }
-          setActiveReportTab(prev.length);
-          return [...prev, newTab];
-        });
-        if (reportTabs.length === 0) {
-          setWorkspaceHeight(300);
-        }
+        const newTab: ReportTab = { taskId, taskName: `${taskName} (${ts})`, content, filename: data.filename };
+        const prevLength = reportTabs.length;
+        setReportTabs(prev => [...prev, newTab]);
+        setActiveReportTab(prevLength);
+        console.log(`[doGenerateReport] 新增标签页: 索引=${prevLength}, 标签总数=${prevLength + 1}`);
+        if (prevLength === 0) setWorkspaceHeight(300);
       } else {
+        console.error(`[doGenerateReport] API 返回失败:`, data.error);
         alert(translateError(data.error || '未知错误'));
       }
     } catch (e: any) {
+      console.error(`[doGenerateReport] 网络异常:`, e.message);
       alert(translateError(e.message || '网络错误'));
     } finally {
       setGeneratingTaskId(null);
     }
+  };
+
+  const handleGenerateReport = (taskId: string, taskName: string) => {
+    const existsInList = reportList.some((r: any) => r.taskId === taskId);
+    if (existsInList) {
+      setRegenerateTarget({ taskId, taskName });
+      return;
+    }
+    doGenerateReport(taskId, taskName);
   };
 
   const fetchReportList = async () => {
@@ -252,7 +304,7 @@ function ResultPage(props: ResultPageProps) {
         const taskId = filename.replace(/^report_/, '').replace(/_\d{8}_\d{6}\.md$/, '');
         handleTaskClick(taskId);
         setReportTabs(prev => {
-          const existing = prev.findIndex(t => t.taskId === taskId);
+          const existing = prev.findIndex(t => t.filename === filename);
           const tab: ReportTab = { taskId, taskName: filename, content, filename };
           if (existing >= 0) {
             const next = [...prev];
@@ -294,35 +346,16 @@ function ResultPage(props: ResultPageProps) {
     setSelectedTask(initialTaskId);
   }, [initialTaskId]);
 
-  const parseProfilesList = (data: any): any[] => {
-    if (!data) return [];
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data.profiles)) return data.profiles;
-    if (Array.isArray(data.data?.profiles)) return data.data.profiles;
-    if (Array.isArray(data.data)) return data.data;
-    return [];
-  };
+  const parseProfilesList = (data: any): any[] => parseList(data, 'profiles');
 
+  // — 断面剖面数据加载与缓存
   const ensureTaskProfilesLoaded = async (taskId: string) => {
     if (!taskId) return {} as Record<string, SectionProfile>;
     if (profilesCacheRef.current[taskId]) return profilesCacheRef.current[taskId];
     if (profilesPromiseRef.current[taskId]) return profilesPromiseRef.current[taskId]!;
 
     const promise = (async () => {
-      const res = await fetch(`/v0/bank/tasks/${encodeURIComponent(taskId)}/section-profiles`);
-      const text = await res.text();
-      let json: any = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {
-        json = null;
-      }
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${text?.slice(0, 500)}`);
-      }
-
-      const payload = json ?? text;
+      const payload = await fetchJSON(`/v0/bank/tasks/${encodeURIComponent(taskId)}/section-profiles`);
       const list = parseProfilesList(payload);
       const bySection: Record<string, SectionProfile> = {};
       list.forEach((p: any) => {
@@ -403,6 +436,7 @@ function ResultPage(props: ResultPageProps) {
     );
   };
 
+  // — 矩阵详情弹窗
   const openMatrixDetail = async (taskId: string | null, sectionId: string, sectionName?: string) => {
     if (!sectionId) return;
     setMatrixOpen(true);
@@ -419,20 +453,7 @@ function ResultPage(props: ResultPageProps) {
     const effectiveTaskId = taskId || selectedTaskRef.current;
 
     const matrixPromise = (async () => {
-      const res = await fetch(`/v0/bank/results/${encodeURIComponent(sectionId)}`);
-      const text = await res.text();
-      let json: any = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {
-        json = null;
-      }
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${text?.slice(0, 500)}`);
-      }
-
-      const payload = json ?? text;
+      const payload = await fetchJSON(`/v0/bank/results/${encodeURIComponent(sectionId)}`);
       const result = payload?.result ?? payload?.data?.result ?? payload?.data ?? payload;
       const indicators = result?.indicators ?? payload?.indicators ?? {};
       const matrices = indicators?.matrices ?? result?.matrices ?? payload?.matrices ?? {};
@@ -471,6 +492,7 @@ function ResultPage(props: ResultPageProps) {
     await Promise.allSettled([matrixPromise, profilePromise]);
   };
 
+  // — 矩阵详情弹窗 — 关闭
   const closeMatrixDetail = () => {
     setMatrixOpen(false);
     setMatrixLoading(false);
@@ -591,6 +613,7 @@ function ResultPage(props: ResultPageProps) {
     document.body.removeChild(link);
   };
 
+  // — 矩阵详情 — 指标组渲染
   const renderAssessmentGroup = (group: typeof MATRIX_GROUPS[number], indicators: any, groupIdx: number) => {
     const weightKey = group.weightKey as keyof typeof indicators;
     const weightValues = indicators?.[weightKey];
@@ -659,6 +682,30 @@ function ResultPage(props: ResultPageProps) {
     }
   }, [showSections]);
 
+  // 清理地图上所有断面和中线图层/数据源
+  const clearMapLayers = (map: mapboxgl.Map) => {
+    ['sections-line-hit', 'sections-line'].forEach(layer => {
+      if (map.getLayer(layer)) map.removeLayer(layer);
+    });
+    if (map.getSource('sections-source')) map.removeSource('sections-source');
+
+    const style = map.getStyle();
+    if (style && style.layers) {
+      style.layers.forEach((layer: any) => {
+        if (layer.id && String(layer.id).startsWith('midline-')) {
+          if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+        }
+      });
+    }
+    if (style && style.sources) {
+      Object.keys(style.sources).forEach((sourceId: string) => {
+        if (sourceId.startsWith('midline-')) {
+          if (map.getSource(sourceId)) map.removeSource(sourceId);
+        }
+      });
+    }
+  };
+
   const stopPolling = () => {
     if (pollTimerRef.current) {
       window.clearInterval(pollTimerRef.current);
@@ -725,12 +772,8 @@ function ResultPage(props: ResultPageProps) {
     const pending = sectionIndicatorResultPromiseRef.current[taskId][sectionId];
     if (pending) return pending;
     const promise = (async () => {
-      const res = await fetch(`/v0/bank/results/${encodeURIComponent(sectionId)}`);
-      const text = await res.text();
-      let json: any = null;
-      try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${text?.slice(0, 500)}`);
-      const value = parseIndicatorResultFromSectionDetail(json ?? text);
+      const payload = await fetchJSON(`/v0/bank/results/${encodeURIComponent(sectionId)}`);
+      const value = parseIndicatorResultFromSectionDetail(payload);
       sectionIndicatorResultCacheRef.current[taskId][sectionId] = value;
       return value;
     })();
@@ -783,15 +826,9 @@ function ResultPage(props: ResultPageProps) {
     return () => window.removeEventListener('report-saved', handler);
   }, []);
 
-  const parseResultsList = (data: any): any[] => {
-    if (!data) return [];
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data.results)) return data.results;
-    if (Array.isArray(data.data)) return data.data;
-    if (Array.isArray(data.items)) return data.items;
-    return [];
-  };
+  const parseResultsList = (data: any): any[] => parseList(data, 'results');
 
+  // — 标准化结果记录
   const normalizeResultRecord = (r: any) => {
     const sectionId = r?.section_id ?? r?.sectionId ?? r?.sectionID;
     const riskLevel = r?.risk_level ?? r?.riskLevel ?? r?.risk;
@@ -845,6 +882,7 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
+  // — 轮询核心：拉取任务状态 + 结果，更新进度 & 地图
   const updateProgressAndMap = async (taskId: string, taskName: string | undefined, baseSections: SectionResult[]) => {
     const startedAt = new Date().toISOString();
     const map = mapRef.current;
@@ -1010,6 +1048,10 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
+  // ============================================================
+  //  任务操作
+  // ============================================================
+
   // 点击任务：获取任务详情（包含所有断面及其结果）并在地图可视化
   const handleTaskClick = async (taskId: string) => {
     stopPolling();
@@ -1022,34 +1064,9 @@ function ResultPage(props: ResultPageProps) {
     setProgress(null);
     setExpandedErrorIds({});
 
-    // 清除地图上所有之前任务的图层和数据源
+    // 清理地图上之前任务的图层和数据源
     const map = mapRef.current;
-    if (map) {
-      // 清除断面图层
-      ['sections-line-hit', 'sections-line'].forEach(layer => {
-        if (map.getLayer(layer)) map.removeLayer(layer);
-      });
-      if (map.getSource('sections-source')) map.removeSource('sections-source');
-
-      // 清除所有中线图层（以 midline- 开头的）
-      const style = map.getStyle();
-      if (style && style.layers) {
-        style.layers.forEach((layer: any) => {
-          if (layer.id && layer.id.startsWith('midline-')) {
-            if (map.getLayer(layer.id)) map.removeLayer(layer.id);
-          }
-        });
-      }
-      
-      // 清除所有中线数据源（以 midline- 开头的）
-      if (style && style.sources) {
-        Object.keys(style.sources).forEach((sourceId: string) => {
-          if (sourceId.startsWith('midline-')) {
-            if (map.getSource(sourceId)) map.removeSource(sourceId);
-          }
-        });
-      }
-    }
+    if (map) clearMapLayers(map);
 
     try {
       // 1) 先拉取断面列表（含几何），先渲染“未着色”的断面
@@ -1150,29 +1167,7 @@ function ResultPage(props: ResultPageProps) {
 
       // 清理地图上的图层和数据源
       const map = mapRef.current;
-      if (map) {
-        ['sections-line-hit', 'sections-line'].forEach(layer => {
-          if (map.getLayer(layer)) map.removeLayer(layer);
-        });
-        if (map.getSource('sections-source')) map.removeSource('sections-source');
-
-        const style = map.getStyle();
-        if (style && style.layers) {
-          style.layers.forEach((layer: any) => {
-            if (layer.id && typeof layer.id === 'string' && layer.id.startsWith('midline-')) {
-              if (map.getLayer(layer.id)) map.removeLayer(layer.id);
-            }
-          });
-        }
-
-        if (style && style.sources) {
-          Object.keys(style.sources).forEach((sourceId: string) => {
-            if (sourceId.startsWith('midline-')) {
-              if (map.getSource(sourceId)) map.removeSource(sourceId);
-            }
-          });
-        }
-      }
+      if (map) clearMapLayers(map);
     } catch (e: any) {
       console.error('删除任务出错:', e);
       setError(e.message || '删除任务失败');
@@ -1190,6 +1185,10 @@ function ResultPage(props: ResultPageProps) {
     } catch (e: any) { setError(e.message); }
   };
 
+  // ============================================================
+  //  地图渲染 & 可视化
+  // ============================================================
+
   // 渲染断面集合几何并在地图显示
   const renderSections = (sections: SectionResult[]) => {
     const map = mapRef.current;
@@ -1200,15 +1199,6 @@ function ResultPage(props: ResultPageProps) {
       const info = computeColorWithMatrix(s.indicator_result);
       const color = info.color;
       const displayRisk = info.valid ? info.level : info.label;
-
-      // 风险等级的中文标签映射
-      const RISK_LABELS: Record<number, string> = {
-        3: '极高风险',
-        2: '高风险',
-        1: '一般风险',
-        0: '低/无风险'
-      };
-
       const riskLabel = info.valid && info.level !== null ? RISK_LABELS[info.level] : '未知';
 
       return {
@@ -1511,6 +1501,33 @@ function ResultPage(props: ResultPageProps) {
     if (willExpand && progress?.taskId && sectionId) loadErrorDetail(progress.taskId, sectionId);
   };
 
+  // — 活动栏图标按钮通用样式
+  const activityBarBtnStyle = (active: boolean): React.CSSProperties => ({
+    width: 38, height: 38, display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    border: 'none', borderRadius: 6, cursor: 'pointer',
+    background: active ? '#e0e7ff' : 'transparent',
+    color: active ? '#2563eb' : '#94a3b8',
+    gap: 1,
+  });
+
+  // — 地图覆盖按钮通用样式（卫星/聊天切换）
+  const MAP_OVERLAY_BTN_STYLE: React.CSSProperties = {
+    position: 'absolute', right: 12, zIndex: 10,
+    background: 'rgba(255,255,255,0.7)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    border: '1px solid rgba(0,0,0,0.08)',
+    borderRadius: 14, padding: '6px 12px', cursor: 'pointer',
+    fontSize: '0.8rem', color: '#334155',
+    display: 'flex', alignItems: 'center', gap: 4,
+    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+  };
+
+  // ============================================================
+  //  JSX 渲染
+  // ============================================================
+
   return (
     <div className="editor-layout">
       <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex' }}>
@@ -1527,50 +1544,22 @@ function ResultPage(props: ResultPageProps) {
           <button
             onClick={() => setActiveSidebarPanel('tasks')}
             title="任务列表"
-            style={{
-              width: 38, height: 38, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              border: 'none', borderRadius: 6, cursor: 'pointer',
-              background: activeSidebarPanel === 'tasks' ? '#e0e7ff' : 'transparent',
-              color: activeSidebarPanel === 'tasks' ? '#2563eb' : '#94a3b8',
-              gap: 1,
-            }}
+            style={activityBarBtnStyle(activeSidebarPanel === 'tasks')}
           ><List size={16} /></button>
           <button
             onClick={() => setActiveSidebarPanel('reports')}
             title="报告查看"
-            style={{
-              width: 38, height: 38, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              border: 'none', borderRadius: 6, cursor: 'pointer',
-              background: activeSidebarPanel === 'reports' ? '#e0e7ff' : 'transparent',
-              color: activeSidebarPanel === 'reports' ? '#2563eb' : '#94a3b8',
-              gap: 1,
-            }}
+            style={activityBarBtnStyle(activeSidebarPanel === 'reports')}
           ><FileText size={16} /></button>
           <button
             onClick={() => setActiveSidebarPanel('skills')}
             title="Skills"
-            style={{
-              width: 38, height: 38, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              border: 'none', borderRadius: 6, cursor: 'pointer',
-              background: activeSidebarPanel === 'skills' ? '#e0e7ff' : 'transparent',
-              color: activeSidebarPanel === 'skills' ? '#2563eb' : '#94a3b8',
-              gap: 1,
-            }}
+            style={activityBarBtnStyle(activeSidebarPanel === 'skills')}
           ><Box size={16} /></button>
           <button
             onClick={() => setActiveSidebarPanel('progress')}
             title="计算进度"
-            style={{
-              width: 38, height: 38, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              border: 'none', borderRadius: 6, cursor: 'pointer',
-              background: activeSidebarPanel === 'progress' ? '#e0e7ff' : 'transparent',
-              color: activeSidebarPanel === 'progress' ? '#2563eb' : '#94a3b8',
-              gap: 1,
-            }}
+            style={activityBarBtnStyle(activeSidebarPanel === 'progress')}
           ><BarChart3 size={16} /></button>
         </div>
 
@@ -1865,8 +1854,8 @@ function ResultPage(props: ResultPageProps) {
                   <>
                     <div className="matrix-kv">
                       <div className="matrix-kv-row"><span>case-id</span><span>{formatCellValue(matrixDetail['case-id'] ?? matrixDetail.case_id ?? matrixDetail.caseId)}</span></div>
-                      <div className="matrix-kv-row"><span>task_id</span><span>{formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId ?? matrixDetail.taskId)}</span></div>
-                      <div className="matrix-kv-row"><span>section_id</span><span>{formatCellValue(matrixDetail.section_id ?? matrixDetail.sectionId ?? matrixDetail.sectionId)}</span></div>
+                      <div className="matrix-kv-row"><span>task_id</span><span>{formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId)}</span></div>
+                      <div className="matrix-kv-row"><span>section_id</span><span>{formatCellValue(matrixDetail.section_id ?? matrixDetail.sectionId)}</span></div>
                       <div className="matrix-kv-row"><span>section_name</span><span>{formatCellValue(matrixDetail.section_name ?? matrixDetail.sectionName ?? matrixDetail.section_name)}</span></div>
                       <div className="matrix-kv-row"><span>region_code</span><span>{formatCellValue(matrixDetail.region_code ?? matrixDetail.regionCode ?? matrixDetail.region_code)}</span></div>
                       <div className="matrix-kv-row"><span>bank_id</span><span>{formatCellValue(matrixDetail.bank_id ?? matrixDetail.bankId ?? matrixDetail.bank_id)}</span></div>
@@ -1909,34 +1898,14 @@ function ResultPage(props: ResultPageProps) {
         <button
           onClick={() => setSatellite(!satellite)}
           title={satellite ? '平面地图' : '卫星影像'}
-          style={{
-            position: 'absolute', top: 12, right: 12, zIndex: 10,
-            background: 'rgba(255,255,255,0.7)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            border: '1px solid rgba(0,0,0,0.08)',
-            borderRadius: 14, padding: '6px 12px', cursor: 'pointer',
-            fontSize: '0.8rem', color: '#334155',
-            display: 'flex', alignItems: 'center', gap: 4,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-          }}
+          style={{ ...MAP_OVERLAY_BTN_STYLE, top: 12 }}
         >
           <Globe size={14} /> {satellite ? '平面' : '卫星'}
         </button>
         <button
           onClick={() => { setChatCollapsed(!chatCollapsed); setTimeout(() => setResizeTrigger(t => t + 1), 350); }}
-          style={{
-            position: 'absolute', top: 50, right: 12, zIndex: 10,
-            background: 'rgba(255,255,255,0.7)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            border: '1px solid rgba(0,0,0,0.08)',
-            borderRadius: 14, padding: '6px 12px', cursor: 'pointer',
-            fontSize: '0.8rem', color: '#334155',
-            display: 'flex', alignItems: 'center', gap: 4,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-          }}
           title={chatCollapsed ? '展开聊天' : '收起聊天'}
+          style={{ ...MAP_OVERLAY_BTN_STYLE, top: 50 }}
         >
           <MessageCircle size={14} />
           {chatCollapsed ? 'AI' : '收起'}
@@ -1982,6 +1951,74 @@ function ResultPage(props: ResultPageProps) {
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} />
+      {regenerateTarget && (
+        <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
+        <Modal
+          title="确认生成报告"
+          open={true}
+          onOk={() => {
+            const { taskId, taskName } = regenerateTarget;
+            setRegenerateTarget(null);
+            doGenerateReport(taskId, taskName);
+          }}
+          onCancel={() => setRegenerateTarget(null)}
+          okText="生成新报告"
+          cancelText="取消"
+          centered
+          okButtonProps={{
+            style: {
+              borderRadius: 14,
+              background: 'linear-gradient(135deg, rgba(59,130,246,0.45) 0%, rgba(37,99,235,0.32) 100%)',
+              border: '1px solid rgba(59,130,246,0.3)',
+              color: '#fff',
+              fontWeight: 500,
+              backdropFilter: 'blur(8px) saturate(1.3)',
+              WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
+            },
+          }}
+          cancelButtonProps={{
+            style: {
+              borderRadius: 14,
+              background: 'rgba(255,255,255,0.35)',
+              border: '1px solid rgba(150,150,150,0.35)',
+              color: '#555',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+            },
+          }}
+          styles={{
+            mask: {
+              background: 'rgba(0,0,0,0.3)',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)',
+            },
+            content: {
+              background: 'radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.4) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(254,243,199,0.15) 0%, transparent 50%), rgba(255,255,255,0.82)',
+              backdropFilter: 'blur(16px) saturate(1.5)',
+              WebkitBackdropFilter: 'blur(16px) saturate(1.5)',
+              borderRadius: 14,
+              border: '1px solid rgba(255,255,255,0.35)',
+              boxShadow: '0 0 0 1px rgba(255,255,255,0.15), 0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.4)',
+            },
+            header: {
+              background: 'transparent',
+              borderBottom: 'none',
+            },
+            body: {
+              background: 'transparent',
+            },
+            footer: {
+              background: 'transparent',
+              borderTop: 'none',
+            },
+          }}
+        >
+          <p style={{ fontSize: '0.9rem', color: '#444' }}>
+            该任务已有报告记录，是否基于最新数据再生成一份新的报告？
+          </p>
+        </Modal>
+        </ConfigProvider>
+      )}
     </div>
   );
 }
