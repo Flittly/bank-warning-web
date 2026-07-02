@@ -230,6 +230,7 @@ function ResultPage(props: ResultPageProps) {
   const [chatTaskId, setChatTaskId] = useState<string | null>(null);
   const [chatTaskName, setChatTaskName] = useState<string>('');
   const [chatTasks, setChatTasks] = useState<{ taskId: string; taskName: string }[]>([]);
+  const [chatReports, setChatReports] = useState<{ filename: string; taskId: string }[]>([]);
 
   const profilesCacheRef = useRef<Record<string, Record<string, SectionProfile>>>({});
   const profilesPromiseRef = useRef<Record<string, Promise<Record<string, SectionProfile>> | null>>({});
@@ -1657,7 +1658,17 @@ function ResultPage(props: ResultPageProps) {
               <div className="task-list-container" style={{ maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
                 {reportList.length === 0 && <p className="empty-hint">暂无报告</p>}
                 {reportList.map((r: any, i: number) => (
-                  <div key={r.filename || i} className="task-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div
+                    key={r.filename || i}
+                    className="task-item"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/report-filename', r.filename);
+                      e.dataTransfer.setData('application/report-taskid', r.taskId || '');
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'grab' }}
+                  >
                     <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => openReport(r.filename)}>
                       <div className="task-title" style={{ fontSize: '0.8rem' }}>{r.taskId ? `任务 ${r.taskId}` : r.filename}</div>
                       <div className="task-meta" style={{ fontSize: '0.7rem' }}>{r.time || ''}</div>
@@ -1950,7 +1961,7 @@ function ResultPage(props: ResultPageProps) {
         )}
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
-      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} />
+      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} chatReports={chatReports} setChatReports={setChatReports} />
       {regenerateTarget && (
         <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
         <Modal

@@ -345,6 +345,7 @@
   min-width: 350px;
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   background: #ffffff;
   border-right: 1px solid #e2e8f0;
 }
@@ -832,6 +833,7 @@
   width: 280px;
   max-height: 85vh;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* 蓝圆光斑 — 结果查看器左侧面板 */

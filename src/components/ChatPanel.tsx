@@ -21,9 +21,11 @@ interface ChatPanelProps {
   setSelectedSkills?: (skills: string[]) => void;
   chatTasks?: { taskId: string; taskName: string }[];
   setChatTasks?: (tasks: { taskId: string; taskName: string }[]) => void;
+  chatReports?: { filename: string; taskId: string }[];
+  setChatReports?: (reports: { filename: string; taskId: string }[]) => void;
 }
 
-function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSelectedSkills, chatTasks, setChatTasks }: ChatPanelProps) {
+function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSelectedSkills, chatTasks, setChatTasks, chatReports, setChatReports }: ChatPanelProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -145,7 +147,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
       const res = await fetch('/v0/bank/ai/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, sessionId: activeSessionId, skills: selectedSkills || [], taskIds: chatTasks ? chatTasks.map(t => t.taskId) : [], model: selectedModel }),
+        body: JSON.stringify({ question, sessionId: activeSessionId, skills: selectedSkills || [], taskIds: chatTasks ? chatTasks.map(t => t.taskId) : [], reportIds: chatReports ? chatReports.map(r => r.filename) : [], model: selectedModel }),
       });
       const data = await res.json();
       if (data.success) {
@@ -188,6 +190,11 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
         if (taskId && setChatTasks) {
           const taskName = e.dataTransfer.getData('application/task-name') || taskId;
           setChatTasks([...(chatTasks || []), { taskId, taskName }]);
+        }
+        const reportFilename = e.dataTransfer.getData('application/report-filename');
+        if (reportFilename && setChatReports) {
+          const reportTaskId = e.dataTransfer.getData('application/report-taskid') || '';
+          setChatReports([...(chatReports || []), { filename: reportFilename, taskId: reportTaskId }]);
         }
       }}
     >
@@ -317,12 +324,26 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
             <div ref={messagesEndRef} />
           </div>
 
-          {((selectedSkills && selectedSkills.length > 0) || (chatTasks && chatTasks.length > 0)) && (
+          {((selectedSkills && selectedSkills.length > 0) || (chatTasks && chatTasks.length > 0) || (chatReports && chatReports.length > 0)) && (
             <div style={{
               display: 'flex', flexWrap: 'wrap', gap: 4,
               padding: '6px 12px', background: '#f8fafc',
               borderTop: '1px solid #e2e8f0',
             }}>
+              {chatReports && chatReports.map((r, i) => (
+                <span key={r.filename} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 8px', fontSize: '0.72rem',
+                  background: '#fef3c7', color: '#d97706',
+                  borderRadius: 10, cursor: 'default',
+                }}>
+                  📄 {r.filename}
+                  <button onClick={() => { if (setChatReports) setChatReports(chatReports.filter((_, j) => j !== i)); }} style={{
+                    border: 'none', background: 'transparent', cursor: 'pointer',
+                    padding: 0, display: 'flex', color: '#d97706', fontSize: '0.8rem',
+                  }}>×</button>
+                </span>
+              ))}
               {chatTasks && chatTasks.map((t, i) => (
                 <span key={t.taskId} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
