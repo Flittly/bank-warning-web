@@ -1,7 +1,7 @@
 ﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
-import { Edit3, BarChart2, BookOpen, HelpCircle } from 'lucide-react';
-import { Button, Tag, Space } from 'antd';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Edit3, BarChart2, BookOpen, HelpCircle, Menu } from 'lucide-react';
+import { Button, Tag, Space, Dropdown } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
@@ -56,6 +56,36 @@ function AppLayout() {
     navigate('/');
   };
 
+  const dropdownItems = useMemo(() => {
+    const items: any[] = [
+      {
+        key: 'tour',
+        icon: <HelpCircle size={14} />,
+        label: '新手引导',
+        onClick: () => setShowTour(true),
+      },
+      {
+        type: 'divider' as const,
+      },
+      {
+        key: 'logout',
+        icon: <LogoutOutlined />,
+        label: '登出',
+        danger: true,
+        onClick: handleLogout,
+      },
+    ];
+    if (user?.role === 'ADMIN') {
+      items.unshift({
+        key: 'admin',
+        icon: <SettingOutlined />,
+        label: '用户管理',
+        onClick: () => navigate('/admin/users'),
+      });
+    }
+    return items;
+  }, [user?.role, navigate]);
+
   return (
     <div className="app-container">
       <div className="main-nav">
@@ -97,31 +127,13 @@ function AppLayout() {
                   <UserOutlined style={{ color: '#64748b' }} />
                   <span className="nav-username">{user?.username}</span>
                   <Tag color={user?.role === 'ADMIN' ? 'blue' : 'default'}>{user?.role}</Tag>
-                  {user?.role === 'ADMIN' && (
+                  <Dropdown menu={{ items: dropdownItems }} placement="bottomRight" trigger={['click']}>
                     <Button
                       size="small"
-                      onClick={() => navigate('/admin/users')}
-                      icon={<SettingOutlined />}
-                    >
-                      用户管理
-                    </Button>
-                  )}
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<HelpCircle size={16} />}
-                    onClick={() => setShowTour(true)}
-                    title="新手引导"
-                  >
-                    新手引导
-                  </Button>
-                  <Button
-                    size="small"
-                    onClick={handleLogout}
-                    icon={<LogoutOutlined />}
-                  >
-                    登出
-                  </Button>
+                      type="text"
+                      icon={<Menu size={16} />}
+                    />
+                  </Dropdown>
                 </Space>
               </div>
             ) : (
