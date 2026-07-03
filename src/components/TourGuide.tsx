@@ -1,6 +1,6 @@
-import { Tour } from 'antd';
+import { Tour, ConfigProvider } from 'antd';
 import type { TourProps } from 'antd';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 interface TourGuideProps {
@@ -25,7 +25,26 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
   const [tourKey, setTourKey] = useState(0);
   const navTimerRef = useRef<number>(0);
 
-  const steps: TourProps['steps'] = [
+  const tourTheme = useMemo(() => ({
+    token: {
+      borderRadiusLG: 16,
+      borderRadius: 12,
+      colorPrimary: '#1e293b',
+      colorBgElevated: 'rgba(255,255,255,0.88)',
+      colorText: '#1e293b',
+      colorTextSecondary: '#475569',
+      fontSize: 14,
+      fontSizeLG: 18,
+      lineHeight: 1.6,
+      controlHeight: 38,
+      padding: 24,
+      paddingContentHorizontal: 24,
+      boxShadowSecondary:
+        '0 0 0 1px rgba(255,255,255,0.4), 0 8px 32px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.5)',
+    },
+  }), []);
+
+  const steps: TourProps['steps'] = useMemo(() => [
     {
       title: '上传岸段',
       description: '点击此处上传岸段 Shapefile 或 GeoJSON 数据，支持 .geojson 格式',
@@ -34,13 +53,13 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
     },
     {
       title: '选择岸段',
-      description: '上传后岸段出现在本地列表中，点击可选中，按住 Shift 可范围多选，用于后续断面生成',
+      description: '上传后岸段出现在本地列表中，点击可选中多选，用于后续生成断面',
       target: () => getEl('[data-tour="bank-list"]'),
       placement: 'right',
     },
     {
       title: '生成断面',
-      description: '选择岸段后，设置断面间距和长度参数，点击"生成展示断面"或"生成计算断面"',
+      description: '选择岸段后，设置间距和长度参数，点击"生成展示断面"或"生成计算断面"',
       target: () => getEl('[data-tour="generate-sections"]'),
       placement: 'right',
     },
@@ -52,7 +71,7 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
     },
     {
       title: '断面精细调整',
-      description: '生成断面后，点击"开启断面精调"进入编辑模式，可手动拖拽、旋转、缩放断面进行微调',
+      description: '生成断面后，点击"开启断面精调"进入编辑模式，可手动拖拽、旋转、缩放断面',
       target: () => getEl('[data-tour="fine-tune"]'),
       placement: 'right',
     },
@@ -70,7 +89,7 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
     },
     {
       title: '报告查看',
-      description: '系统自动生成岸坡稳定性分析报告，可选择任务生成并查看，支持导出 PDF/Word',
+      description: '系统自动生成岸坡稳定性分析报告，可选择任务生成并查看，支持导出',
       target: () => getEl('[data-tour="result-reports"]'),
       placement: 'right',
     },
@@ -88,7 +107,7 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
     },
     {
       title: '知识文档',
-      description: '上传和管理崩岸预警相关的研究文献、技术报告、案例资料，支持 PDF/Word/文本上传',
+      description: '上传和管理崩岸预警相关的研究文献、技术报告、案例资料',
       target: () => getEl('[data-tour="knowledge-sidebar"]'),
       placement: 'right',
     },
@@ -98,18 +117,17 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
       target: () => getEl('[data-tour="knowledge-preview"]'),
       placement: 'left',
     },
-  ];
+  ], []);
 
   const handleChange = useCallback((next: number) => {
     setCurrent(next);
     const targetPage = STEP_PAGE[next];
     if (targetPage && !location.pathname.startsWith(targetPage)) {
       navigate(targetPage);
-      // delay remount to let React render the new page
       clearTimeout(navTimerRef.current);
       navTimerRef.current = window.setTimeout(() => {
         setTourKey((k) => k + 1);
-      }, 500);
+      }, 600);
     } else {
       setTourKey((k) => k + 1);
     }
@@ -120,7 +138,6 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
     onClose();
   }, [onClose]);
 
-  // ensure tour remounts when location changes (e.g. user navigates manually mid-tour)
   useEffect(() => {
     if (!open) return;
     const timer = window.setTimeout(() => {
@@ -136,18 +153,23 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
   if (!open) return null;
 
   return (
-    <Tour
-      key={tourKey}
-      open={open}
-      onClose={handleClose}
-      steps={steps}
-      current={current}
-      onChange={handleChange}
-      indicatorsRender={(current, total) => (
-        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-          {current + 1} / {total} 步
-        </span>
-      )}
-    />
+    <div className="tour-guide-root">
+      <ConfigProvider theme={tourTheme}>
+        <Tour
+          key={tourKey}
+          open={open}
+          onClose={handleClose}
+          steps={steps}
+          current={current}
+          onChange={handleChange}
+          indicatorsRender={(c, total) => (
+            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+              {c + 1} / {total}
+            </span>
+          )}
+          mask={{ color: 'rgba(0,0,0,0.25)' }}
+        />
+      </ConfigProvider>
+    </div>
   );
 }

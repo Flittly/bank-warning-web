@@ -1512,3 +1512,68 @@
   fill: #64748b;
   font-size: 15px;
 }
+
+/* ==================== 新手引导 Tour 定制样式 ==================== */
+.tour-guide-root {
+  --tour-radius: 16px;
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner {
+  border-radius: 16px !important;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.06), 0 6px 28px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.8) !important;
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner .ant-tour-close {
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner .ant-tour-close:hover {
+  color: #1e293b;
+  background: rgba(0,0,0,0.05);
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner .ant-btn {
+  border-radius: 12px !important;
+  height: 36px;
+  padding: 0 18px;
+  font-size: 0.85rem;
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner .ant-btn-primary {
+  background: #1e293b !important;
+  border-color: #1e293b !important;
+  color: #fff !important;
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner .ant-btn-primary:hover {
+  background: #334155 !important;
+  border-color: #334155 !important;
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner .ant-btn-default {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #475569 !important;
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner .ant-btn-default:hover {
+  background: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+/* 步数指示器圆点 */
+.tour-guide-root .ant-tour .ant-tour-inner .ant-tour-indicators .ant-tour-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0,0,0,0.12);
+}
+
+.tour-guide-root .ant-tour .ant-tour-inner .ant-tour-indicators .ant-tour-indicator-active {
+  width: 20px;
+  background: #1e293b;
+}
