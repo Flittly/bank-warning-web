@@ -90,17 +90,6 @@ function AppLayout() {
           </button>
         </div>
         <div className="nav-right">
-              {!isLoading && isAuthenticated && (
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<HelpCircle size={16} />}
-                  onClick={() => setShowTour(true)}
-                  title="新手引导"
-                >
-                  新手引导
-                </Button>
-              )}
               {!isLoading && (
             isAuthenticated ? (
               <div className="nav-user">
@@ -117,6 +106,15 @@ function AppLayout() {
                       用户管理
                     </Button>
                   )}
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<HelpCircle size={16} />}
+                    onClick={() => setShowTour(true)}
+                    title="新手引导"
+                  >
+                    新手引导
+                  </Button>
                   <Button
                     size="small"
                     onClick={handleLogout}
