@@ -44,13 +44,15 @@ export default function KnowledgePage() {
         style={{ width: leftWidth, minWidth: leftWidth }}
       />
       <ResizeHandle onResize={delta => setLeftWidth(w => Math.max(280, Math.min(500, w + delta)))} />
-      <KnowledgePreview
-        selectedDocId={selectedDocId}
-        searchResults={searchResults}
-        searchQuery={searchQuery}
-        onCloseDoc={() => setSelectedDocId(null)}
-        style={{ flex: 1, height: '100%', minWidth: 0 }}
-      />
+      <div data-tour="knowledge-preview" style={{ flex: 1, minWidth: 0 }}>
+        <KnowledgePreview
+          selectedDocId={selectedDocId}
+          searchResults={searchResults}
+          searchQuery={searchQuery}
+          onCloseDoc={() => setSelectedDocId(null)}
+          style={{ flex: 1, height: '100%', minWidth: 0 }}
+        />
+      </div>
     </div>
   );
 }

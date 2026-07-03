@@ -1546,21 +1546,25 @@ function ResultPage(props: ResultPageProps) {
             onClick={() => setActiveSidebarPanel('tasks')}
             title="任务列表"
             style={activityBarBtnStyle(activeSidebarPanel === 'tasks')}
+            data-tour="result-tasks"
           ><List size={16} /></button>
           <button
             onClick={() => setActiveSidebarPanel('reports')}
             title="报告查看"
             style={activityBarBtnStyle(activeSidebarPanel === 'reports')}
+            data-tour="result-reports"
           ><FileText size={16} /></button>
           <button
             onClick={() => setActiveSidebarPanel('skills')}
             title="Skills"
             style={activityBarBtnStyle(activeSidebarPanel === 'skills')}
+            data-tour="result-skills"
           ><Box size={16} /></button>
           <button
             onClick={() => setActiveSidebarPanel('progress')}
             title="计算进度"
             style={activityBarBtnStyle(activeSidebarPanel === 'progress')}
+            data-tour="result-progress"
           ><BarChart3 size={16} /></button>
         </div>
 
@@ -1961,7 +1965,7 @@ function ResultPage(props: ResultPageProps) {
         )}
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
-      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} chatReports={chatReports} setChatReports={setChatReports} />
+      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} chatReports={chatReports} setChatReports={setChatReports} onReportsUpdated={() => { fetchReportList(); }} />
       {regenerateTarget && (
         <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
         <Modal

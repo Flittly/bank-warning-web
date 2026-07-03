@@ -88,7 +88,7 @@ export default function KnowledgeSidebar({ onSelectDoc, onSearch, style }: Props
   };
 
   return (
-    <div className="knowledge-sidebar" style={{
+    <div className="knowledge-sidebar" data-tour="knowledge-sidebar" style={{
       overflowY: 'auto', padding: '16px', width: '100%', height: '100%',
       background: 'rgba(255,255,255,0.6)',
       backdropFilter: 'blur(12px)',

@@ -1,5 +1,6 @@
 ﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Edit3, BarChart2, BookOpen } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Edit3, BarChart2, BookOpen, HelpCircle } from 'lucide-react';
 import { Button, Tag, Space } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
@@ -11,6 +12,7 @@ import RegisterPage from './pages/RegisterPage';
 import AdminUserPage from './pages/AdminUserPage';
 import AuthGuard from './auth/AuthGuard';
 import { useAuth } from './auth/useAuth';
+import TourGuide from './components/TourGuide';
 import './App.css';
 
 function EditorPageWrapper() {
@@ -32,6 +34,22 @@ function AppLayout() {
   const location = useLocation();
   const currentPath = location.pathname;
   const { user, isAuthenticated, isLoading, logout } = useAuth();
+  const [showTour, setShowTour] = useState(false);
+  const tourCheckedRef = useRef(false);
+
+  // 首次访问自动弹出新手引导
+  useEffect(() => {
+    if (tourCheckedRef.current) return;
+    tourCheckedRef.current = true;
+    if (!localStorage.getItem('tour-seen')) {
+      setShowTour(true);
+    }
+  }, []);
+
+  const handleTourClose = () => {
+    localStorage.setItem('tour-seen', '1');
+    setShowTour(false);
+  };
 
   const handleLogout = () => {
     logout();
@@ -72,7 +90,18 @@ function AppLayout() {
           </button>
         </div>
         <div className="nav-right">
-          {!isLoading && (
+              {!isLoading && isAuthenticated && (
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<HelpCircle size={16} />}
+                  onClick={() => setShowTour(true)}
+                  title="新手引导"
+                >
+                  新手引导
+                </Button>
+              )}
+              {!isLoading && (
             isAuthenticated ? (
               <div className="nav-user">
                 <Space size="small">
@@ -123,6 +152,7 @@ function AppLayout() {
       <main className="app-main">
         <Outlet />
       </main>
+      <TourGuide open={showTour} onClose={handleTourClose} />
     </div>
   );
 }

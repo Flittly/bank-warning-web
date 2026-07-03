@@ -202,7 +202,7 @@ function EditorSidebar(props: EditorSidebarProps) {
           </div>
           <div className={styles.card}>
             <div className={styles.buttonGrid}>
-              <label className={styles.primaryButton} style={{ gridColumn: '1 / -1' }}>
+              <label className={styles.primaryButton} style={{ gridColumn: '1 / -1' }} data-tour="upload-bank">
                 <Upload size={16} /> 上传岸段
                 <input
                   type="file"
@@ -220,7 +220,7 @@ function EditorSidebar(props: EditorSidebarProps) {
                   <span className={styles.bankSelectCount}>已选 {selectedBankGroup.length} 条</span>
                 )}
               </div>
-              <div className={styles.bankSelect}>
+              <div className={styles.bankSelect} data-tour="bank-list">
                 {bankList && bankList.length > 0
                   ? bankList.map((b) => (
                         <div
@@ -457,7 +457,7 @@ function EditorSidebar(props: EditorSidebarProps) {
               </div>
             </div>
 
-            <div className={styles.mt12}>
+            <div className={styles.mt12} data-tour="generate-sections">
               <button type="button" className={styles.primaryButton} onClick={handleGenerateSections}>
                 <Ruler size={16} /> 生成展示断面
               </button>
@@ -498,7 +498,7 @@ function EditorSidebar(props: EditorSidebarProps) {
         </section>
 
         {/* 参数配置 */}
-        <section className={styles.configSection}>
+        <section className={styles.configSection} data-tour="param-config">
           <div className={styles.sectionTitle}>
             <Settings size={14} /> 参数配置
           </div>
@@ -562,6 +562,7 @@ function EditorSidebar(props: EditorSidebarProps) {
               type="button"
               className={`${styles.outlineButton} ${isSelectingCrossLines ? styles.active : ''} ${styles.fullWidth}`}
               onClick={toggleCrossLineSelection}
+              data-tour="fine-tune"
             >
               {isSelectingCrossLines ? '完成编辑' : '开启断面精调'}
             </button>

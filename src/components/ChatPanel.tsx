@@ -4,6 +4,7 @@ import { Plus, Trash2, Send, MessageCircle, Save } from 'lucide-react';
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  contextText?: string; // 上下文标签文本（如 "📋 任务A  📄 report_xxx.md"）
 }
 
 interface ChatSession {
@@ -23,9 +24,10 @@ interface ChatPanelProps {
   setChatTasks?: (tasks: { taskId: string; taskName: string }[]) => void;
   chatReports?: { filename: string; taskId: string }[];
   setChatReports?: (reports: { filename: string; taskId: string }[]) => void;
+  onReportsUpdated?: () => void; // 报告文件被 AI 修改后通知父组件刷新
 }
 
-function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSelectedSkills, chatTasks, setChatTasks, chatReports, setChatReports }: ChatPanelProps) {
+function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSelectedSkills, chatTasks, setChatTasks, chatReports, setChatReports, onReportsUpdated }: ChatPanelProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -62,7 +64,9 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
       if (data.success) {
         setSessions(data.sessions);
         if (!activeSessionId && data.sessions.length > 0) {
-          setActiveSessionId(data.sessions[0].session_id);
+          const firstId = data.sessions[0].session_id;
+          setActiveSessionId(firstId);
+          fetchMessages(firstId);
         } else if (data.sessions.length === 0) {
           await createSession();
         }
@@ -70,6 +74,26 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
     } catch (e) {
       console.error('获取会话列表失败', e);
     }
+  };
+
+  const fetchMessages = async (sessionId: string) => {
+    try {
+      const res = await fetch(`/v0/bank/ai/chat/sessions/${sessionId}/messages`);
+      const data = await res.json();
+      if (data.success && data.messages) {
+        setMessages(data.messages);
+      }
+    } catch (e) { /* ignore */ }
+  };
+
+  const saveChatMessage = async (sessionId: string, role: string, content: string, contextText?: string) => {
+    try {
+      await fetch(`/v0/bank/ai/chat/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, content, contextText: contextText || '' }),
+      });
+    } catch (e) { /* ignore */ }
   };
 
   const createSession = async () => {
@@ -140,8 +164,22 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
   const sendMessage = async () => {
     if (!input.trim() || !activeSessionId || loading) return;
     const question = input.trim();
+    // 捕获当前上下文标签，拼成显示文本
+    const ctxParts: string[] = [];
+    if (chatReports && chatReports.length > 0) {
+      ctxParts.push(...chatReports.map(r => `📄 ${r.filename}`));
+    }
+    if (chatTasks && chatTasks.length > 0) {
+      ctxParts.push(...chatTasks.map(t => `📋 ${t.taskName || t.taskId}`));
+    }
+    const contextText = ctxParts.length > 0 ? ctxParts.join('  ') : undefined;
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: question }]);
+    setMessages(prev => [...prev, { role: 'user', content: question, contextText }]);
+    // 持久化用户消息
+    saveChatMessage(activeSessionId, 'user', question, contextText);
+    // 消息发出后清空上下文标签
+    if (setChatReports) setChatReports([]);
+    if (setChatTasks) setChatTasks([]);
     setLoading(true);
     try {
       const res = await fetch('/v0/bank/ai/agent/chat', {
@@ -155,7 +193,14 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
         if (typeof content === 'object' && content !== null) {
           content = content.text || content.thinking || JSON.stringify(content);
         }
-        setMessages(prev => [...prev, { role: 'assistant', content: String(content) }]);
+        const replyText = String(content);
+        setMessages(prev => [...prev, { role: 'assistant', content: replyText }]);
+        // 持久化 AI 回复
+        saveChatMessage(activeSessionId, 'assistant', replyText);
+        // 如果 AI 修改了报告文件，通知父组件刷新
+        if (data.updatedReports && data.updatedReports.length > 0 && onReportsUpdated) {
+          onReportsUpdated();
+        }
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: '请求失败，请重试。' }]);
       }
@@ -211,7 +256,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
                 value={activeSessionId || ''}
                 onChange={(e) => {
                   setActiveSessionId(e.target.value);
-                  setMessages([]);
+                  fetchMessages(e.target.value);
                 }}
                 style={{
                   flex: 1, border: '1px solid rgba(0,0,0,0.08)',
@@ -293,6 +338,16 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
                 }}>
                   {msg.role === 'user' ? '我' : 'AI 助手'}
                 </div>
+                {msg.contextText && (
+                  <div style={{
+                    fontSize: '0.68rem', color: '#64748b',
+                    marginBottom: 4, padding: '2px 6px',
+                    background: '#f1f5f9', borderRadius: 6,
+                    display: 'inline-block',
+                  }}>
+                    {msg.contextText}
+                  </div>
+                )}
                 <div style={{
                   fontSize: '0.875rem', lineHeight: 1.6,
                   color: '#1e293b', whiteSpace: 'pre-wrap',

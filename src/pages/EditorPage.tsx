@@ -2203,7 +2203,9 @@ function EditorPage(props: EditorPageProps) {
         </button>
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
-      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} />
+      <div data-tour="chat-panel" style={{ height: '100%', position: 'relative' }}>
+        <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} />
+      </div>
 
       {/* 全局属性配置弹窗 */}
       {showGlobalPropertiesModal && globalProperties && (
