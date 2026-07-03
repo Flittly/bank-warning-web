@@ -1,7 +1,7 @@
 ﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Edit3, BarChart2, BookOpen, HelpCircle, Menu } from 'lucide-react';
-import { Button, Tag, Space, Dropdown } from 'antd';
+import { Button, Space, Dropdown } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
@@ -126,7 +126,20 @@ function AppLayout() {
                 <Space size="small">
                   <UserOutlined style={{ color: '#64748b' }} />
                   <span className="nav-username">{user?.username}</span>
-                  <Tag color={user?.role === 'ADMIN' ? 'blue' : 'default'}>{user?.role}</Tag>
+                  <span
+                    className="nav-role-badge"
+                    style={{
+                      background: user?.role === 'ADMIN'
+                        ? 'rgba(59,130,246,0.10)'
+                        : 'rgba(100,116,139,0.08)',
+                      color: user?.role === 'ADMIN' ? '#3b82f6' : '#64748b',
+                      border: user?.role === 'ADMIN'
+                        ? '1px solid rgba(59,130,246,0.18)'
+                        : '1px solid rgba(100,116,139,0.12)',
+                    }}
+                  >
+                    {user?.role}
+                  </span>
                   <Dropdown menu={{ items: dropdownItems }} placement="bottomRight" trigger={['click']}>
                     <Button
                       size="small"
