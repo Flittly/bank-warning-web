@@ -1,4 +1,5 @@
 import { Tour, ConfigProvider } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
 import type { TourProps } from 'antd';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -154,7 +155,7 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
 
   return (
     <div className="tour-guide-root">
-      <ConfigProvider theme={tourTheme}>
+      <ConfigProvider theme={tourTheme} locale={zhCN}>
         <Tour
           key={tourKey}
           open={open}
