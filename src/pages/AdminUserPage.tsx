@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Table, Select, Modal, Button, message, Tag } from 'antd';
+import { ArrowLeftOutlined, ReloadOutlined, UserOutlined, CrownOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { getAccessToken } from '../auth/tokenManager';
 import type { UserResponse } from '../auth/types';
+import './AdminUserPage.css';
 
 const API_BASE = '/v0/admin';
 
 export default function AdminUserPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,9 +30,8 @@ export default function AdminUserPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: UserResponse[] = await res.json();
       setUsers(data);
-    } catch (e) {
+    } catch {
       message.error('获取用户列表失败');
-      console.error(e);
     } finally {
       setLoading(false);
     }
@@ -39,6 +42,13 @@ export default function AdminUserPage() {
       fetchUsers();
     }
   }, [isAdmin]);
+
+  const stats = useMemo(() => {
+    const total = users.length;
+    const admins = users.filter((u) => u.role === 'ADMIN').length;
+    const active = users.filter((u) => u.status === 'ACTIVE').length;
+    return { total, admins, active };
+  }, [users]);
 
   const handleStatusChange = (targetUser: UserResponse, newStatus: string) => {
     const statusLabel = newStatus === 'ACTIVE' ? '启用' : '禁用';
@@ -62,9 +72,8 @@ export default function AdminUserPage() {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           message.success('状态修改成功');
           fetchUsers();
-        } catch (e) {
+        } catch {
           message.error('状态修改失败');
-          console.error(e);
         } finally {
           setUpdating(null);
         }
@@ -94,9 +103,8 @@ export default function AdminUserPage() {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           message.success('角色修改成功');
           fetchUsers();
-        } catch (e) {
+        } catch {
           message.error('角色修改失败');
-          console.error(e);
         } finally {
           setUpdating(null);
         }
@@ -117,7 +125,8 @@ export default function AdminUserPage() {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      width: 80,
+      width: 72,
+      align: 'center',
     },
     {
       title: '用户名',
@@ -128,16 +137,19 @@ export default function AdminUserPage() {
       title: '手机号',
       dataIndex: 'phone',
       key: 'phone',
+      render: (v: string) => v || <span style={{ color: '#cbd5e1' }}>—</span>,
     },
     {
       title: '邮箱',
       dataIndex: 'email',
       key: 'email',
+      render: (v: string) => v || <span style={{ color: '#cbd5e1' }}>—</span>,
     },
     {
       title: '角色',
       dataIndex: 'role',
       key: 'role',
+      width: 150,
       render: (role: string, record: UserResponse) => {
         const label = roleLabel(role, record);
         const color = isSuperAdmin(record) ? 'gold' : role === 'ADMIN' ? 'blue' : 'default';
@@ -148,12 +160,8 @@ export default function AdminUserPage() {
         return (
           <Select
             value={role}
-            style={{
-              width: 130,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 12,
-            }}
+            popupClassName="admin-select-dropdown"
+            style={{ width: 130 }}
             disabled={updating === record.id}
             onChange={(value) => handleRoleChange(record, value)}
             options={[
@@ -168,10 +176,12 @@ export default function AdminUserPage() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 130,
       render: (status: string, record: UserResponse) => (
         <Select
           value={status}
-          style={{ width: 120 }}
+          popupClassName="admin-select-dropdown"
+          style={{ width: 110 }}
           disabled={updating === record.id}
           onChange={(value) => handleStatusChange(record, value)}
           options={[
@@ -185,26 +195,75 @@ export default function AdminUserPage() {
 
   if (!isAdmin) {
     return (
-      <div style={{ padding: 48, textAlign: 'center' }}>
+      <div className="admin-denied">
+        <div className="admin-denied-icon">🔒</div>
         <h2>无权限访问</h2>
         <p>此页面仅限管理员访问</p>
+        <Button className="glass-btn" onClick={() => navigate('/editor')}>
+          返回首页
+        </Button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ margin: 0 }}>用户管理</h2>
-        <Button onClick={fetchUsers} loading={loading}>刷新</Button>
+    <div className="admin-page">
+      <nav className="admin-nav">
+        <div className="admin-nav-left">
+          <button className="admin-nav-back" onClick={() => navigate('/editor')} title="返回">
+            <ArrowLeftOutlined />
+          </button>
+          <span className="admin-nav-title">用户管理</span>
+        </div>
+        <div className="admin-nav-right">
+          <Button icon={<ReloadOutlined />} onClick={fetchUsers} loading={loading}>
+            刷新
+          </Button>
+        </div>
+      </nav>
+
+      <div className="admin-body">
+        <div className="admin-stats">
+          <div className="admin-stat-card">
+            <div className="admin-stat-icon users-icon">
+              <UserOutlined />
+            </div>
+            <div className="admin-stat-info">
+              <span className="admin-stat-label">总用户</span>
+              <span className="admin-stat-value">{stats.total}</span>
+            </div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="admin-stat-icon admin-icon">
+              <CrownOutlined />
+            </div>
+            <div className="admin-stat-info">
+              <span className="admin-stat-label">管理员</span>
+              <span className="admin-stat-value">{stats.admins}</span>
+            </div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="admin-stat-icon active-icon">
+              <CheckCircleOutlined />
+            </div>
+            <div className="admin-stat-info">
+              <span className="admin-stat-label">启用中</span>
+              <span className="admin-stat-value">{stats.active}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-table-wrap">
+          <Table
+            dataSource={users}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `共 ${t} 人` }}
+            scroll={{ x: 720 }}
+          />
+        </div>
       </div>
-      <Table
-        dataSource={users}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{ pageSize: 10 }}
-      />
     </div>
   );
 }
