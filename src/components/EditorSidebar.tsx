@@ -414,14 +414,14 @@ function EditorSidebar(props: EditorSidebarProps) {
               <div className={styles.hintText} style={{ marginBottom: 8, color: '#1e293b', fontSize: '0.85rem', fontWeight: 700 }}>
                 方式二：手动创建断面
               </div>
-            <div className={styles.buttonGrid}>
+            <div className={styles.buttonGrid} data-tour="select-bank-lines">
               <button
                 type="button"
                 className={`${styles.outlineButton} ${isSelectingShoreLines ? styles.active : ''}`}
                 onClick={toggleShoreLineSelection}
               >
                 {isSelectingShoreLines ? <Check size={16} /> : <MousePointer2 size={16} />}
-                {isSelectingShoreLines ? '选择中' : '选择岸段'}
+                {isSelectingShoreLines ? '选择中' : '选中岸段'}
               </button>
               <button 
                 type="button" 
@@ -634,7 +634,7 @@ function EditorSidebar(props: EditorSidebarProps) {
                       </div>
                     ) : (
                       <>
-                        <div className={styles.buttonGrid}>
+            <div className={styles.buttonGrid}>
                           <button type="button" onClick={() => rotateSelectedCrossLine(-5)} className={`${styles.outlineButton} ${styles.smallPad}`} title="逆时针旋转 5°" aria-label="逆时针旋转">-5°</button>
                           <button type="button" onClick={() => rotateSelectedCrossLine(5)} className={`${styles.outlineButton} ${styles.smallPad}`} title="顺时针旋转 5°" aria-label="顺时针旋转">+5°</button>
                           <button type="button" onClick={() => scaleSelectedCrossLine(-10)} className={`${styles.outlineButton} ${styles.smallPad}`} title="缩短 10m" aria-label="缩短">-10m</button>

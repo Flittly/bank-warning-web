@@ -14,9 +14,9 @@ function getEl(selector: string): HTMLElement | null {
 }
 
 const STEP_PAGE: Record<number, string> = {
-  0: '/editor', 1: '/editor', 2: '/editor', 3: '/editor', 4: '/editor', 5: '/editor',
-  6: '/result', 7: '/result', 8: '/result', 9: '/result',
-  10: '/knowledge', 11: '/knowledge',
+  0: '/editor', 1: '/editor', 2: '/editor', 3: '/editor', 4: '/editor', 5: '/editor', 6: '/editor',
+  7: '/result', 8: '/result', 9: '/result', 10: '/result',
+  11: '/knowledge', 12: '/knowledge',
 };
 
 export default function TourGuide({ open, onClose }: TourGuideProps) {
@@ -56,6 +56,12 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
       title: '选择岸段',
       description: '上传后岸段出现在本地列表中，点击可选中多选，用于后续生成断面',
       target: () => getEl('[data-tour="bank-list"]'),
+      placement: 'right',
+    },
+    {
+      title: '选中岸段',
+      description: '在"方式二：手动创建断面"区域，点击"选中岸段"或"全选"按钮选择需要在底图上操作的岸段',
+      target: () => getEl('[data-tour="select-bank-lines"]'),
       placement: 'right',
     },
     {
