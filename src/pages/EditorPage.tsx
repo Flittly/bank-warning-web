@@ -264,16 +264,12 @@ function EditorPage(props: EditorPageProps) {
         properties: { bank_id: newBankId, bank_name: newBankName, region_code: bank.region_code || 'Mzs', from_backend: true },
       };
 
-      // 一次性更新：删旧岸段 + 加新岸段
-      setUploadedData((prev) => {
-        const features = (prev?.features || []).filter((f: any) =>
-          String(f.properties?.bank_id || '') !== bankId
-        );
-        return { type: 'FeatureCollection', features: [...features, newFeature] } as any;
-      });
+      // 清理地图上所有旧岸段，仅保留新截取的岸段
+      setUploadedData({ type: 'FeatureCollection', features: [newFeature] } as any);
+      setLoadedBanks([{ bank_id: newBankId, bank_name: newBankName, region_code: bank.region_code || 'Mzs', description: `截取自 ${bankId}` }]);
 
-      setSelectedLines((prev: Set<string>) => { const next = new Set(prev); next.delete(bankId); return next; });
-      setSelectedBankGroup((prev: string[]) => prev.filter((id: string) => id !== bankId));
+      setSelectedLines(new Set());
+      setSelectedBankGroup([]);
       setGroups([]);
       setIsSelectingStartEnd(false);
     } catch (err: any) { alert('截取失败: ' + err.message); }
