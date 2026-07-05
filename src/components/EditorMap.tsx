@@ -336,7 +336,7 @@ function EditorMap(props: EditorMapProps) {
       try {
         const prevCount = prevUploadedCountRef.current || 0;
         const currCount = (uploadedData.features && uploadedData.features.length) || 0;
-        if (prevCount === 0 && currCount > 0) {
+        if (currCount > 0 && prevCount !== currCount) {
           const bbox = turf.bbox(uploadedData);
           map.fitBounds([bbox[0], bbox[1], bbox[2], bbox[3]], { padding: 50 });
         }

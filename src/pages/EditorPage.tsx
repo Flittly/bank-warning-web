@@ -1315,9 +1315,6 @@ function EditorPage(props: EditorPageProps) {
   // 切换岸段选择模式
   const toggleShoreLineSelection = () => {
     setIsSelectingShoreLines(!isSelectingShoreLines);
-    if (isSelectingStartEnd) {
-      setIsSelectingStartEnd(false); // 关闭起止点选择模式
-    }
     if (isSelectingCrossLines) {
       setIsSelectingCrossLines(false); // 关闭断面选择模式
     }
