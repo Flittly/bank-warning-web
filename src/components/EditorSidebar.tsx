@@ -104,6 +104,7 @@ interface EditorSidebarProps {
   handleSectionsFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleSelectBasicParam: (id: string | null) => void;
   onExportSections: () => void;
+  clippedBanks: any[];
 }
 
 function EditorSidebar(props: EditorSidebarProps) {
@@ -187,6 +188,7 @@ function EditorSidebar(props: EditorSidebarProps) {
     selectedLoadedBanks,
     setSelectedLoadedBanks,
     deleteLoadedBanks,
+    clippedBanks,
   } = props;
 
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
@@ -222,7 +224,7 @@ function EditorSidebar(props: EditorSidebarProps) {
               </div>
               <div className={styles.bankSelect} data-tour="bank-list">
                 {bankList && bankList.length > 0
-                  ? bankList.map((b) => (
+                  ? bankList.filter((b: any) => !String(b.bank_id || '').includes('_clip_')).map((b) => (
                         <div
                         key={String(b.bank_id)}
                         className={`${styles.loadedBankItem} ${selectedBankGroup.includes(String(b.bank_id)) ? styles.selected : ''}`}
@@ -547,6 +549,40 @@ function EditorSidebar(props: EditorSidebarProps) {
                 <button type="button" className={styles.outlineButton} onClick={onClipBank} style={{ width: '100%' }}>
                   <Check size={14} /> 确认截取
                 </button>
+              </div>
+            )}
+
+            {clippedBanks && clippedBanks.length > 0 && (
+              <div className={`${styles.inputGroup} ${styles.mt12}`}>
+                <div className={styles.bankSelectHeader}>
+                  <span className={styles.bankSelectLabel}>已截取岸段:</span>
+                  <span className={styles.bankSelectCount}>{clippedBanks.length}</span>
+                </div>
+                <div className={styles.loadedBanksList}>
+                  {clippedBanks.map((bank: any) => {
+                    const bankId = String(bank.bank_id);
+                    const bankName = bank.bank_name || bankId;
+                    const isLoaded = loadedBanks && loadedBanks.some((lb: any) => String(lb.bank_id) === bankId);
+                    return (
+                      <div
+                        key={bankId}
+                        className={`${styles.loadedBankItem} ${isLoaded ? styles.selected : ''}`}
+                        onClick={() => loadBankById?.(bankId)}
+                        title={isLoaded ? '已加载到地图' : '点击加载到地图'}
+                      >
+                        <div className={styles.loadedBankItemMain}>
+                          <span className={styles.loadedBankItemName}>{bankName}</span>
+                          <span className={styles.loadedBankItemId}>{bankId}</span>
+                        </div>
+                        <button
+                          className={styles.bankParamsBtn}
+                          onClick={(e) => { e.stopPropagation(); deleteBankById?.(bankId); }}
+                          title="删除截取岸段"
+                        ><Trash2 size={14} /></button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

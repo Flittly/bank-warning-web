@@ -2019,6 +2019,7 @@ function EditorPage(props: EditorPageProps) {
 
   const totalCrossLinesCount = perpendicularData?.features.length || 0;
   const totalSelectedSegments = groups.filter(g => g.end !== null).length;
+  const clippedBanks = (bankList || []).filter((b: any) => String(b.bank_id || '').includes('_clip_'));
 
   return (
     <div className="editor-layout">
@@ -2130,6 +2131,7 @@ function EditorPage(props: EditorPageProps) {
           handleSectionsFileUpload={handleSectionsFileUpload}
           onExportSections={handleExportSections}
           handleSelectBasicParam={handleSelectBasicParam}
+          clippedBanks={clippedBanks}
         />
       </div>
       <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
