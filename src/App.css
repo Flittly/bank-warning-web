@@ -173,8 +173,20 @@
   box-shadow: 0 0 12px rgba(59, 130, 246, 0.12), inset 0 1px 0 rgba(255,255,255,0.5);
 }
 
-/* 知识库 — 绿 */
+/* 智能工作台 — 橙 */
 .nav-tab:nth-child(3).active {
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(249, 115, 22, 0.25) 100%);
+  border-color: rgba(249, 115, 22, 0.45);
+  color: #9A3412;
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.12), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+
+/* 知识库 — 绿 */
+.nav-tab:nth-child(4).active {
   background: linear-gradient(135deg,
     rgba(255, 255, 255, 0.35) 0%,
     rgba(16, 185, 129, 0.25) 100%);
