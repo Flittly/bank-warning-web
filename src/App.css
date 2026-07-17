@@ -1602,3 +1602,23 @@
   width: 20px;
   background: #1e293b;
 }
+
+/* ==================== 智能工作台编排面板 — 呼吸光效 ==================== */
+@keyframes breatheGlow {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,0.3),
+      inset 0 0 20px rgba(249,115,22,0.08),
+      0 0 16px rgba(249,115,22,0.06);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,0.45),
+      inset 0 0 30px rgba(249,115,22,0.18),
+      0 0 24px rgba(249,115,22,0.14);
+  }
+}
+
+.workbench-orchestra-panel {
+  animation: breatheGlow 3s ease-in-out infinite;
+}

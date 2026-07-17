@@ -1990,12 +1990,11 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
       <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
       <div className="editor-map-panel" style={{ display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
         {/* ===== LEFT: 智能体编排画布 ===== */}
-        <div style={{
+        <div className="workbench-orchestra-panel" style={{
           flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
           background: 'rgba(255,255,255,0.75)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
-          borderRight: '1px solid rgba(255,255,255,0.3)',
         }}>
           <div style={{
             padding: '10px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)',
