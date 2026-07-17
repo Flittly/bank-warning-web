@@ -9,7 +9,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, BarChart3, MessageCircle, Globe } from 'lucide-react';
+import { Box, FileText, List, Bot, MessageCircle, Globe, Plus, UserPlus } from 'lucide-react';
 import { ConfigProvider, Modal } from 'antd';
 
 // —— Mapbox token
@@ -174,6 +174,72 @@ interface SmartWorkbenchPageProps {
   initialTaskId?: string;
 }
 
+function AgentCircle({ agent, pos, label, isLeader, onDragStart, onRemove }: {
+  agent: { id: string; name: string; color: string };
+  pos: { x: number; y: number };
+  label: string;
+  isLeader?: boolean;
+  onDragStart: () => void;
+  onRemove?: (() => void) | undefined;
+}) {
+  const size = isLeader ? 64 : 48;
+  return (
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.stopPropagation();
+        onDragStart();
+      }}
+      onMouseDown={onDragStart}
+      style={{
+        position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`,
+        transform: 'translate(-50%,-50%)',
+        zIndex: 2, display: 'flex',
+        flexDirection: 'column', alignItems: 'center', gap: 4,
+        cursor: 'grab', userSelect: 'none',
+      }}
+    >
+      <div style={{
+        width: size, height: size, borderRadius: '50%',
+        background: isLeader
+          ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+          : agent.color,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#fff', fontSize: isLeader ? '0.9rem' : '0.7rem',
+        fontWeight: 800,
+        boxShadow: isLeader
+          ? '0 4px 20px rgba(217,119,6,0.4), 0 0 0 3px rgba(251,191,36,0.2)'
+          : `0 3px 12px ${agent.color}44`,
+        position: 'relative',
+      }}>
+        {label}
+        {onRemove && (
+          <span
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            style={{
+              position: 'absolute', top: -6, right: -6,
+              width: 18, height: 18, borderRadius: '50%',
+              background: '#ef4444', color: '#fff',
+              fontSize: '0.55rem', display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', lineHeight: 1,
+            }}
+          >×</span>
+        )}
+      </div>
+      <span style={{
+        fontSize: isLeader ? '0.72rem' : '0.62rem',
+        color: isLeader ? '#92400E' : '#475569',
+        fontWeight: isLeader ? 600 : 500,
+      }}>{agent.name}</span>
+      {isLeader && (
+        <span style={{ fontSize: '0.55rem', color: '#d97706', background: '#fef3c7', padding: '1px 6px', borderRadius: 3 }}>总指挥</span>
+      )}
+    </div>
+  );
+}
+
 function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
   const { initialTaskId } = props;
 
@@ -224,7 +290,17 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
   const [workspaceHeight, setWorkspaceHeight] = useState(300);
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [reportList, setReportList] = useState<any[]>([]);
-  const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'progress' | 'skills'>('tasks');
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'agents' | 'skills'>('tasks');
+  const [orchestratedAgents, setOrchestratedAgents] = useState<Set<string>>(new Set(['chief']));
+  const [customAgents, setCustomAgents] = useState<Array<{id: string, name: string, desc: string, color: string}>>([]);
+  const [showCreateAgent, setShowCreateAgent] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentDesc, setNewAgentDesc] = useState('');
+  const [newAgentColor, setNewAgentColor] = useState('#8b5cf6');
+  const AGENT_COLORS = ['#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#06b6d4', '#f43f5e', '#ef4444', '#6366f1'];
+  const [agentPositions, setAgentPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [dragAgent, setDragAgent] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [skillList, setSkillList] = useState<any[]>([]);
   const [chatTaskId, setChatTaskId] = useState<string | null>(null);
@@ -1561,11 +1637,10 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
             data-tour="result-skills"
           ><Box size={16} /></button>
           <button
-            onClick={() => setActiveSidebarPanel('progress')}
-            title="计算进度"
-            style={activityBarBtnStyle(activeSidebarPanel === 'progress')}
-            data-tour="result-progress"
-          ><BarChart3 size={16} /></button>
+            onClick={() => setActiveSidebarPanel('agents')}
+            title="智能体"
+            style={activityBarBtnStyle(activeSidebarPanel === 'agents')}
+          ><Bot size={16} /></button>
         </div>
 
         {/* Content panel - shows the active section only */}
@@ -1604,26 +1679,6 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                         handleDeleteTaskById(task.task_id);
                       }} title="删除任务">×</button>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleGenerateReport(task.task_id, task.task_name); }}
-                      disabled={generatingTaskId === task.task_id}
-                      style={{
-                        marginTop: 6, padding: '5px 14px', fontSize: '0.8rem',
-                        background: generatingTaskId === task.task_id
-                          ? '#94a3b8'
-                          : 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(59,130,246,0.22) 100%)',
-                        color: generatingTaskId === task.task_id ? '#fff' : '#1E40AF',
-                        border: generatingTaskId === task.task_id ? 'none' : '1.5px solid rgba(59,130,246,0.45)',
-                        borderRadius: 14, cursor: generatingTaskId === task.task_id ? 'default' : 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                        backdropFilter: 'blur(8px) saturate(1.3)',
-                        WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
-                        boxShadow: '0 0 10px rgba(59,130,246,0.1), inset 0 1px 0 rgba(255,255,255,0.4)',
-                      }}
-                    >
-                      <FileText size={12} />
-                      {generatingTaskId === task.task_id ? '生成中...' : 'AI 出报告'}
-                    </button>
                   </div>
                 ))}
               </div>
@@ -1695,69 +1750,136 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
             </>
           )}
 
-          {/* === PROGRESS PANEL === */}
-          {activeSidebarPanel === 'progress' && (
+          {/* === AGENTS PANEL === */}
+          {activeSidebarPanel === 'agents' && (
             <>
               <div className="sidebar-header">
-                <BarChart3 size={14} />
-                <h4>计算进度</h4>
+                <Bot size={14} />
+                <h4>智能体</h4>
               </div>
-              {progressOpen && selectedTask ? (
-                <div style={{ flex: 1, overflow: 'auto' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: 8 }}>
-                    任务: {progress?.taskName || selectedTask}
-                    {progress?.status ? ` | 状态: ${progress.status}` : ''}
+              <div className="task-list-container" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                {[
+                  { id: 'chief', name: '总工程师', role: 'Leader', desc: '统筹调度制图师与水文专家，规划任务执行流程', color: '#d97706' },
+                  { id: 'cartographer', name: '制图师', role: 'Member', desc: '负责空间数据可视化、岸段地图渲染与断面图表生成', color: '#3b82f6' },
+                  { id: 'hydrologist', name: '水文专家', role: 'Member', desc: '负责水文参数分析、风险评估模型计算与报告编写', color: '#10b981' },
+                  ...customAgents.map(c => ({ ...c, role: 'Member' as const })),
+                ].map((agent) => (
+                  <div
+                    key={agent.id}
+                    className="task-item"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('agent-id', agent.id);
+                      e.dataTransfer.setData('agent-name', agent.name);
+                      e.dataTransfer.setData('agent-color', agent.color);
+                      e.dataTransfer.setData('agent-role', agent.role);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    style={{ cursor: 'grab' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div className="task-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>{agent.name}</span>
+                          <span style={{
+                            fontSize: '0.6rem', padding: '1px 6px', borderRadius: 3,
+                            background: agent.role === 'Leader' ? '#fef3c7' : '#f1f5f9',
+                            color: agent.role === 'Leader' ? '#d97706' : '#64748b',
+                            border: `1px solid ${agent.role === 'Leader' ? 'rgba(217,119,6,0.3)' : 'rgba(0,0,0,0.08)'}`,
+                          }}>{agent.role === 'Leader' ? '总指挥' : '成员'}</span>
+                        </div>
+                        <div className="task-meta" style={{ marginTop: 2 }}>{agent.desc}</div>
+                      </div>
+                      <span style={{
+                        width: 10, height: 10, borderRadius: '50%', background: agent.color,
+                        marginTop: 4, flexShrink: 0,
+                      }} />
+                    </div>
                   </div>
-                  <progress
-                    value={progress?.processedCount ?? 0}
-                    max={Math.max(1, progress?.expectedTotal ?? 1)}
-                    style={{ width: '100%', height: 6, accentColor: '#2563eb' }}
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCreateAgent(!showCreateAgent)}
+                style={{
+                  width: '100%', marginTop: 8, padding: '6px 0',
+                  border: '1px dashed rgba(0,0,0,0.15)', borderRadius: 12,
+                  background: 'rgba(255,255,255,0.3)', cursor: 'pointer',
+                  fontSize: '0.75rem', color: '#64748b',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}
+              >
+                <UserPlus size={14} /> 创建智能体
+              </button>
+
+              {showCreateAgent && (
+                <div style={{
+                  marginTop: 8, padding: 12,
+                  border: '1px solid rgba(249,115,22,0.3)', borderRadius: 14,
+                  background: 'rgba(255,255,255,0.45)',
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                }}>
+                  <input
+                    placeholder="智能体名称"
+                    value={newAgentName}
+                    onChange={(e) => setNewAgentName(e.target.value)}
+                    style={{
+                      width: '100%', padding: '6px 10px', border: '1px solid rgba(0,0,0,0.1)',
+                      borderRadius: 8, fontSize: '0.78rem', outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
                   />
-                  <div style={{ fontSize: '0.72rem', marginTop: 6, color: '#64748b' }}>
-                    <div>进度: {progressPercent}% · 已处理: {progress?.processedCount ?? 0}/{progress?.expectedTotal ?? 0}</div>
-                    <div>成功: {progress?.successCount ?? 0} · 失败: {progress?.errorCount ?? 0}</div>
-                    <div style={{ marginTop: 2, fontSize: '0.65rem' }}>更新: {progress?.lastUpdatedAt ? new Date(progress.lastUpdatedAt).toLocaleTimeString() : '-'}</div>
+                  <input
+                    placeholder="职能描述"
+                    value={newAgentDesc}
+                    onChange={(e) => setNewAgentDesc(e.target.value)}
+                    style={{
+                      width: '100%', padding: '6px 10px', border: '1px solid rgba(0,0,0,0.1)',
+                      borderRadius: 8, fontSize: '0.78rem', outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', whiteSpace: 'nowrap' }}>颜色:</span>
+                    {AGENT_COLORS.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setNewAgentColor(c)}
+                        style={{
+                          width: 22, height: 22, borderRadius: '50%',
+                          background: c, border: newAgentColor === c
+                            ? '2px solid #1e293b'
+                            : '2px solid rgba(0,0,0,0.08)',
+                          cursor: 'pointer', padding: 0,
+                          boxShadow: newAgentColor === c ? `0 0 0 2px rgba(255,255,255,0.8), 0 0 8px ${c}66` : 'none',
+                          transition: 'all 0.15s',
+                          flexShrink: 0,
+                        }}
+                      />
+                    ))}
                   </div>
-                  {(progress?.errors?.length ?? 0) > 0 ? (
-                    <div className="task-list-container" style={{ marginTop: 10 }}>
-                      {progress!.errors.map(err => {
-                        const expanded = Boolean(expandedErrorIds[err.section_id]);
-                        return (
-                          <div key={err.section_id} className="task-item" style={{ cursor: 'default' }}>
-                            <div className="task-title" style={{ fontSize: '0.8rem', color: '#ef4444' }}>{err.section_name || err.section_id}</div>
-                            <div className="task-meta" style={{ fontSize: '0.7rem' }}>{err.message}</div>
-                            <button
-                              onClick={() => toggleErrorExpanded(err.section_id)}
-                              style={{
-                                marginTop: 4, width: '100%', border: '1px solid #e2e8f0',
-                                background: '#f8fafc', borderRadius: 4, cursor: 'pointer',
-                                fontSize: '0.7rem', color: '#2563eb', padding: '4px 10px',
-                                textAlign: 'center',
-                              }}
-                            >
-                              {expanded ? '收起详情' : '查看详情'}
-                            </button>
-                            {expanded && (
-                              <div style={{ marginTop: 6, padding: 8, background: '#f8fafc', borderRadius: 4, border: '1px solid #e2e8f0' }}>
-                                {err.detailError && <div className="task-meta" style={{ fontSize: '0.7rem', color: '#ef4444', marginBottom: 6 }}>{err.detailError}</div>}
-                                <pre style={{ fontSize: '0.68rem', margin: 0, whiteSpace: 'pre-wrap', color: '#64748b', lineHeight: 1.4, fontFamily: 'monospace' }}>{JSON.stringify(err.detail ?? err.raw ?? err, null, 2)}</pre>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="task-list-container" style={{ marginTop: 10 }}>
-                      <p className="empty-hint">暂无断面错误信息</p>
-                    </div>
-                  )}
-                  <button onClick={() => setProgressOpen(false)} className="delete-task-btn" style={{ width: '100%', marginTop: 10 }}>
-                    关闭进度
-                  </button>
+                  <button
+                    onClick={() => {
+                      if (!newAgentName.trim()) return;
+                      setCustomAgents([...customAgents, {
+                        id: 'custom_' + Date.now(),
+                        name: newAgentName.trim(),
+                        desc: newAgentDesc.trim() || '自定义智能体',
+                        color: newAgentColor,
+                      }]);
+                      setNewAgentName('');
+                      setNewAgentDesc('');
+                      setNewAgentColor('#8b5cf6');
+                      setShowCreateAgent(false);
+                    }}
+                    style={{
+                      width: '100%', padding: '6px 0', border: 'none', borderRadius: 8,
+                      background: 'rgba(249,115,22,0.15)', color: '#9A3412',
+                      fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >确认创建</button>
                 </div>
-              ) : (
-                <p className="empty-hint" style={{ marginTop: 16 }}>请先选择一个任务查看进度</p>
               )}
             </>
           )}
@@ -1839,201 +1961,165 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
         </div>
       </div>
       <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
-      <div className="editor-map-panel" style={{ display: 'flex', flexDirection: 'column' }}>
-        <div ref={mapContainer} className="map-full" style={{ flex: 1 }} />
-
-        {matrixOpen && (
-          <div className="matrix-modal-overlay" onClick={closeMatrixDetail}>
-            <div className="matrix-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="matrix-modal-header">
-                <div>
-                  <div className="matrix-modal-title">断面矩阵详情</div>
-                  <div className="matrix-modal-subtitle">
-                    {matrixSectionName ? `${matrixSectionName} | ` : ''}断面ID: {matrixSectionId || '-'}
-                  </div>
-                </div>
-                <div className="matrix-modal-header-actions">
-                  <button className="matrix-modal-download" onClick={downloadMatrixCSV} title="下载CSV数据">
-                    下载CSV
-                  </button>
-                  <button className="matrix-modal-close" onClick={closeMatrixDetail}>关闭</button>
-                </div>
-              </div>
-
-              <div className="matrix-body">
-                {matrixLoading ? (
-                  <div className="matrix-loading">加载中...</div>
-                ) : matrixError ? (
-                  <div className="matrix-error">{matrixError}</div>
-                ) : matrixDetail ? (
-                  <>
-                    <div className="matrix-kv">
-                      <div className="matrix-kv-row"><span>case-id</span><span>{formatCellValue(matrixDetail['case-id'] ?? matrixDetail.case_id ?? matrixDetail.caseId)}</span></div>
-                      <div className="matrix-kv-row"><span>task_id</span><span>{formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId)}</span></div>
-                      <div className="matrix-kv-row"><span>section_id</span><span>{formatCellValue(matrixDetail.section_id ?? matrixDetail.sectionId)}</span></div>
-                      <div className="matrix-kv-row"><span>section_name</span><span>{formatCellValue(matrixDetail.section_name ?? matrixDetail.sectionName ?? matrixDetail.section_name)}</span></div>
-                      <div className="matrix-kv-row"><span>region_code</span><span>{formatCellValue(matrixDetail.region_code ?? matrixDetail.regionCode ?? matrixDetail.region_code)}</span></div>
-                      <div className="matrix-kv-row"><span>bank_id</span><span>{formatCellValue(matrixDetail.bank_id ?? matrixDetail.bankId ?? matrixDetail.bank_id)}</span></div>
-                      <div className="matrix-kv-row"><span>run_time</span><span>{formatCellValue(matrixDetail.run_time ?? matrixDetail.runTime ?? matrixDetail.run_time)}</span></div>
-                      <div className="matrix-kv-row"><span>流量 (water_qs)</span><span>{formatCellValue(matrixDetail.water_qs ?? matrixDetail?.indicators?.water_qs ?? matrixDetail?.water_qs)}</span></div>
-                      <div className="matrix-kv-row"><span>潮差 (tidal_level)</span><span>{formatCellValue(matrixDetail.tidal_level ?? matrixDetail?.indicators?.tidal_level ?? matrixDetail?.tidal_level)}</span></div>
-                      <div className="matrix-kv-row"><span>风险等级</span><span>{formatCellValue(matrixDetail.risk_level ?? matrixDetail.riskLevel)}</span></div>
-                      
-                    </div>
-
-                    <div className="matrix-section-title">指标矩阵</div>
-                    <div className="matrix-assessment-list">
-                      {(() => {
-                        const indicators = matrixDetail?.indicators?.thresholds ?? matrixDetail?.thresholds ?? {};
-                        const renderedGroups = MATRIX_GROUPS.map((group, idx) => renderAssessmentGroup(group, indicators, idx)).filter(Boolean);
-                        if (renderedGroups.length === 0) {
-                          return <div className="matrix-empty">无矩阵数据</div>;
-                        }
-                        return renderedGroups;
-                      })()}
-                    </div>
-                  </>
-                ) : (
-                  <div className="matrix-empty">无矩阵数据</div>
-                )}
-
-                <div className="profile-section-title">断面剖面折线</div>
-                {profileLoading ? (
-                  <div className="profile-loading">加载中...</div>
-                ) : profileError ? (
-                  <div className="profile-error">{profileError}</div>
-                ) : (
-                  renderProfileChart(getProfileSeries(profileDetail))
-                )}
-              </div>
-            </div>
+      <div className="editor-map-panel" style={{ display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+        {/* ===== LEFT: 智能体编排画布 ===== */}
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
+          background: 'rgba(255,255,255,0.75)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderRight: '1px solid rgba(255,255,255,0.3)',
+        }}>
+          <div style={{
+            padding: '10px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)',
+            fontSize: '0.82rem', fontWeight: 700, color: '#1e293b',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <Bot size={16} /> 智能体编排
           </div>
-        )}
+          <div
+            ref={canvasRef}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const agentId = e.dataTransfer.getData('agent-id');
+              const agentRole = e.dataTransfer.getData('agent-role');
+              if (!agentId || agentRole === 'Leader') return;
+              const rect = canvasRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const x = ((e.clientX - rect.left) / rect.width) * 100;
+              const y = ((e.clientY - rect.top) / rect.height) * 100;
+              setOrchestratedAgents((prev) => {
+                const next = new Set(prev);
+                next.add(agentId);
+                return next;
+              });
+              setAgentPositions((prev) => ({ ...prev, [agentId]: { x: Math.round(x), y: Math.round(y) } }));
+            }}
+            onDragEnd={(e) => {
+              setDragAgent(null);
+              if (!canvasRef.current) return;
+              const rect = canvasRef.current.getBoundingClientRect();
+              const agentId = dragAgent;
+              if (!agentId) return;
+              const x = ((e.clientX - rect.left) / rect.width) * 100;
+              const y = ((e.clientY - rect.top) / rect.height) * 100;
+              setAgentPositions((prev) => ({ ...prev, [agentId]: { x: Math.round(Math.max(0, Math.min(100, x))), y: Math.round(Math.max(0, Math.min(100, y))) } }));
+            }}
+            onMouseMove={(e) => {
+              if (!dragAgent || !canvasRef.current) return;
+              const rect = canvasRef.current.getBoundingClientRect();
+              const x = ((e.clientX - rect.left) / rect.width) * 100;
+              const y = ((e.clientY - rect.top) / rect.height) * 100;
+              setAgentPositions((prev) => ({ ...prev, [dragAgent]: { x: Math.round(Math.max(0, Math.min(100, x))), y: Math.round(Math.max(0, Math.min(100, y))) } }));
+            }}
+            style={{
+              flex: 1, position: 'relative', overflow: 'hidden',
+              backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px)',
+              backgroundSize: '20px 20px',
+            }}
+          >
+            {orchestratedAgents.size <= 1 ? (
+              <div style={{
+                position: 'absolute', inset: 0, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                pointerEvents: 'none',
+              }}>
+                <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                  从左侧智能体列表拖拽成员到此编排画布
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* SVG 连线 */}
+                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
+                  {[...orchestratedAgents].filter(id => id !== 'chief').map((memberId) => {
+                    const chiefPos = agentPositions['chief'] || { x: 50, y: 15 };
+                    const memberPos = agentPositions[memberId] || { x: 30, y: 50 };
+                    return (
+                      <line
+                        key={memberId}
+                        x1={`${chiefPos.x}%`} y1={`${chiefPos.y}%`}
+                        x2={`${memberPos.x}%`} y2={`${memberPos.y}%`}
+                        stroke="rgba(249,115,22,0.35)"
+                        strokeWidth="2"
+                        markerEnd="url(#arrowhead)"
+                      />
+                    );
+                  })}
+                  <defs>
+                    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                      <polygon points="0 0, 8 3, 0 6" fill="rgba(249,115,22,0.35)" />
+                    </marker>
+                  </defs>
+                </svg>
+                {/* 总工程师 */}
+                <AgentCircle
+                  agent={{ id: 'chief', name: '总工程师', color: '#d97706' }}
+                  pos={agentPositions['chief'] || { x: 50, y: 15 }}
+                  label="总工"
+                  isLeader
+                  onDragStart={() => setDragAgent('chief')}
+                  onRemove={undefined}
+                />
+                {/* 成员 */}
+                {[...orchestratedAgents].filter(id => id !== 'chief').map((agentId) => {
+                  const agent = [
+                    ...customAgents,
+                    { id: 'cartographer', name: '制图师', color: '#3b82f6' },
+                    { id: 'hydrologist', name: '水文专家', color: '#10b981' },
+                  ].find(a => a.id === agentId);
+                  if (!agent) return null;
+                  const pos = agentPositions[agentId] || { x: 25 + Math.random() * 50, y: 35 + Math.random() * 50 };
+                  return (
+                    <AgentCircle
+                      key={agentId}
+                      agent={agent}
+                      pos={pos}
+                      label={agent.name.charAt(0)}
+                      onDragStart={() => setDragAgent(agentId)}
+                      onRemove={() => {
+                        setOrchestratedAgents((prev) => {
+                          const next = new Set(prev); next.delete(agentId); return next;
+                        });
+                        setAgentPositions((prev) => {
+                          const next = { ...prev };
+                          delete next[agentId];
+                          return next;
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </div>
 
-        <button
-          onClick={() => setSatellite(!satellite)}
-          title={satellite ? '平面地图' : '卫星影像'}
-          style={{ ...MAP_OVERLAY_BTN_STYLE, top: 12 }}
-        >
-          <Globe size={14} /> {satellite ? '平面' : '卫星'}
-        </button>
-        <button
-          onClick={() => { setChatCollapsed(!chatCollapsed); setTimeout(() => setResizeTrigger(t => t + 1), 350); }}
-          title={chatCollapsed ? '展开聊天' : '收起聊天'}
-          style={{ ...MAP_OVERLAY_BTN_STYLE, top: 50 }}
-        >
-          <MessageCircle size={14} />
-          {chatCollapsed ? 'AI' : '收起'}
-        </button>
-        {reportTabs.length > 0 && (
-          <>
-            <VerticalResizeHandle onResize={(delta) => setWorkspaceHeight(h => Math.max(80, h + delta))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
-            <WorkspacePanel
-              tabs={reportTabs}
-              activeTabIndex={activeReportTab}
-              onSelectTab={setActiveReportTab}
-              onCloseTab={(i) => {
-                setReportTabs(prev => prev.filter((_, idx) => idx !== i));
-                if (i <= activeReportTab && activeReportTab > 0) {
-                  setActiveReportTab(prev => Math.max(0, prev - 1));
-                }
-              }}
-              onUpdateTab={async (i, content) => {
-                const tab = reportTabs[i];
-                let filename = tab.filename;
-                if (!filename) {
-                  const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
-                  filename = `report_${tab.taskId}_${ts}.md`;
-                }
-                const res = await fetch(`/v0/bank/ai/reports/${encodeURIComponent(filename)}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ content }),
-                });
-                const data = await res.json();
-                if (!data.success) throw new Error(data.error || '保存失败');
-                setReportTabs(prev => {
-                  const next = [...prev];
-                  next[i] = { ...next[i], content, filename };
-                  return next;
-                });
-                fetchReportList();
-              }}
-              height={workspaceHeight}
-            />
-          </>
-        )}
+        {/* ===== RIGHT: 结果输出 ===== */}
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
+          background: 'rgba(248,250,252,0.85)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+        }}>
+          <div style={{
+            padding: '10px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)',
+            fontSize: '0.82rem', fontWeight: 700, color: '#1e293b',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <MessageCircle size={16} /> 结果输出
+          </div>
+          <div style={{
+            flex: 1, padding: 16, overflowY: 'auto',
+            color: '#64748b', fontSize: '0.78rem', fontFamily: 'monospace',
+          }}>
+            <p style={{ color: '#94a3b8' }}>智能体编排完成后，运行结果将在此处展示</p>
+          </div>
+        </div>
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} chatReports={chatReports} setChatReports={setChatReports} onReportsUpdated={() => { fetchReportList(); }} />
-      {regenerateTarget && (
-        <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
-        <Modal
-          title="确认生成报告"
-          open={true}
-          onOk={() => {
-            const { taskId, taskName } = regenerateTarget;
-            setRegenerateTarget(null);
-            doGenerateReport(taskId, taskName);
-          }}
-          onCancel={() => setRegenerateTarget(null)}
-          okText="生成新报告"
-          cancelText="取消"
-          centered
-          okButtonProps={{
-            style: {
-              borderRadius: 14,
-              background: 'linear-gradient(135deg, rgba(59,130,246,0.45) 0%, rgba(37,99,235,0.32) 100%)',
-              border: '1px solid rgba(59,130,246,0.3)',
-              color: '#fff',
-              fontWeight: 500,
-              backdropFilter: 'blur(8px) saturate(1.3)',
-              WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
-            },
-          }}
-          cancelButtonProps={{
-            style: {
-              borderRadius: 14,
-              background: 'rgba(255,255,255,0.35)',
-              border: '1px solid rgba(150,150,150,0.35)',
-              color: '#555',
-              backdropFilter: 'blur(6px)',
-              WebkitBackdropFilter: 'blur(6px)',
-            },
-          }}
-          styles={{
-            mask: {
-              background: 'rgba(0,0,0,0.3)',
-              backdropFilter: 'blur(4px)',
-              WebkitBackdropFilter: 'blur(4px)',
-            },
-            content: {
-              background: 'radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.4) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(254,243,199,0.15) 0%, transparent 50%), rgba(255,255,255,0.82)',
-              backdropFilter: 'blur(16px) saturate(1.5)',
-              WebkitBackdropFilter: 'blur(16px) saturate(1.5)',
-              borderRadius: 14,
-              border: '1px solid rgba(255,255,255,0.35)',
-              boxShadow: '0 0 0 1px rgba(255,255,255,0.15), 0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.4)',
-            },
-            header: {
-              background: 'transparent',
-              borderBottom: 'none',
-            },
-            body: {
-              background: 'transparent',
-            },
-            footer: {
-              background: 'transparent',
-              borderTop: 'none',
-            },
-          }}
-        >
-          <p style={{ fontSize: '0.9rem', color: '#444' }}>
-            该任务已有报告记录，是否基于最新数据再生成一份新的报告？
-          </p>
-        </Modal>
-        </ConfigProvider>
-      )}
     </div>
   );
 }
