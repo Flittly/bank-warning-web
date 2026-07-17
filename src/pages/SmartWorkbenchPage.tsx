@@ -185,13 +185,7 @@ function AgentCircle({ agent, pos, label, isLeader, onDragStart, onRemove }: {
   const size = isLeader ? 64 : 48;
   return (
     <div
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = 'move';
-        e.stopPropagation();
-        onDragStart();
-      }}
-      onMouseDown={onDragStart}
+      onMouseDown={(e) => { e.stopPropagation(); onDragStart(); }}
       style={{
         position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`,
         transform: 'translate(-50%,-50%)',
@@ -2038,16 +2032,6 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
               });
               setAgentPositions((prev) => ({ ...prev, [agentId]: { x: Math.round(x), y: Math.round(y) } }));
             }}
-            onDragEnd={(e) => {
-              setDragAgent(null);
-              if (!canvasRef.current) return;
-              const rect = canvasRef.current.getBoundingClientRect();
-              const agentId = dragAgent;
-              if (!agentId) return;
-              const x = ((e.clientX - rect.left) / rect.width) * 100;
-              const y = ((e.clientY - rect.top) / rect.height) * 100;
-              setAgentPositions((prev) => ({ ...prev, [agentId]: { x: Math.round(Math.max(0, Math.min(100, x))), y: Math.round(Math.max(0, Math.min(100, y))) } }));
-            }}
             onMouseMove={(e) => {
               if (!dragAgent || !canvasRef.current) return;
               const rect = canvasRef.current.getBoundingClientRect();
@@ -2055,6 +2039,8 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
               const y = ((e.clientY - rect.top) / rect.height) * 100;
               setAgentPositions((prev) => ({ ...prev, [dragAgent]: { x: Math.round(Math.max(0, Math.min(100, x))), y: Math.round(Math.max(0, Math.min(100, y))) } }));
             }}
+            onMouseUp={() => setDragAgent(null)}
+            onMouseLeave={() => setDragAgent(null)}
             style={{
               flex: 1, position: 'relative', overflow: 'hidden',
               backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px)',
