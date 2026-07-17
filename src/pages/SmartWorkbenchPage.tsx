@@ -174,24 +174,31 @@ interface SmartWorkbenchPageProps {
   initialTaskId?: string;
 }
 
-function AgentCircle({ agent, pos, label, isLeader, onDragStart, onRemove }: {
+function AgentCircle({ agent, pos, label, isLeader, onDragStart, onClick, onRemove, linkingMode }: {
   agent: { id: string; name: string; color: string };
   pos: { x: number; y: number };
   label: string;
   isLeader?: boolean;
   onDragStart: () => void;
+  onClick?: () => void;
   onRemove?: (() => void) | undefined;
+  linkingMode?: boolean;
 }) {
   const size = isLeader ? 64 : 48;
   return (
     <div
-      onMouseDown={(e) => { e.stopPropagation(); onDragStart(); }}
+      onMouseDown={(e) => {
+        if (linkingMode) return; // 连线模式下降不触发拖拽
+        e.stopPropagation();
+        onDragStart();
+      }}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
       style={{
         position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`,
         transform: 'translate(-50%,-50%)',
-        zIndex: 2, display: 'flex',
+        zIndex: linkingMode ? 4 : 2, display: 'flex',
         flexDirection: 'column', alignItems: 'center', gap: 4,
-        cursor: 'grab', userSelect: 'none',
+        cursor: linkingMode ? 'crosshair' : 'grab', userSelect: 'none',
       }}
     >
       <div style={{
@@ -303,7 +310,17 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
     return [...predefined, ...customAgents].find(a => a.id === id) || null;
   };
   const [agentPositions, setAgentPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [canvasTasks, setCanvasTasks] = useState<Array<{ id: string; name: string; x: number; y: number }>>([]);
+  const [canvasReports, setCanvasReports] = useState<Array<{ id: string; name: string; x: number; y: number }>>([]);
   const [dragAgent, setDragAgent] = useState<string | null>(null);
+  const [dragItem, setDragItem] = useState<{ type: 'agent' | 'task' | 'report'; id: string } | null>(null);
+  const [linkingSource, setLinkingSource] = useState<{ type: 'task' | 'report'; id: string } | null>(null);
+  const [taskConnections, setTaskConnections] = useState<Array<{ taskId: string; agentId: string }>>([]);
+  const [reportConnections, setReportConnections] = useState<Array<{ reportId: string; agentId: string }>>([]);
+  const [runPrompt, setRunPrompt] = useState('');
+  const [runResults, setRunResults] = useState<Array<{ time: string; text: string }>>([]);
+  const [runBarHeight, setRunBarHeight] = useState(60);
+  const resizeRunBarRef = useRef<{ startY: number; startH: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [skillList, setSkillList] = useState<any[]>([]);
@@ -1726,8 +1743,8 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                     className="task-item"
                     draggable
                     onDragStart={(e) => {
-                      e.dataTransfer.setData('application/report-filename', r.filename);
-                      e.dataTransfer.setData('application/report-taskid', r.taskId || '');
+                      e.dataTransfer.setData('application/report-id', r.filename);
+                      e.dataTransfer.setData('application/report-name', r.taskId ? `报告-${r.taskId}` : r.filename);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'grab' }}
@@ -1990,7 +2007,47 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
       <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
       <div className="editor-map-panel" style={{ display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
         {/* ===== LEFT: 智能体编排画布 ===== */}
-        <div className="workbench-orchestra-panel" style={{
+        <div className="workbench-orchestra-panel"
+          onDragOver={(e) => { e.preventDefault(); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const taskId = e.dataTransfer.getData('application/task-id');
+            const taskName = e.dataTransfer.getData('application/task-name');
+            const reportName = e.dataTransfer.getData('application/report-name');
+            const reportId = e.dataTransfer.getData('application/report-id');
+            const agentId = e.dataTransfer.getData('agent-id');
+            const agentRole = e.dataTransfer.getData('agent-role');
+            const rect = canvasRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+            if (taskId) {
+              if (!canvasTasks.find(t => t.id === taskId)) {
+                setCanvasTasks(prev => [...prev, { id: taskId, name: taskName || taskId, x: Math.round(x), y: Math.round(y) }]);
+              }
+            } else if (reportId || reportName) {
+              const id = reportId || reportName;
+              if (!canvasReports.find(r => r.id === id)) {
+                setCanvasReports(prev => [...prev, { id, name: reportName || id, x: Math.round(x), y: Math.round(y) }]);
+              }
+            } else if (agentId) {
+              if (agentRole === 'Leader') {
+                const hasLeader = [...orchestratedAgents].some(id => {
+                  const a = getAgentById(id);
+                  return a && (a.role === 'Leader' || id === 'chief');
+                });
+                if (hasLeader) return;
+              }
+              setOrchestratedAgents((prev) => {
+                const next = new Set(prev);
+                next.add(agentId);
+                return next;
+              });
+              setAgentPositions((prev) => ({ ...prev, [agentId]: { x: Math.round(x), y: Math.round(y) } }));
+            }
+          }}
+          style={{
           flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
           background: 'rgba(255,255,255,0.75)',
           backdropFilter: 'blur(12px)',
@@ -2005,41 +2062,21 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
           </div>
           <div
             ref={canvasRef}
-            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const agentId = e.dataTransfer.getData('agent-id');
-              const agentRole = e.dataTransfer.getData('agent-role');
-              if (!agentId) return;
-              const rect = canvasRef.current?.getBoundingClientRect();
-              if (!rect) return;
-              // 检查是否已有 leader
-              if (agentRole === 'Leader') {
-                const allAgents = getAgentById(agentId);
-                const hasLeader = [...orchestratedAgents].some(id => {
-                  const a = getAgentById(id);
-                  return a && (a.role === 'Leader' || id === 'chief');
-                });
-                if (hasLeader) return; // 只能有一个总指挥
-              }
-              const x = ((e.clientX - rect.left) / rect.width) * 100;
-              const y = ((e.clientY - rect.top) / rect.height) * 100;
-              setOrchestratedAgents((prev) => {
-                const next = new Set(prev);
-                next.add(agentId);
-                return next;
-              });
-              setAgentPositions((prev) => ({ ...prev, [agentId]: { x: Math.round(x), y: Math.round(y) } }));
-            }}
             onMouseMove={(e) => {
-              if (!dragAgent || !canvasRef.current) return;
+              if (!dragItem || !canvasRef.current) return;
               const rect = canvasRef.current.getBoundingClientRect();
-              const x = ((e.clientX - rect.left) / rect.width) * 100;
-              const y = ((e.clientY - rect.top) / rect.height) * 100;
-              setAgentPositions((prev) => ({ ...prev, [dragAgent]: { x: Math.round(Math.max(0, Math.min(100, x))), y: Math.round(Math.max(0, Math.min(100, y))) } }));
+              const x = Math.round(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
+              const y = Math.round(Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100)));
+              if (dragItem.type === 'agent') {
+                setAgentPositions((prev) => ({ ...prev, [dragItem.id]: { x, y } }));
+              } else if (dragItem.type === 'task') {
+                setCanvasTasks(prev => prev.map(t => t.id === dragItem.id ? { ...t, x, y } : t));
+              } else if (dragItem.type === 'report') {
+                setCanvasReports(prev => prev.map(r => r.id === dragItem.id ? { ...r, x, y } : r));
+              }
             }}
-            onMouseUp={() => setDragAgent(null)}
-            onMouseLeave={() => setDragAgent(null)}
+            onMouseUp={() => { setDragItem(null); setDragAgent(null); }}
+            onMouseLeave={() => { setDragItem(null); setDragAgent(null); }}
             style={{
               flex: 1, position: 'relative', overflow: 'hidden',
               backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px)',
@@ -2050,16 +2087,16 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
               <div style={{
                 position: 'absolute', inset: 0, display: 'flex',
                 alignItems: 'center', justifyContent: 'center',
-                pointerEvents: 'none',
               }}>
-                <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-                  从左侧智能体列表拖拽到此编排画布（需先放置一位总指挥）
+                <p style={{ color: '#94a3b8', fontSize: '0.85rem', pointerEvents: 'none' }}>
+                  从左侧拖拽任务、报告、智能体到此编排画布（需先放置一位总指挥）
                 </p>
               </div>
             ) : (
               <>
                 {/* SVG 连线：从 leader 到每个非 leader 成员 */}
-                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
+                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}
+                  viewBox="0 0 100 100" preserveAspectRatio="none">
                   {(() => {
                     const ids = [...orchestratedAgents];
                     const leaderId = ids.find(id => {
@@ -2071,20 +2108,62 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                     return ids.filter(id => id !== leaderId).map((memberId) => {
                       const memberPos = agentPositions[memberId] || { x: 30, y: 50 };
                       return (
-                        <line
-                          key={memberId}
-                          x1={`${leaderPos.x}%`} y1={`${leaderPos.y}%`}
-                          x2={`${memberPos.x}%`} y2={`${memberPos.y}%`}
-                          stroke="rgba(249,115,22,0.35)"
-                          strokeWidth="2"
-                          markerEnd="url(#arrowhead)"
+                      <line
+                        key={memberId}
+                        x1={leaderPos.x} y1={leaderPos.y}
+                        x2={memberPos.x} y2={memberPos.y}
+                        stroke="rgba(249,115,22,0.35)"
+                        strokeWidth="1" vectorEffect="non-scaling-stroke"
+                        markerEnd="url(#arrowhead)"
                         />
                       );
                     });
                   })()}
+                {/* SVG 任务/报告 → Agent 连线 */}
+                {taskConnections.map(tc => {
+                  const task = canvasTasks.find(t => t.id === tc.taskId);
+                  const agentPos = agentPositions[tc.agentId] || { x: 50, y: 50 };
+                  if (!task) return null;
+                  return (
+                    <line key={'tconn-' + tc.taskId + '-' + tc.agentId}
+                      x1={task.x} y1={task.y}
+                      x2={agentPos.x} y2={agentPos.y}
+                      stroke="rgba(59,130,246,0.7)" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="6,3"
+                    />
+                  );
+                })}
+                {reportConnections.map(rc => {
+                  const report = canvasReports.find(r => r.id === rc.reportId);
+                  const agentPos = agentPositions[rc.agentId] || { x: 50, y: 50 };
+                  if (!report) return null;
+                  return (
+                    <line key={'rconn-' + rc.reportId + '-' + rc.agentId}
+                      x1={report.x} y1={report.y}
+                      x2={agentPos.x} y2={agentPos.y}
+                      stroke="rgba(16,185,129,0.7)" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="6,3"
+                    />
+                  );
+                })}
+                {/* SVG 任务→Leader 连线 (未连线的默认线) */}
+                {(() => {
+                  const ids = [...orchestratedAgents];
+                  const leaderId = ids.find(id => {
+                    const a = getAgentById(id);
+                    return a?.role === 'Leader' || id === 'chief';
+                  });
+                  if (!leaderId) return null;
+                  const leaderPos = agentPositions[leaderId] || { x: 50, y: 15 };
+                  return canvasTasks.filter(t => !taskConnections.some(tc => tc.taskId === t.id)).map(t => (
+                    <line key={'task-default-' + t.id}
+                      x1={leaderPos.x} y1={leaderPos.y}
+                      x2={t.x} y2={t.y}
+                      stroke="rgba(59,130,246,0.15)" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="8,4"
+                    />
+                  ));
+                })()}
                   <defs>
-                    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                      <polygon points="0 0, 8 3, 0 6" fill="rgba(249,115,22,0.35)" />
+                    <marker id="arrowhead" markerWidth="4" markerHeight="3" refX="4" refY="1.5" orient="auto">
+                      <polygon points="0 0, 4 1.5, 0 3" fill="rgba(249,115,22,0.35)" />
                     </marker>
                   </defs>
                 </svg>
@@ -2104,7 +2183,25 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                       pos={pos}
                       label={isLeader ? agent.name.substring(0, 2) : agent.name.charAt(0)}
                       isLeader={isLeader}
-                      onDragStart={() => setDragAgent(agentId)}
+                      linkingMode={!!linkingSource}
+                      onDragStart={() => setDragItem({ type: 'agent', id: agentId })}
+                      onClick={() => {
+                        if (!linkingSource) return;
+                        if (linkingSource.type === 'task') {
+                          const task = canvasTasks.find(t => t.id === linkingSource.id);
+                          if (task && !taskConnections.some(tc => tc.taskId === linkingSource.id)) {
+                            setTaskConnections(prev => [...prev, { taskId: linkingSource.id, agentId }]);
+                            setRunPrompt(prev => prev + (prev ? '\n' : '') + `请分析任务「${task.name}」的数据并给出风险评估`);
+                          }
+                        } else if (linkingSource.type === 'report') {
+                          const report = canvasReports.find(r => r.id === linkingSource.id);
+                          if (report && !reportConnections.some(rc => rc.reportId === linkingSource.id)) {
+                            setReportConnections(prev => [...prev, { reportId: linkingSource.id, agentId }]);
+                            setRunPrompt(prev => prev + (prev ? '\n' : '') + `请审阅报告「${report.name}」的内容并提供改进建议`);
+                          }
+                        }
+                        setLinkingSource(null);
+                      }}
                       onRemove={() => {
                         setOrchestratedAgents((prev) => {
                           const next = new Set(prev); next.delete(agentId); return next;
@@ -2118,8 +2215,160 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                     />
                   );
                 })}
+                {/* 渲染画布上的任务卡片 */}
+                {canvasTasks.map(t => {
+                  const isLinking = linkingSource?.type === 'task' && linkingSource.id === t.id;
+                  const connected = taskConnections.some(tc => tc.taskId === t.id);
+                  return (
+                    <div key={'task-' + t.id}
+                      onMouseDown={(e) => { e.stopPropagation(); setDragItem({ type: 'task', id: t.id }); }}
+                      style={{
+                        position: 'absolute', left: `${t.x}%`, top: `${t.y}%`,
+                        transform: 'translate(-50%,-50%)', zIndex: isLinking ? 4 : 1,
+                        padding: '5px 8px', borderRadius: 10,
+                        background: isLinking ? 'rgba(59,130,246,0.2)' : connected ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.08)',
+                        border: isLinking ? '2px solid #3b82f6' : connected ? '1.5px solid rgba(59,130,246,0.35)' : '1px solid rgba(59,130,246,0.2)',
+                        fontSize: '0.66rem', color: '#1E40AF', fontWeight: 500,
+                        maxWidth: 90, textAlign: 'center', cursor: 'grab',
+                        userSelect: 'none',
+                      }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2 }}>{t.name}</div>
+                      <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                        {!connected && (
+                          <button onClick={(e) => {
+                            e.stopPropagation();
+                            if (linkingSource?.type === 'task' && linkingSource.id === t.id) {
+                              setLinkingSource(null);
+                            } else {
+                              setLinkingSource({ type: 'task', id: t.id });
+                            }
+                          }} style={{
+                            fontSize: '0.55rem', padding: '1px 5px', borderRadius: 4,
+                            border: '1px solid #3b82f6', background: isLinking ? '#3b82f6' : '#dbeafe',
+                            color: isLinking ? '#fff' : '#2563eb', cursor: 'pointer',
+                          }}>{isLinking ? '取消' : '连线'}</button>
+                        )}
+                        <span onClick={(e) => { e.stopPropagation(); setCanvasTasks(prev => prev.filter(ct => ct.id !== t.id)); setTaskConnections(prev => prev.filter(tc => tc.taskId !== t.id)); }}
+                          style={{
+                            width: 14, height: 14, borderRadius: '50%',
+                            background: '#ef4444', color: '#fff',
+                            fontSize: '0.5rem', display: 'flex',
+                            alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', lineHeight: 1, flexShrink: 0,
+                          }}>×</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* 渲染画布上的报告卡片 */}
+                {canvasReports.map(r => {
+                  const isLinking = linkingSource?.type === 'report' && linkingSource.id === r.id;
+                  const connected = reportConnections.some(rc => rc.reportId === r.id);
+                  return (
+                    <div key={'report-' + r.id}
+                      onMouseDown={(e) => { e.stopPropagation(); setDragItem({ type: 'report', id: r.id }); }}
+                      style={{
+                        position: 'absolute', left: `${r.x}%`, top: `${r.y}%`,
+                        transform: 'translate(-50%,-50%)', zIndex: isLinking ? 4 : 1,
+                        padding: '5px 8px', borderRadius: 10,
+                        background: isLinking ? 'rgba(16,185,129,0.2)' : connected ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)',
+                        border: isLinking ? '2px solid #10b981' : connected ? '1.5px solid rgba(16,185,129,0.35)' : '1px solid rgba(16,185,129,0.2)',
+                        fontSize: '0.66rem', color: '#065F46', fontWeight: 500,
+                        maxWidth: 90, textAlign: 'center', cursor: 'grab',
+                        userSelect: 'none',
+                      }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2 }}>{r.name}</div>
+                      <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                        {!connected && (
+                          <button onClick={(e) => {
+                            e.stopPropagation();
+                            if (linkingSource?.type === 'report' && linkingSource.id === r.id) {
+                              setLinkingSource(null);
+                            } else {
+                              setLinkingSource({ type: 'report', id: r.id });
+                            }
+                          }} style={{
+                            fontSize: '0.55rem', padding: '1px 5px', borderRadius: 4,
+                            border: '1px solid #10b981', background: isLinking ? '#10b981' : '#dcfce7',
+                            color: isLinking ? '#fff' : '#059669', cursor: 'pointer',
+                          }}>{isLinking ? '取消' : '连线'}</button>
+                        )}
+                        <span onClick={(e) => { e.stopPropagation(); setCanvasReports(prev => prev.filter(cr => cr.id !== r.id)); setReportConnections(prev => prev.filter(rc => rc.reportId !== r.id)); }}
+                          style={{
+                            width: 14, height: 14, borderRadius: '50%',
+                            background: '#ef4444', color: '#fff',
+                            fontSize: '0.5rem', display: 'flex',
+                            alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', lineHeight: 1, flexShrink: 0,
+                          }}>×</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </>
             )}
+          </div>
+
+          <div
+            onMouseDown={(e) => {
+              resizeRunBarRef.current = { startY: e.clientY, startH: runBarHeight };
+              const onMove = (ev: MouseEvent) => {
+                if (!resizeRunBarRef.current) return;
+                const delta = resizeRunBarRef.current.startY - ev.clientY;
+                setRunBarHeight(Math.max(44, Math.min(300, resizeRunBarRef.current.startH + delta)));
+              };
+              const onUp = () => {
+                resizeRunBarRef.current = null;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+              };
+              document.addEventListener('mousemove', onMove);
+              document.addEventListener('mouseup', onUp);
+            }}
+            style={{
+              height: 4, cursor: 'row-resize',
+              background: 'rgba(0,0,0,0.04)',
+              transition: 'background 0.15s',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => { (e.target as HTMLElement).style.background = 'rgba(249,115,22,0.15)'; }}
+            onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'rgba(0,0,0,0.04)'; }}
+          />
+          <div style={{
+            padding: '10px 14px', borderTop: '1px solid rgba(0,0,0,0.06)',
+            display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0,
+          }}>
+            <textarea
+              placeholder="输入指令，例：总工程师调度团队分析此次任务..."
+              value={runPrompt}
+              onChange={(e) => setRunPrompt(e.target.value)}
+              style={{
+                flex: 1, padding: '8px 10px', border: '1px solid rgba(0,0,0,0.1)',
+                borderRadius: 10, fontSize: '0.78rem', outline: 'none', resize: 'none',
+                height: `${runBarHeight - 16}px`, fontFamily: 'inherit', boxSizing: 'border-box',
+              }}
+            />
+            <button
+              onClick={() => {
+                const time = new Date().toLocaleTimeString();
+                const agentNames = [...orchestratedAgents].map(id => getAgentById(id)?.name).filter(Boolean);
+                let msg = runPrompt.trim() || '开始执行编排任务';
+                if (agentNames.length > 0) msg += '\n👥 团队: ' + agentNames.join('、');
+                if (canvasTasks.length > 0) msg += '\n📋 任务: ' + canvasTasks.map(t => t.name).join('、');
+                if (canvasReports.length > 0) msg += '\n📄 报告: ' + canvasReports.map(r => r.name).join('、');
+                if (taskConnections.length > 0 || reportConnections.length > 0) msg += '\n🔗 已连线分配';
+                if (!runPrompt.trim() && agentNames.length === 0 && canvasTasks.length === 0) return;
+                setRunResults(prev => [...prev, { time, text: msg }]);
+                setRunPrompt('');
+              }}
+              style={{
+                padding: '8px 20px', border: 'none', borderRadius: 10,
+                background: 'linear-gradient(135deg, #f97316, #ea580c)',
+                color: '#fff', fontSize: '0.82rem', fontWeight: 600,
+                cursor: 'pointer', whiteSpace: 'nowrap',
+                boxShadow: '0 2px 8px rgba(249,115,22,0.3)', flexShrink: 0,
+              }}
+            >▶ 运行</button>
           </div>
         </div>
 
@@ -2140,13 +2389,25 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
           <div style={{
             flex: 1, padding: 16, overflowY: 'auto',
             color: '#64748b', fontSize: '0.78rem', fontFamily: 'monospace',
+            display: 'flex', flexDirection: 'column', gap: 8,
           }}>
-            <p style={{ color: '#94a3b8' }}>智能体编排完成后，运行结果将在此处展示</p>
+            {runResults.length === 0 ? (
+              <p style={{ color: '#94a3b8' }}>点击左侧 ▶ 运行按钮，智能体编排结果将在此处展示</p>
+            ) : (
+              runResults.map((r, i) => (
+                <div key={i} style={{
+                  padding: '10px 12px', borderRadius: 10,
+                  background: 'rgba(255,255,255,0.6)',
+                  border: '1px solid rgba(0,0,0,0.06)',
+                }}>
+                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginBottom: 4 }}>{r.time}</div>
+                  <div style={{ whiteSpace: 'pre-wrap', color: '#334155' }}>{r.text}</div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
-      {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
-      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} chatReports={chatReports} setChatReports={setChatReports} onReportsUpdated={() => { fetchReportList(); }} />
     </div>
   );
 }
