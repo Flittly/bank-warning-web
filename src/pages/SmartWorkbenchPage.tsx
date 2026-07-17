@@ -291,13 +291,23 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [reportList, setReportList] = useState<any[]>([]);
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'agents' | 'skills'>('tasks');
-  const [orchestratedAgents, setOrchestratedAgents] = useState<Set<string>>(new Set(['chief']));
-  const [customAgents, setCustomAgents] = useState<Array<{id: string, name: string, desc: string, color: string}>>([]);
+  const [orchestratedAgents, setOrchestratedAgents] = useState<Set<string>>(new Set());
+  const [customAgents, setCustomAgents] = useState<Array<{id: string, name: string, desc: string, color: string, role: 'Leader' | 'Member'}>>([]);
   const [showCreateAgent, setShowCreateAgent] = useState(false);
   const [newAgentName, setNewAgentName] = useState('');
   const [newAgentDesc, setNewAgentDesc] = useState('');
   const [newAgentColor, setNewAgentColor] = useState('#8b5cf6');
+  const [newAgentRole, setNewAgentRole] = useState<'Member' | 'Leader'>('Member');
   const AGENT_COLORS = ['#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#06b6d4', '#f43f5e', '#ef4444', '#6366f1'];
+
+  const getAgentById = (id: string) => {
+    const predefined = [
+      { id: 'chief', name: '总工程师', color: '#d97706', role: 'Leader' as const, desc: '' },
+      { id: 'cartographer', name: '制图师', color: '#3b82f6', role: 'Member' as const, desc: '' },
+      { id: 'hydrologist', name: '水文专家', color: '#10b981', role: 'Member' as const, desc: '' },
+    ];
+    return [...predefined, ...customAgents].find(a => a.id === id) || null;
+  };
   const [agentPositions, setAgentPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [dragAgent, setDragAgent] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -1859,6 +1869,27 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                       />
                     ))}
                   </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', whiteSpace: 'nowrap' }}>角色:</span>
+                    <button
+                      onClick={() => setNewAgentRole('Member')}
+                      style={{
+                        flex: 1, padding: '4px 0', border: newAgentRole === 'Member' ? '1.5px solid #3b82f6' : '1px solid rgba(0,0,0,0.1)',
+                        borderRadius: 6, background: newAgentRole === 'Member' ? '#e0e7ff' : 'transparent',
+                        color: newAgentRole === 'Member' ? '#2563eb' : '#94a3b8',
+                        fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >成员</button>
+                    <button
+                      onClick={() => setNewAgentRole('Leader')}
+                      style={{
+                        flex: 1, padding: '4px 0', border: newAgentRole === 'Leader' ? '1.5px solid #d97706' : '1px solid rgba(0,0,0,0.1)',
+                        borderRadius: 6, background: newAgentRole === 'Leader' ? '#fef3c7' : 'transparent',
+                        color: newAgentRole === 'Leader' ? '#d97706' : '#94a3b8',
+                        fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >总指挥</button>
+                  </div>
                   <button
                     onClick={() => {
                       if (!newAgentName.trim()) return;
@@ -1867,10 +1898,12 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                         name: newAgentName.trim(),
                         desc: newAgentDesc.trim() || '自定义智能体',
                         color: newAgentColor,
+                        role: newAgentRole,
                       }]);
                       setNewAgentName('');
                       setNewAgentDesc('');
                       setNewAgentColor('#8b5cf6');
+                      setNewAgentRole('Member');
                       setShowCreateAgent(false);
                     }}
                     style={{
@@ -1984,9 +2017,18 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
               e.preventDefault();
               const agentId = e.dataTransfer.getData('agent-id');
               const agentRole = e.dataTransfer.getData('agent-role');
-              if (!agentId || agentRole === 'Leader') return;
+              if (!agentId) return;
               const rect = canvasRef.current?.getBoundingClientRect();
               if (!rect) return;
+              // 检查是否已有 leader
+              if (agentRole === 'Leader') {
+                const allAgents = getAgentById(agentId);
+                const hasLeader = [...orchestratedAgents].some(id => {
+                  const a = getAgentById(id);
+                  return a && (a.role === 'Leader' || id === 'chief');
+                });
+                if (hasLeader) return; // 只能有一个总指挥
+              }
               const x = ((e.clientX - rect.left) / rect.width) * 100;
               const y = ((e.clientY - rect.top) / rect.height) * 100;
               setOrchestratedAgents((prev) => {
@@ -2019,64 +2061,64 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
               backgroundSize: '20px 20px',
             }}
           >
-            {orchestratedAgents.size <= 1 ? (
+            {orchestratedAgents.size === 0 ? (
               <div style={{
                 position: 'absolute', inset: 0, display: 'flex',
                 alignItems: 'center', justifyContent: 'center',
                 pointerEvents: 'none',
               }}>
                 <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-                  从左侧智能体列表拖拽成员到此编排画布
+                  从左侧智能体列表拖拽到此编排画布（需先放置一位总指挥）
                 </p>
               </div>
             ) : (
               <>
-                {/* SVG 连线 */}
+                {/* SVG 连线：从 leader 到每个非 leader 成员 */}
                 <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
-                  {[...orchestratedAgents].filter(id => id !== 'chief').map((memberId) => {
-                    const chiefPos = agentPositions['chief'] || { x: 50, y: 15 };
-                    const memberPos = agentPositions[memberId] || { x: 30, y: 50 };
-                    return (
-                      <line
-                        key={memberId}
-                        x1={`${chiefPos.x}%`} y1={`${chiefPos.y}%`}
-                        x2={`${memberPos.x}%`} y2={`${memberPos.y}%`}
-                        stroke="rgba(249,115,22,0.35)"
-                        strokeWidth="2"
-                        markerEnd="url(#arrowhead)"
-                      />
-                    );
-                  })}
+                  {(() => {
+                    const ids = [...orchestratedAgents];
+                    const leaderId = ids.find(id => {
+                      const a = getAgentById(id);
+                      return a?.role === 'Leader' || id === 'chief';
+                    });
+                    if (!leaderId) return null;
+                    const leaderPos = agentPositions[leaderId] || { x: 50, y: 15 };
+                    return ids.filter(id => id !== leaderId).map((memberId) => {
+                      const memberPos = agentPositions[memberId] || { x: 30, y: 50 };
+                      return (
+                        <line
+                          key={memberId}
+                          x1={`${leaderPos.x}%`} y1={`${leaderPos.y}%`}
+                          x2={`${memberPos.x}%`} y2={`${memberPos.y}%`}
+                          stroke="rgba(249,115,22,0.35)"
+                          strokeWidth="2"
+                          markerEnd="url(#arrowhead)"
+                        />
+                      );
+                    });
+                  })()}
                   <defs>
                     <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
                       <polygon points="0 0, 8 3, 0 6" fill="rgba(249,115,22,0.35)" />
                     </marker>
                   </defs>
                 </svg>
-                {/* 总工程师 */}
-                <AgentCircle
-                  agent={{ id: 'chief', name: '总工程师', color: '#d97706' }}
-                  pos={agentPositions['chief'] || { x: 50, y: 15 }}
-                  label="总工"
-                  isLeader
-                  onDragStart={() => setDragAgent('chief')}
-                  onRemove={undefined}
-                />
-                {/* 成员 */}
-                {[...orchestratedAgents].filter(id => id !== 'chief').map((agentId) => {
-                  const agent = [
-                    ...customAgents,
-                    { id: 'cartographer', name: '制图师', color: '#3b82f6' },
-                    { id: 'hydrologist', name: '水文专家', color: '#10b981' },
-                  ].find(a => a.id === agentId);
+                {/* 渲染所有编排中的智能体 */}
+                {[...orchestratedAgents].map((agentId) => {
+                  const agent = getAgentById(agentId);
                   if (!agent) return null;
-                  const pos = agentPositions[agentId] || { x: 25 + Math.random() * 50, y: 35 + Math.random() * 50 };
+                  const isLeader = agent.role === 'Leader' || agentId === 'chief';
+                  const defaultPos = isLeader
+                    ? { x: 50, y: 15 }
+                    : { x: 25 + Math.random() * 50, y: 35 + Math.random() * 50 };
+                  const pos = agentPositions[agentId] || defaultPos;
                   return (
                     <AgentCircle
                       key={agentId}
                       agent={agent}
                       pos={pos}
-                      label={agent.name.charAt(0)}
+                      label={isLeader ? agent.name.substring(0, 2) : agent.name.charAt(0)}
+                      isLeader={isLeader}
                       onDragStart={() => setDragAgent(agentId)}
                       onRemove={() => {
                         setOrchestratedAgents((prev) => {
