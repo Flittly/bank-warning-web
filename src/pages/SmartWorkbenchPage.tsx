@@ -9,7 +9,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, Bot, MessageCircle, Globe, Plus, UserPlus } from 'lucide-react';
+import { Box, FileText, List, Bot, MessageCircle, Globe, Plus, UserPlus, Archive } from 'lucide-react';
 import { ConfigProvider, Modal } from 'antd';
 
 // —— Mapbox token
@@ -174,7 +174,7 @@ interface SmartWorkbenchPageProps {
   initialTaskId?: string;
 }
 
-function AgentCircle({ agent, pos, label, isLeader, onDragStart, onClick, onRemove, linkingMode }: {
+function AgentCircle({ agent, pos, label, isLeader, onDragStart, onClick, onRemove, linkingMode, skills, onRemoveSkill }: {
   agent: { id: string; name: string; color: string };
   pos: { x: number; y: number };
   label: string;
@@ -183,6 +183,8 @@ function AgentCircle({ agent, pos, label, isLeader, onDragStart, onClick, onRemo
   onClick?: () => void;
   onRemove?: (() => void) | undefined;
   linkingMode?: boolean;
+  skills?: string[];
+  onRemoveSkill?: (skillName: string) => void;
 }) {
   const size = isLeader ? 64 : 48;
   return (
@@ -236,6 +238,20 @@ function AgentCircle({ agent, pos, label, isLeader, onDragStart, onClick, onRemo
       }}>{agent.name}</span>
       {isLeader && (
         <span style={{ fontSize: '0.55rem', color: '#d97706', background: '#fef3c7', padding: '1px 6px', borderRadius: 3 }}>总指挥</span>
+      )}
+      {skills && skills.length > 0 && (
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 100 }}>
+          {skills.map(s => (
+            <span key={s} style={{
+              fontSize: '0.55rem', padding: '1px 5px', borderRadius: 3,
+              background: 'rgba(139,92,246,0.12)', color: '#7c3aed',
+              border: '1px solid rgba(139,92,246,0.2)', cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+              onClick={(e) => { e.stopPropagation(); onRemoveSkill?.(s); }}
+            >{s}</span>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -291,7 +307,7 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
   const [workspaceHeight, setWorkspaceHeight] = useState(300);
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [reportList, setReportList] = useState<any[]>([]);
-  const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'agents' | 'skills'>('tasks');
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'agents' | 'skills' | 'configs'>('tasks');
   const [orchestratedAgents, setOrchestratedAgents] = useState<Set<string>>(new Set());
   const [customAgents, setCustomAgents] = useState<Array<{id: string, name: string, desc: string, color: string, role: 'Leader' | 'Member'}>>([]);
   const [showCreateAgent, setShowCreateAgent] = useState(false);
@@ -317,9 +333,12 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
   const [linkingSource, setLinkingSource] = useState<{ type: 'task' | 'report'; id: string } | null>(null);
   const [taskConnections, setTaskConnections] = useState<Array<{ taskId: string; agentId: string }>>([]);
   const [reportConnections, setReportConnections] = useState<Array<{ reportId: string; agentId: string }>>([]);
+  const [agentSkills, setAgentSkills] = useState<Record<string, string[]>>({});
   const [runPrompt, setRunPrompt] = useState('');
   const [runResults, setRunResults] = useState<Array<{ time: string; text: string }>>([]);
   const [runBarHeight, setRunBarHeight] = useState(60);
+  const [savedConfigs, setSavedConfigs] = useState<Array<{ id: number; created_at: string; preview: string }>>([]);
+  const [configsLoading, setConfigsLoading] = useState(false);
   const resizeRunBarRef = useRef<{ startY: number; startH: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
@@ -391,6 +410,16 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
       const data = await res.json();
       if (data.success) setSkillList(data.skills || []);
     } catch (e) { /* ignore */ }
+  };
+
+  const fetchSavedConfigs = async () => {
+    setConfigsLoading(true);
+    try {
+      const res = await fetch('/v0/bank/ai/workbench/configs');
+      const data = await res.json();
+      setSavedConfigs(Array.isArray(data) ? data : []);
+    } catch { setSavedConfigs([]); }
+    finally { setConfigsLoading(false); }
   };
 
   const openReport = async (filename: string) => {
@@ -1662,6 +1691,11 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
             title="智能体"
             style={activityBarBtnStyle(activeSidebarPanel === 'agents')}
           ><Bot size={16} /></button>
+          <button
+            onClick={() => { setActiveSidebarPanel('configs'); fetchSavedConfigs(); }}
+            title="画布仓库"
+            style={activityBarBtnStyle(activeSidebarPanel === 'configs')}
+          ><Archive size={16} /></button>
         </div>
 
         {/* Content panel - shows the active section only */}
@@ -2002,6 +2036,68 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
         </div>
       </>
     )}
+
+          {/* === CONFIGS PANEL === */}
+          {activeSidebarPanel === 'configs' && (
+            <>
+              <div className="sidebar-header">
+                <Archive size={14} />
+                <h4>画布仓库</h4>
+              </div>
+              <div className="task-list-container" style={{ maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
+                {configsLoading && <p className="empty-hint">加载中...</p>}
+                {!configsLoading && savedConfigs.length === 0 && <p className="empty-hint">暂无保存方案</p>}
+                {savedConfigs.map(c => (
+                  <div key={c.id} className="task-item" style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      const hasContent = orchestratedAgents.size > 0 || canvasTasks.length > 0 || canvasReports.length > 0;
+                      if (hasContent && !confirm('画布上已有内容，加载将覆盖现有方案，是否继续？')) return;
+                      fetch(`/v0/bank/ai/workbench/configs/${c.id}`).then(r => r.json()).then(data => {
+                        if (!data.success) return;
+                        const cfg = typeof data.config === 'string' ? JSON.parse(data.config) : data.config;
+                        setOrchestratedAgents(new Set());
+                        setCanvasTasks([]); setCanvasReports([]);
+                        setTaskConnections([]); setReportConnections([]);
+                        setAgentSkills({}); setAgentPositions({});
+                        setRunPrompt(cfg.prompt || '');
+                        setTimeout(() => {
+                          const leader = cfg.agents?.find((a: any) => a.role === 'Leader' || a.id === 'chief');
+                          if (leader) {
+                            setOrchestratedAgents(new Set([leader.id]));
+                            setAgentPositions({ [leader.id]: { x: 50, y: 15 } });
+                          }
+                          cfg.agents?.filter((a: any) => a.role !== 'Leader' && a.id !== 'chief').forEach((a: any, i: number) => {
+                            setOrchestratedAgents(prev => new Set([...prev, a.id]));
+                            setAgentPositions(prev => ({ ...prev, [a.id]: { x: 30 + (i % 5) * 10, y: 40 + Math.floor(i / 5) * 15 } }));
+                          });
+                          if (cfg.agents) {
+                            cfg.agents.forEach((a: any) => {
+                              if (a.skills?.length > 0) setAgentSkills(prev => ({ ...prev, [a.id]: a.skills }));
+                            });
+                          }
+                          setCanvasTasks((cfg.tasks || []).map((t: any, i: number) => ({ ...t, x: 70 + (i % 3) * 10, y: 60 + Math.floor(i / 3) * 10 })));
+                          setCanvasReports((cfg.reports || []).map((r: any, i: number) => ({ ...r, x: 75 + (i % 3) * 5, y: 65 + Math.floor(i / 3) * 10 })));
+                          setTaskConnections(cfg.connections?.filter((c: any) => c.taskId) || []);
+                          setReportConnections(cfg.connections?.filter((c: any) => c.reportId) || []);
+                          setRunResults(prev => [...prev, { time: new Date().toLocaleTimeString(), text: '✅ 已加载保存方案（' + new Date(c.created_at).toLocaleString() + '）' }]);
+                        }, 100);
+                      });
+                    }}
+                  >
+                    <div className="task-title" style={{ fontSize: '0.8rem' }}>
+                      📐 编排方案
+                    </div>
+                    <div className="task-meta">{new Date(c.created_at).toLocaleString()}</div>
+                    <button className="task-delete-btn" onClick={(e) => {
+                      e.stopPropagation();
+                      if (!confirm('确定删除此方案？')) return;
+                      fetch(`/v0/bank/ai/workbench/configs/${c.id}`, { method: 'DELETE' }).then(() => fetchSavedConfigs());
+                    }} title="删除方案">×</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
       <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
@@ -2019,8 +2115,29 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
             const agentRole = e.dataTransfer.getData('agent-role');
             const rect = canvasRef.current?.getBoundingClientRect();
             if (!rect) return;
+            const skillName = e.dataTransfer.getData('text/plain');
             const x = ((e.clientX - rect.left) / rect.width) * 100;
             const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+            if (skillName && !taskId && !reportId && !reportName && !agentId) {
+              // 找最近的智能体（距离 < 15%）
+              const ids = [...orchestratedAgents];
+              let closestId: string | null = null;
+              let closestDist = Infinity;
+              ids.forEach(id => {
+                const pos = agentPositions[id] || { x: 50, y: 50 };
+                const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+                if (dist < closestDist) { closestDist = dist; closestId = id; }
+              });
+              if (closestId && closestDist < 15) {
+                setAgentSkills(prev => {
+                  const current = prev[closestId!] || [];
+                  if (current.includes(skillName)) return prev;
+                  return { ...prev, [closestId!]: [...current, skillName] };
+                });
+              }
+              return;
+            }
 
             if (taskId) {
               if (!canvasTasks.find(t => t.id === taskId)) {
@@ -2184,6 +2301,15 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                       label={isLeader ? agent.name.substring(0, 2) : agent.name.charAt(0)}
                       isLeader={isLeader}
                       linkingMode={!!linkingSource}
+                      skills={agentSkills[agentId] || []}
+                      onRemoveSkill={(skillName) => {
+                        setAgentSkills(prev => {
+                          const next = { ...prev };
+                          next[agentId] = (next[agentId] || []).filter(s => s !== skillName);
+                          if (next[agentId].length === 0) delete next[agentId];
+                          return next;
+                        });
+                      }}
                       onDragStart={() => setDragItem({ type: 'agent', id: agentId })}
                       onClick={() => {
                         if (!linkingSource) return;
@@ -2349,16 +2475,75 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
               }}
             />
             <button
-              onClick={() => {
+              onClick={async () => {
+                try {
+                  const agents = [...orchestratedAgents].map(id => {
+                    const a = getAgentById(id);
+                    return { id, name: a?.name || id, role: a?.role || 'Member', desc: a?.desc || '', color: a?.color || '', skills: agentSkills[id] || [] };
+                  });
+                  const res = await fetch('/v0/bank/ai/workbench/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      prompt: runPrompt,
+                      agents,
+                      tasks: canvasTasks.map(t => ({ id: t.id, name: t.name })),
+                      reports: canvasReports.map(r => ({ id: r.id, name: r.name })),
+                      connections: [...taskConnections, ...reportConnections.map(rc => ({ taskId: '', reportId: rc.reportId, agentId: rc.agentId }))],
+                    }),
+                  });
+                  const data = await res.json();
+                  setRunResults(prev => [...prev, { time: new Date().toLocaleTimeString(), text: data.success ? '✅ 编排方案已保存' : '❌ ' + (data.error || '') }]);
+                } catch (err: any) {
+                  setRunResults(prev => [...prev, { time: new Date().toLocaleTimeString(), text: '❌ ' + (err.message || '网络错误') }]);
+                }
+              }}
+              style={{
+                padding: '8px 16px', border: '1px solid rgba(249,115,22,0.3)', borderRadius: 10,
+                background: 'rgba(255,255,255,0.5)', color: '#9A3412',
+                fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              }}
+            >💾 保存</button>
+            <button
+              onClick={async () => {
                 const time = new Date().toLocaleTimeString();
-                const agentNames = [...orchestratedAgents].map(id => getAgentById(id)?.name).filter(Boolean);
-                let msg = runPrompt.trim() || '开始执行编排任务';
-                if (agentNames.length > 0) msg += '\n👥 团队: ' + agentNames.join('、');
-                if (canvasTasks.length > 0) msg += '\n📋 任务: ' + canvasTasks.map(t => t.name).join('、');
-                if (canvasReports.length > 0) msg += '\n📄 报告: ' + canvasReports.map(r => r.name).join('、');
-                if (taskConnections.length > 0 || reportConnections.length > 0) msg += '\n🔗 已连线分配';
-                if (!runPrompt.trim() && agentNames.length === 0 && canvasTasks.length === 0) return;
-                setRunResults(prev => [...prev, { time, text: msg }]);
+                setRunResults(prev => [...prev, { time, text: '⏳ 正在提交到智能体编排引擎...' }]);
+                try {
+                  const agents = [...orchestratedAgents].map(id => {
+                    const a = getAgentById(id);
+                    return {
+                      id,
+                      name: a?.name || id,
+                      role: a?.role || 'Member',
+                      desc: a?.desc || '',
+                      color: a?.color || '',
+                      skills: agentSkills[id] || [],
+                    };
+                  });
+                  const payload = {
+                    prompt: runPrompt,
+                    agents,
+                    tasks: canvasTasks.map(t => ({ id: t.id, name: t.name })),
+                    reports: canvasReports.map(r => ({ id: r.id, name: r.name })),
+                    connections: [
+                      ...taskConnections.map(tc => ({ taskId: tc.taskId, agentId: tc.agentId })),
+                      ...reportConnections.map(rc => ({ reportId: rc.reportId, agentId: rc.agentId })),
+                    ],
+                  };
+                  const res = await fetch('/v0/bank/ai/workbench/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    setRunResults(prev => [...prev, { time: new Date().toLocaleTimeString(), text: data.output || '(无输出)' }]);
+                  } else {
+                    setRunResults(prev => [...prev, { time, text: '❌ 执行失败: ' + (data.error || '未知错误') }]);
+                  }
+                } catch (err: any) {
+                  setRunResults(prev => [...prev, { time, text: '❌ 请求失败: ' + (err.message || '网络错误') }]);
+                }
                 setRunPrompt('');
               }}
               style={{
