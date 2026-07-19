@@ -226,7 +226,9 @@ function EditorPage(props: EditorPageProps) {
       alert('请先拾取起点和终点');
       return;
     }
-    const bankId = selectedLines.size === 1 ? [...selectedLines][0] : (selectedBankGroup[0] || '');
+    // 从 group 记录的线要素上读取 bank_id，而不是用全局 selectedLines/selectedBankGroup
+    const clickBankId = (g as any).line?.properties?.bank_id;
+    const bankId = clickBankId || (selectedLines.size === 1 ? [...selectedLines][0] : (selectedBankGroup[0] || ''));
     if (!bankId) { alert('请先选择一条岸段'); return; }
     const bank = bankList.find((b: any) => String(b.bank_id) === bankId);
     const geom = bank?.bank_geometry || bank?.geometry;

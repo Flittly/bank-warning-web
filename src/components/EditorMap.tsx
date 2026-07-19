@@ -1133,7 +1133,9 @@ function EditorMap(props: EditorMapProps) {
 
         if (!feature) return;
 
-        const lineGeo = feature.geometry as GeoJSON.LineString;
+        const lineGeo = feature.geometry.type === 'LineString'
+            ? feature.geometry as GeoJSON.LineString
+            : (feature.geometry as GeoJSON.MultiLineString).coordinates[0] as unknown as GeoJSON.LineString;
         const lineFeature = turf.feature(lineGeo, feature.properties) as GeoJSON.Feature<GeoJSON.LineString>;
 
         const lineIndex = feature.properties?.index as number | undefined;

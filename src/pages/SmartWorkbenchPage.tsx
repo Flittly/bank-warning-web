@@ -337,7 +337,7 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
   const [runPrompt, setRunPrompt] = useState('');
   const [runResults, setRunResults] = useState<Array<{ time: string; text: string }>>([]);
   const [runBarHeight, setRunBarHeight] = useState(60);
-  const [savedConfigs, setSavedConfigs] = useState<Array<{ id: number; created_at: string; preview: string }>>([]);
+  const [savedConfigs, setSavedConfigs] = useState<Array<{ id: number; title: string; created_at: string }>>([]);
   const [configsLoading, setConfigsLoading] = useState(false);
   const resizeRunBarRef = useRef<{ startY: number; startH: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -2085,7 +2085,7 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                     }}
                   >
                     <div className="task-title" style={{ fontSize: '0.8rem' }}>
-                      📐 编排方案
+                      {c.title || '📐 编排方案'}
                     </div>
                     <div className="task-meta">{new Date(c.created_at).toLocaleString()}</div>
                     <button className="task-delete-btn" onClick={(e) => {
@@ -2476,6 +2476,8 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
             />
             <button
               onClick={async () => {
+                const title = prompt('请为编排方案命名：', '方案 ' + new Date().toLocaleString().substring(0, 10));
+                if (!title) return;
                 try {
                   const agents = [...orchestratedAgents].map(id => {
                     const a = getAgentById(id);
@@ -2485,6 +2487,7 @@ function SmartWorkbenchPage(props: SmartWorkbenchPageProps) {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                      title,
                       prompt: runPrompt,
                       agents,
                       tasks: canvasTasks.map(t => ({ id: t.id, name: t.name })),
