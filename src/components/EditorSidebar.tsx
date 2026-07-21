@@ -18,7 +18,9 @@ import {
   Zap,
   Globe,
   Layout,
-  Download
+  Download,
+  MoveHorizontal,
+  Move
 } from 'lucide-react';
 import { useState } from 'react';
 import type { SelectionGroup } from '../types/selection';
@@ -600,55 +602,52 @@ function EditorSidebar(props: EditorSidebarProps) {
               onClick={toggleCrossLineSelection}
               data-tour="fine-tune"
             >
-              {isSelectingCrossLines ? '完成编辑' : '开启断面精调'}
+              {isSelectingCrossLines ? '退出精调' : '进入精调'}
             </button>
-
-            
 
             {isSelectingCrossLines && (
               <>
+                <span className={styles.modeLabel}>调整已有断面</span>
                 <div className={styles.buttonGrid}>
                   <button
                     type="button"
-                    className={`${styles.outlineButton} ${crossLineControlMode === 'shoreline' ? styles.active : ''}`}
-                    onClick={() => setCrossLineControlMode('shoreline')}
-                    title="沿岸段线模式：点击岸段生成断面，按钮平移按距离沿岸线移动"
-                    aria-label="岸段线模式"
+                    className={`${styles.outlineButton} ${crossLineEditMode === 'select' && crossLineControlMode === 'shoreline' ? styles.active : ''}`}
+                    onClick={() => { setCrossLineEditMode('select'); setCrossLineControlMode('shoreline'); }}
+                    title="沿线约束：选中断面后沿岸段线平移，保持垂直"
+                    aria-label="沿线约束调整"
                   >
-                    岸段线
+                    <MoveHorizontal size={14} /> 沿线约束
                   </button>
                   <button
                     type="button"
-                    className={`${styles.outlineButton} ${crossLineControlMode === 'free' ? styles.active : ''}`}
-                    onClick={() => setCrossLineControlMode('free')}
-                    title="自由模式：可拖动断面，旋转/缩放，并点选起止点创建断面"
-                    aria-label="自由模式"
+                    className={`${styles.outlineButton} ${crossLineEditMode === 'select' && crossLineControlMode === 'free' ? styles.active : ''}`}
+                    onClick={() => { setCrossLineEditMode('select'); setCrossLineControlMode('free'); }}
+                    title="自由拖动：选中断面后可拖拽移动、旋转、缩放"
+                    aria-label="自由拖动调整"
                   >
-                    自由
+                    <Move size={14} /> 自由拖动
                   </button>
                 </div>
 
+                <span className={styles.modeLabel}>新建断面</span>
                 <div className={styles.buttonGrid}>
                   <button
                     type="button"
-                    className={`${styles.outlineButton} ${crossLineEditMode === 'select' ? styles.active : ''}`}
-                    onClick={() => {
-                      if (crossLineEditMode === 'select') {
-                        setCrossLineEditMode('none');
-                        clearSelectedCrossLineSelection();
-                      } else {
-                        setCrossLineEditMode('select');
-                      }
-                    }}
+                    className={`${styles.outlineButton} ${crossLineEditMode === 'add' && crossLineControlMode === 'shoreline' ? styles.active : ''}`}
+                    onClick={() => { setCrossLineEditMode('add'); setCrossLineControlMode('shoreline'); }}
+                    title="按垂线生成：点击岸段线，在点击位置生成垂直断面"
+                    aria-label="按垂线生成断面"
                   >
-                    选择
+                    <Plus size={14} /> 按垂线生成
                   </button>
                   <button
                     type="button"
-                    className={`${styles.outlineButton} ${crossLineEditMode === 'add' ? styles.active : ''}`}
-                    onClick={() => setCrossLineEditMode('add')}
+                    className={`${styles.outlineButton} ${crossLineEditMode === 'add' && crossLineControlMode === 'free' ? styles.active : ''}`}
+                    onClick={() => { setCrossLineEditMode('add'); setCrossLineControlMode('free'); }}
+                    title="自由创建：点击地图上两点，自由绘制断面"
+                    aria-label="自由创建断面"
                   >
-                    <Plus size={14} /> 添加
+                    <Plus size={14} /> 自由创建
                   </button>
                 </div>
 
@@ -662,24 +661,32 @@ function EditorSidebar(props: EditorSidebarProps) {
                     </div>
 
                     {crossLineControlMode === 'shoreline' ? (
-                      <div className={styles.buttonGrid}>
-                        <button type="button" onClick={() => translateSelectedCrossLine(-5)} className={`${styles.outlineButton} ${styles.smallPad}`}>-5m</button>
-                        <button type="button" onClick={() => translateSelectedCrossLine(-1)} className={`${styles.outlineButton} ${styles.smallPad}`}>-1m</button>
-                        <button type="button" onClick={() => translateSelectedCrossLine(1)} className={`${styles.outlineButton} ${styles.smallPad}`}>+1m</button>
-                        <button type="button" onClick={() => translateSelectedCrossLine(5)} className={`${styles.outlineButton} ${styles.smallPad}`}>+5m</button>
-                      </div>
+                      <>
+                        <span className={styles.modeLabel}>沿线平移</span>
+                        <div className={styles.buttonGrid}>
+                          <button type="button" onClick={() => translateSelectedCrossLine(-5)} className={`${styles.outlineButton} ${styles.smallPad}`}>-5m</button>
+                          <button type="button" onClick={() => translateSelectedCrossLine(-1)} className={`${styles.outlineButton} ${styles.smallPad}`}>-1m</button>
+                          <button type="button" onClick={() => translateSelectedCrossLine(1)} className={`${styles.outlineButton} ${styles.smallPad}`}>+1m</button>
+                          <button type="button" onClick={() => translateSelectedCrossLine(5)} className={`${styles.outlineButton} ${styles.smallPad}`}>+5m</button>
+                        </div>
+                      </>
                     ) : (
                       <>
-            <div className={styles.buttonGrid}>
+                        <span className={styles.modeLabel}>旋转</span>
+                        <div className={styles.buttonGrid}>
                           <button type="button" onClick={() => rotateSelectedCrossLine(-5)} className={`${styles.outlineButton} ${styles.smallPad}`} title="逆时针旋转 5°" aria-label="逆时针旋转">-5°</button>
                           <button type="button" onClick={() => rotateSelectedCrossLine(5)} className={`${styles.outlineButton} ${styles.smallPad}`} title="顺时针旋转 5°" aria-label="顺时针旋转">+5°</button>
+                        </div>
+                        <span className={styles.modeLabel}>缩放</span>
+                        <div className={styles.buttonGrid}>
                           <button type="button" onClick={() => scaleSelectedCrossLine(-10)} className={`${styles.outlineButton} ${styles.smallPad}`} title="缩短 10m" aria-label="缩短">-10m</button>
                           <button type="button" onClick={() => scaleSelectedCrossLine(10)} className={`${styles.outlineButton} ${styles.smallPad}`} title="拉长 10m" aria-label="拉长">+10m</button>
                         </div>
                       </>
                     )}
 
-                    <div className={`${styles.buttonGrid} ${styles.mt8}`}>
+                    <span className={styles.modeLabel}>其他</span>
+                    <div className={styles.buttonGrid}>
                       <button type="button" onClick={reverseSelectedCrossLine} className={styles.outlineButton} title="反转方向" aria-label="反转断面方向">
                         <RotateCw size={14} /> 反切
                       </button>
