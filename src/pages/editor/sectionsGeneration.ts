@@ -289,9 +289,14 @@ async function generateSectionsAndCreateTaskCore(params: {
     const allPerpendicularLines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const sectionsToCreate: any[] = [];
 
+    // 防止同一岸段线在 uploadedData.features 中出现多次（重复特征）
+    const processedShoreLineIds = new Set<string>();
+
     uploadedData.features.forEach((feature: any, index: number) => {
       const shoreLineId = getShoreLineIdFromFeature(feature, index);
       if (!selectedLines.has(shoreLineId)) return;
+      if (processedShoreLineIds.has(shoreLineId)) return;
+      processedShoreLineIds.add(shoreLineId);
 
       const mapped = selectionIdToBankBaseId.get(shoreLineId);
       const fromBackend = mapped?.fromBackend ?? isFromBackendFeature(feature);
@@ -444,7 +449,23 @@ async function generateSectionsAndCreateTaskCore(params: {
       // no-op
     }
 
-    setPerpendicularData(turf.featureCollection(allPerpendicularLines));
+    // 去重：相同岸段线+相同位置只保留一条
+    const seen = new Set<string>();
+    const dedupedLines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    allPerpendicularLines.forEach((f: any) => {
+      const props = f.properties || {};
+      const key = `${props.shoreLineId || props.bank_id || '_'}@${Number(props.distance || 0).toFixed(2)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        dedupedLines.push(f);
+      }
+    });
+    const dedupedCount = allPerpendicularLines.length - dedupedLines.length;
+    if (dedupedCount > 0) {
+      console.warn(`已自动移除 ${dedupedCount} 条重复断面`);
+    }
+
+    setPerpendicularData(turf.featureCollection(dedupedLines));
     setShowCrossLines(true);
 
     const modeLabel = params.extendToFirstShorelineIntersection ? '计算断面' : '精细断面';

@@ -147,6 +147,31 @@ function EditorPage(props: EditorPageProps) {
     return selectedCrossLineIndex === null ? [] : [selectedCrossLineIndex];
   };
 
+  // 去重：自动清除相同岸段线+相同位置（距离误差<0.5m）的重复断面
+  useEffect(() => {
+    if (!perpendicularData || perpendicularData.features.length === 0) return;
+    const existing = perpendicularData.features as GeoJSON.Feature[];
+    const seen = new Map<string, number>();
+    const keep: number[] = [];
+
+    existing.forEach((f: any, i: number) => {
+      const props = f.properties || {};
+      const lineId = props.shoreLineId || props.bank_id || '';
+      const dist = Math.round(Number(props.distance || 0) * 2) / 2;
+      const key = `${lineId}@${dist}`;
+      if (!seen.has(key)) {
+        seen.set(key, i);
+        keep.push(i);
+      }
+    });
+
+    if (keep.length < existing.length) {
+      const deduped = keep.map((i) => existing[i]);
+      setPerpendicularData(turf.featureCollection(deduped as any));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perpendicularData?.features?.length, perpendicularData]);
+
   // 当断面数据变化时，修剪无效的选中索引，避免越界
   useEffect(() => {
     const max = perpendicularData?.features?.length ?? 0;
@@ -166,6 +191,7 @@ function EditorPage(props: EditorPageProps) {
 
   // 断面验证：避免重复触发校验
   const validationTriggeredRef = useRef<Set<string>>(new Set());
+  const isGeneratingRef = useRef(false);
 
   const getShoreLineId = (feature: any, index: number) => {
     const p = feature?.properties || {};
@@ -1831,10 +1857,12 @@ function EditorPage(props: EditorPageProps) {
 
   // 核心逻辑：基于上传的 GeoJSON 和全局配置生成所有垂线
   const handleGenerateSections = async () => {
+    if (isGeneratingRef.current) return;
     if (!uploadedData) {
       alert('请先上传 GeoJSON 数据');
       return;
     }
+    isGeneratingRef.current = true;
     try {
       await generateSectionsAndCreateTask({
         uploadedData,
@@ -1845,21 +1873,22 @@ function EditorPage(props: EditorPageProps) {
         setPerpendicularData,
         setShowCrossLines,
         setGlobalProperties,
-        // 生成精细断面时不要同步上传岸段
         skipUploadBanks: true,
       });
     } finally {
-      // 上传断面（生成）完成后刷新“获取岸段”下拉框数据
       fetchBankGroups();
+      isGeneratingRef.current = false;
     }
   };
 
   // “生成计算断面”：在精细断面基础上，沿断面起点->终点方向延长，直到与遇到的第一个岸线相交
   const handleGenerateComputeSections = async () => {
+    if (isGeneratingRef.current) return;
     if (!uploadedData) {
       alert('请先上传 GeoJSON 数据');
       return;
     }
+    isGeneratingRef.current = true;
     try {
       await generateComputeSectionsAndCreateTask({
         uploadedData,
@@ -1875,6 +1904,7 @@ function EditorPage(props: EditorPageProps) {
       });
     } finally {
       fetchBankGroups();
+      isGeneratingRef.current = false;
     }
   };
 

@@ -65,6 +65,36 @@ function buildCrossLineArrowPoints(
   return turf.featureCollection(arrowPoints) as GeoJSON.FeatureCollection<GeoJSON.Point>;
 }
 
+function buildCrossLineEndpoints(
+  data: GeoJSON.FeatureCollection | null,
+  selectedIds: number[],
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  if (!data || selectedIds.length === 0) {
+    return turf.featureCollection([]) as GeoJSON.FeatureCollection<GeoJSON.Point>;
+  }
+
+  const points: GeoJSON.Feature<GeoJSON.Point>[] = [];
+  selectedIds.forEach((id) => {
+    const feature = data.features[id];
+    if (!feature || feature.geometry?.type !== 'LineString') return;
+    const coords = feature.geometry.coordinates as number[][];
+    if (!coords || coords.length < 2) return;
+
+    points.push({
+      type: 'Feature',
+      properties: { crossLineId: id, vertexIndex: 0 },
+      geometry: { type: 'Point', coordinates: [coords[0][0], coords[0][1]] },
+    });
+    points.push({
+      type: 'Feature',
+      properties: { crossLineId: id, vertexIndex: 1 },
+      geometry: { type: 'Point', coordinates: [coords[coords.length - 1][0], coords[coords.length - 1][1]] },
+    });
+  });
+
+  return turf.featureCollection(points) as GeoJSON.FeatureCollection<GeoJSON.Point>;
+}
+
 function buildValidationColorExpression() {
   // pending/unknown => yellow, valid => green, invalid => red
   return [
@@ -152,6 +182,7 @@ function EditorMap(props: EditorMapProps) {
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
   const perpendicularDataRef = useRef<GeoJSON.FeatureCollection | null>(perpendicularData);
+  perpendicularDataRef.current = perpendicularData;
   useEffect(() => {
     perpendicularDataRef.current = perpendicularData;
   }, [perpendicularData]);
@@ -167,14 +198,10 @@ function EditorMap(props: EditorMapProps) {
   }, [groups]);
 
   const isSelectingShoreLinesRef = useRef(isSelectingShoreLines);
-  useEffect(() => {
-    isSelectingShoreLinesRef.current = isSelectingShoreLines;
-  }, [isSelectingShoreLines]);
+  isSelectingShoreLinesRef.current = isSelectingShoreLines;
 
   const isFixingShoreLineReversedRef = useRef(isFixingShoreLineReversed);
-  useEffect(() => {
-    isFixingShoreLineReversedRef.current = isFixingShoreLineReversed;
-  }, [isFixingShoreLineReversed]);
+  isFixingShoreLineReversedRef.current = isFixingShoreLineReversed;
 
   const onFixSelectedShoreLineReversedRef = useRef(onFixSelectedShoreLineReversed);
   useEffect(() => {
@@ -182,27 +209,21 @@ function EditorMap(props: EditorMapProps) {
   }, [onFixSelectedShoreLineReversed]);
 
   const isSelectingStartEndRef = useRef(isSelectingStartEnd);
-  useEffect(() => {
-    isSelectingStartEndRef.current = isSelectingStartEnd;
-  }, [isSelectingStartEnd]);
+  isSelectingStartEndRef.current = isSelectingStartEnd;
 
   const isSelectingCrossLinesRef = useRef(isSelectingCrossLines);
-  useEffect(() => {
-    isSelectingCrossLinesRef.current = isSelectingCrossLines;
-  }, [isSelectingCrossLines]);
+  isSelectingCrossLinesRef.current = isSelectingCrossLines;
 
   // 记录上一次上传数据要素数量，用于判断是否为“首次加载”以决定是否 fitBounds
   const prevUploadedCountRef = useRef<number>(0);
 
   const crossLineControlModeRef = useRef<'shoreline' | 'free'>(crossLineControlMode);
-  useEffect(() => {
-    crossLineControlModeRef.current = crossLineControlMode;
-  }, [crossLineControlMode]);
+  // 同步更新 ref，避免 useEffect 异步更新导致事件处理器读到过期值
+  crossLineControlModeRef.current = crossLineControlMode;
 
   const crossLineEditModeRef = useRef<'none' | 'select' | 'add'>(crossLineEditMode);
-  useEffect(() => {
-    crossLineEditModeRef.current = crossLineEditMode;
-  }, [crossLineEditMode]);
+  // 同步更新 ref，避免 useEffect 异步更新导致事件处理器读到过期值
+  crossLineEditModeRef.current = crossLineEditMode;
 
   // 在自由模式断面精调时，Ctrl 键要用于多选；Mapbox 默认 Ctrl+左键会触发 dragRotate，需禁用以免抢占事件
   useEffect(() => {
@@ -255,14 +276,10 @@ function EditorMap(props: EditorMapProps) {
   }, [createCrossLineByEndpoints]);
 
   const selectedCrossLineIndexRef = useRef<number | null>(selectedCrossLineIndex);
-  useEffect(() => {
-    selectedCrossLineIndexRef.current = selectedCrossLineIndex;
-  }, [selectedCrossLineIndex]);
+  selectedCrossLineIndexRef.current = selectedCrossLineIndex;
 
   const selectedCrossLineIndicesRef = useRef<Set<number>>(selectedCrossLineIndices);
-  useEffect(() => {
-    selectedCrossLineIndicesRef.current = selectedCrossLineIndices;
-  }, [selectedCrossLineIndices]);
+  selectedCrossLineIndicesRef.current = selectedCrossLineIndices;
 
   const configRef = useRef({ interval: globalInterval, length: globalLength });
   const lastCenterRef = useRef({ lng: 119.896, lat: 32.229, zoom: 7 });
@@ -294,8 +311,12 @@ function EditorMap(props: EditorMapProps) {
 
     if (map.isStyleLoaded()) {
       updateMapSources();
+      return undefined;
     } else {
       map.once('idle', updateMapSources);
+      return () => {
+        map.off('idle', updateMapSources);
+      };
     }
   }, [perpendicularData]);
 
@@ -349,8 +370,12 @@ function EditorMap(props: EditorMapProps) {
 
     if (map.isStyleLoaded()) {
       updateSource();
+      return undefined;
     } else {
       map.once('idle', updateSource);
+      return () => {
+        map.off('idle', updateSource);
+      };
     }
   }, [uploadedData]);
 
@@ -371,8 +396,12 @@ function EditorMap(props: EditorMapProps) {
 
     if (map.isStyleLoaded()) {
       updateSelectedLines();
+      return undefined;
     } else {
       map.once('idle', updateSelectedLines);
+      return () => {
+        map.off('idle', updateSelectedLines);
+      };
     }
   }, [selectedLines, uploadedData]);
 
@@ -418,8 +447,12 @@ function EditorMap(props: EditorMapProps) {
 
     if (map.isStyleLoaded()) {
       updateMapSources();
+      return undefined;
     } else {
       map.once('idle', updateMapSources);
+      return () => {
+        map.off('idle', updateMapSources);
+      };
     }
   }, [groups]);
 
@@ -465,8 +498,41 @@ function EditorMap(props: EditorMapProps) {
 
     if (map.isStyleLoaded()) {
       updateSelectedCrossLine();
+      return undefined;
     } else {
       map.once('idle', updateSelectedCrossLine);
+      return () => {
+        map.off('idle', updateSelectedCrossLine);
+      };
+    }
+  }, [selectedCrossLineIndex, selectedCrossLineIndices, perpendicularData]);
+
+  // 同步选中断面的端点手柄（起点/终点）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource('perpendicular-endpoints') as mapboxgl.GeoJSONSource | null;
+    if (!source) return;
+
+    const ids =
+      selectedCrossLineIndices.size > 0
+        ? Array.from(selectedCrossLineIndices)
+        : selectedCrossLineIndex !== null
+          ? [selectedCrossLineIndex]
+          : [];
+
+    const updateEndpoints = () => {
+      source.setData(buildCrossLineEndpoints(perpendicularData, ids));
+    };
+
+    if (map.isStyleLoaded()) {
+      updateEndpoints();
+      return undefined;
+    } else {
+      map.once('idle', updateEndpoints);
+      return () => {
+        map.off('idle', updateEndpoints);
+      };
     }
   }, [selectedCrossLineIndex, selectedCrossLineIndices, perpendicularData]);
 
@@ -511,6 +577,7 @@ function EditorMap(props: EditorMapProps) {
     map.on('load', () => {
       map.addSource('perpendicular-lines', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('perpendicular-arrows', { type: 'geojson', data: turf.featureCollection([]) });
+      map.addSource('perpendicular-endpoints', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('uploaded-data', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('selection-points', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('snap-point', { type: 'geojson', data: turf.featureCollection([]) });
@@ -529,6 +596,9 @@ function EditorMap(props: EditorMapProps) {
       if (perpendicularDataRef.current) {
         const src = map.getSource('perpendicular-lines') as mapboxgl.GeoJSONSource;
         if (src) src.setData(perpendicularDataRef.current);
+
+        const arrowSrc = map.getSource('perpendicular-arrows') as mapboxgl.GeoJSONSource;
+        if (arrowSrc) arrowSrc.setData(buildCrossLineArrowPoints(perpendicularDataRef.current));
       }
 
       map.addLayer({
@@ -646,6 +716,18 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.addLayer({
+        id: 'perpendicular-endpoints-layer',
+        type: 'circle',
+        source: 'perpendicular-endpoints',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#ffffff',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#3b82f6',
+        },
+      });
+
+      map.addLayer({
         id: 'points-layer',
         type: 'circle',
         source: 'selection-points',
@@ -753,7 +835,10 @@ function EditorMap(props: EditorMapProps) {
             crossArrowsSource: mapboxgl.GeoJSONSource | null;
             selectedCrossLineSource: mapboxgl.GeoJSONSource | null;
             pendingDelta: { dx: number; dy: number } | null;
+            pendingPosition: { lng: number; lat: number } | null;
             rafId: number | null;
+            draggedHandle: { crossLineId: number; vertexIndex: 0 | 1 } | null;
+            endpointsSource: mapboxgl.GeoJSONSource | null;
           }
         | null = null;
 
@@ -810,6 +895,77 @@ function EditorMap(props: EditorMapProps) {
             .filter(Boolean) as GeoJSON.Feature<GeoJSON.Geometry>[];
           ds.selectedCrossLineSource.setData({ type: 'FeatureCollection', features: selectedFeatures } as any);
         }
+
+        if (ds.endpointsSource) {
+          ds.endpointsSource.setData(buildCrossLineEndpoints(ds.workingCrossLinesData, ds.crossLineIds));
+        }
+      };
+
+      // 端点拖拽：仅移动被拖拽的端点，另一端保持不动；沿原始线段方向约束
+      const applyEndpointDragFrame = (ds: NonNullable<typeof dragState>, lng: number, lat: number) => {
+        const handle = ds.draggedHandle;
+        if (!handle) return;
+        const { crossLineId, vertexIndex } = handle;
+
+        const f: any = ds.workingCrossLinesData.features?.[crossLineId];
+        if (!f || f.geometry?.type !== 'LineString') return;
+        const coords = f.geometry.coordinates as number[][];
+        if (!coords || coords.length < 2) return;
+
+        // 获取拖拽前的原始坐标，用于确定约束方向
+        const originalCoords = ds.startCoordsById.get(crossLineId);
+        if (!originalCoords || originalCoords.length < 2) return;
+
+        // 固定端（未被拖拽的一端）和原始拖拽端
+        const fixedPoint = vertexIndex === 0
+          ? originalCoords[originalCoords.length - 1]
+          : originalCoords[0];
+        const originalDragged = vertexIndex === 0
+          ? originalCoords[0]
+          : originalCoords[originalCoords.length - 1];
+
+        // 沿原始线段方向构造一条长轴线，将鼠标位置投影到轴线上
+        const fixedPt = turf.point(fixedPoint as [number, number]);
+        const bearing = turf.bearing(fixedPt, turf.point(originalDragged as [number, number]));
+        const far1 = turf.destination(fixedPt, 10000, bearing, { units: 'meters' }).geometry.coordinates as number[];
+        const far2 = turf.destination(fixedPt, 10000, bearing + 180, { units: 'meters' }).geometry.coordinates as number[];
+        const axisLine = turf.lineString([far1, far2]);
+        const projected = turf.nearestPointOnLine(axisLine, turf.point([lng, lat]));
+        const newLng = projected.geometry.coordinates[0];
+        const newLat = projected.geometry.coordinates[1];
+
+        // 仅更新被拖拽的端点，另一端保持不动
+        if (vertexIndex === 0) {
+          coords[0] = [newLng, newLat];
+        } else {
+          coords[coords.length - 1] = [newLng, newLat];
+        }
+        ds.lastCoordsById.set(crossLineId, coords.map((c) => [c[0], c[1]]));
+
+        // 更新箭头位置/朝向
+        const arrowIdx = ds.arrowIndexByCrossLineId.get(crossLineId);
+        if (arrowIdx !== undefined) {
+          const arrow: any = ds.workingArrowData.features?.[arrowIdx];
+          if (arrow?.geometry?.type === 'Point') {
+            const start = coords[0];
+            const end = coords[coords.length - 1];
+            arrow.geometry.coordinates = end;
+            arrow.properties = {
+              ...(arrow.properties || {}),
+              iconRotate: Number(bearingDegrees(start as any, end as any) - 90),
+            };
+          }
+        }
+
+        ds.crossLinesSource?.setData(ds.workingCrossLinesData);
+        ds.crossArrowsSource?.setData(ds.workingArrowData);
+
+        if (ds.selectedCrossLineSource) {
+          ds.selectedCrossLineSource.setData({ type: 'FeatureCollection', features: [f] } as any);
+        }
+        if (ds.endpointsSource) {
+          ds.endpointsSource.setData(buildCrossLineEndpoints(ds.workingCrossLinesData, [crossLineId]));
+        }
       };
 
       const scheduleDragRender = (ds: NonNullable<typeof dragState>) => {
@@ -818,13 +974,20 @@ function EditorMap(props: EditorMapProps) {
           const active = dragState;
           if (!active) return;
           active.rafId = null;
-          const pending = active.pendingDelta;
-          if (!pending) return;
-          active.pendingDelta = null;
-          applyDragFrame(active, pending.dx, pending.dy);
 
-          // 如果在本帧渲染时又积累了新的 delta，继续排队下一帧
-          if (active.pendingDelta) {
+          if (active.draggedHandle) {
+            const pending = active.pendingPosition;
+            if (!pending) return;
+            active.pendingPosition = null;
+            applyEndpointDragFrame(active, pending.lng, pending.lat);
+          } else {
+            const pending = active.pendingDelta;
+            if (!pending) return;
+            active.pendingDelta = null;
+            applyDragFrame(active, pending.dx, pending.dy);
+          }
+
+          if (active.pendingDelta || active.pendingPosition) {
             scheduleDragRender(active);
           }
         });
@@ -837,15 +1000,24 @@ function EditorMap(props: EditorMapProps) {
         const dy = ev.lngLat.lat - ds.startLngLat.lat;
 
         ds.pendingDelta = { dx, dy };
+        ds.pendingPosition = { lng: ev.lngLat.lng, lat: ev.lngLat.lat };
         scheduleDragRender(ds);
       };
 
       const endDrag = () => {
         const ds = dragState;
         if (!ds) return;
+        wasDragging = true;
 
         // 确保最后一次鼠标位置能落盘到地图上
-        if (ds.pendingDelta) {
+        if (ds.draggedHandle) {
+          // 端点拖拽：仅 flush pendingPosition（若已被 RAF 消费则跳过）
+          if (ds.pendingPosition) {
+            const { lng, lat } = ds.pendingPosition;
+            ds.pendingPosition = null;
+            applyEndpointDragFrame(ds, lng, lat);
+          }
+        } else if (ds.pendingDelta) {
           const { dx, dy } = ds.pendingDelta;
           ds.pendingDelta = null;
           applyDragFrame(ds, dx, dy);
@@ -890,13 +1062,120 @@ function EditorMap(props: EditorMapProps) {
         });
         // 不阻塞 UI；后台同步即可
         Promise.allSettled(tasks);
+
+        // 拖拽结束后立即刷新箭头数据源，避免 React effect 异步更新导致的残留
+        if (ds.crossArrowsSource) {
+          ds.crossArrowsSource.setData(buildCrossLineArrowPoints(ds.workingCrossLinesData));
+        }
+
         dragState = null;
       };
+
+      // 端点拖拽：点击断面起点/终点手柄，拖动以自由调整长度和方向
+      let wasDragging = false;
+      map.on('mousedown', 'perpendicular-endpoints-layer', (e) => {
+        if (!isSelectingCrossLinesRef.current) return;
+        if (crossLineEditModeRef.current !== 'select') return;
+
+        // 清除自由创建模式的残留状态，防止后续误创建断面
+        freeAddStartRef.current = null;
+
+        const feature = e.features?.[0];
+        const crossLineId = Number(feature?.properties?.crossLineId);
+        const rawVertex = Number(feature?.properties?.vertexIndex);
+        if (!Number.isFinite(crossLineId)) return;
+        if (rawVertex !== 0 && rawVertex !== 1) return;
+        const vertexIndex = rawVertex as 0 | 1;
+
+        const currentData = perpendicularDataRef.current;
+        const currentFeature: any = currentData?.features?.[crossLineId];
+        if (!currentFeature || currentFeature.geometry?.type !== 'LineString') return;
+
+        const startCoords = (currentFeature.geometry.coordinates as number[][]) || [];
+        if (startCoords.length < 2) return;
+
+        // 选中此断面（单选）
+        setSelectedCrossLineIndex(crossLineId);
+        setSelectedCrossLineIndices(new Set([crossLineId]));
+
+        const copied = startCoords.map((c) => [c[0], c[1]]);
+        const startCoordsById = new Map<number, number[][]>();
+        const lastCoordsById = new Map<number, number[][]>();
+        startCoordsById.set(crossLineId, copied);
+        lastCoordsById.set(crossLineId, copied.map((c) => [c[0], c[1]]));
+
+        // 构建工作副本
+        const base = perpendicularDataRef.current;
+        const workingFeatures = (base?.features ? base.features.slice() : []) as any[];
+        const original = workingFeatures[crossLineId];
+        if (original) {
+          workingFeatures[crossLineId] = {
+            ...original,
+            geometry: {
+              ...(original.geometry || {}),
+              type: 'LineString',
+              coordinates: copied.map((c) => [c[0], c[1]]),
+            },
+            properties: {
+              ...(original.properties || {}),
+              crossLineId: (original.properties as any)?.crossLineId ?? crossLineId,
+            },
+          };
+        }
+        const workingCrossLinesData: GeoJSON.FeatureCollection = {
+          type: 'FeatureCollection',
+          features: workingFeatures as any,
+        };
+        const workingArrowData = buildCrossLineArrowPoints(workingCrossLinesData);
+        const arrowIndexByCrossLineId = new Map<number, number>();
+        (workingArrowData.features as any[]).forEach((f, idx) => {
+          const cid = Number(f?.properties?.crossLineId);
+          if (Number.isFinite(cid)) arrowIndexByCrossLineId.set(cid, idx);
+        });
+
+        const crossLinesSource = map.getSource('perpendicular-lines') as mapboxgl.GeoJSONSource | null;
+        const crossArrowsSource = map.getSource('perpendicular-arrows') as mapboxgl.GeoJSONSource | null;
+        const selectedCrossLineSource = map.getSource('selected-cross-line') as mapboxgl.GeoJSONSource | null;
+        const endpointsSource = map.getSource('perpendicular-endpoints') as mapboxgl.GeoJSONSource | null;
+
+        dragState = {
+          crossLineIds: [crossLineId],
+          startLngLat: e.lngLat,
+          startCoordsById,
+          lastCoordsById,
+          workingCrossLinesData,
+          workingArrowData,
+          arrowIndexByCrossLineId,
+          crossLinesSource,
+          crossArrowsSource,
+          selectedCrossLineSource,
+          pendingDelta: null,
+          pendingPosition: null,
+          rafId: null,
+          draggedHandle: { crossLineId, vertexIndex },
+          endpointsSource,
+        };
+
+        map.dragPan.disable();
+        map.getCanvas().style.cursor = 'grabbing';
+
+        map.on('mousemove', onDragMove);
+        map.once('mouseup', endDrag);
+      });
 
       map.on('mousedown', 'perpendicular-lines-hit-target', (e) => {
         if (!isSelectingCrossLinesRef.current) return;
         if (crossLineControlModeRef.current !== 'free') return;
         if (crossLineEditModeRef.current !== 'select') return;
+
+        // 如果端点拖拽已经认领了本次 mousedown，跳过整线拖拽
+        if (dragState) return;
+
+        // 如果点击位置命中的是端点手柄，则交给端点拖拽逻辑处理
+        const endpointHits = map.queryRenderedFeatures(e.point, {
+          layers: ['perpendicular-endpoints-layer'],
+        });
+        if (endpointHits.length > 0) return;
 
         const oe = e.originalEvent as MouseEvent | undefined;
         const isCtrl = !!oe?.ctrlKey;
@@ -973,6 +1252,7 @@ function EditorMap(props: EditorMapProps) {
         const crossLinesSource = map.getSource('perpendicular-lines') as mapboxgl.GeoJSONSource | null;
         const crossArrowsSource = map.getSource('perpendicular-arrows') as mapboxgl.GeoJSONSource | null;
         const selectedCrossLineSource = map.getSource('selected-cross-line') as mapboxgl.GeoJSONSource | null;
+        const endpointsSource = map.getSource('perpendicular-endpoints') as mapboxgl.GeoJSONSource | null;
 
         dragState = {
           crossLineIds: Array.from(startCoordsById.keys()),
@@ -986,7 +1266,10 @@ function EditorMap(props: EditorMapProps) {
           crossArrowsSource,
           selectedCrossLineSource,
           pendingDelta: null,
+          pendingPosition: null,
           rafId: null,
+          draggedHandle: null,
+          endpointsSource,
         };
 
         if (dragState.crossLineIds.length === 0) {
@@ -1002,6 +1285,12 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.on('click', (e) => {
+        // 拖拽刚结束后的第一次 click 事件需要抑制，避免误触选择/创建逻辑
+        if (wasDragging) {
+          wasDragging = false;
+          freeAddStartRef.current = null;
+          return;
+        }
         // 所有编辑操作未激活时：点击断面只展示状态，不进入选择/编辑
         const noEditingActive =
           !isSelectingShoreLinesRef.current &&
@@ -1242,6 +1531,18 @@ function EditorMap(props: EditorMapProps) {
           !isSelectingStartEndRef.current &&
           !isSelectingCrossLinesRef.current;
         if (noEditingActive) {
+          map.getCanvas().style.cursor = '';
+        }
+      });
+
+      map.on('mouseenter', 'perpendicular-endpoints-layer', () => {
+        if (isSelectingCrossLinesRef.current && crossLineEditModeRef.current === 'select') {
+          map.getCanvas().style.cursor = 'grab';
+        }
+      });
+
+      map.on('mouseleave', 'perpendicular-endpoints-layer', () => {
+        if (isSelectingCrossLinesRef.current && crossLineEditModeRef.current === 'select') {
           map.getCanvas().style.cursor = '';
         }
       });

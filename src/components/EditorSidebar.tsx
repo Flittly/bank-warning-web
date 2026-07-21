@@ -243,13 +243,11 @@ function EditorSidebar(props: EditorSidebarProps) {
                               const rangeIds = (bankList || []).slice(start, end + 1).map(bk => String(bk.bank_id));
                               const newSelected = [...new Set([...selectedBankGroup, ...rangeIds])];
                               setSelectedBankGroup(newSelected);
-                              rangeIds.forEach(id => { if (!selectedBankGroup.includes(id)) loadBankById?.(id); });
                             } else if (isSelected) {
                               setSelectedBankGroup(selectedBankGroup.filter(v => v !== bankId));
                               removeBankFromMap?.(bankId);
                             } else {
                               setSelectedBankGroup([...selectedBankGroup, bankId]);
-                              loadBankById?.(bankId);
                             }
                             setLastClickedIndex(currentIndex);
                           }}

@@ -365,6 +365,21 @@ export async function createCrossLineAtPointAction(params: {
     coordinates: [leftCoords, rightCoords],
   };
 
+  // 前置去重：如果该岸段线的同一位置已有断面，不再重复创建
+  if (perpendicularData && perpendicularData.features.length > 0) {
+    const duplicateFound = perpendicularData.features.some((f: any) => {
+      const props = f.properties || {};
+      return (
+        props.shoreLineId === parentId &&
+        Math.abs(Number(props.distance) - distanceOnLine) < 0.5
+      );
+    });
+    if (duplicateFound) {
+      alert('该位置已经存在断面，请选择其他位置或先删除已有断面。');
+      return;
+    }
+  }
+
   try {
     const sectionId = `sec-${taskId}-new-${Date.now()}`;
     const newSectionIndex = perpendicularData ? perpendicularData.features.length : 0;
@@ -415,6 +430,23 @@ export async function createCrossLineAtPointAction(params: {
 
     setPerpendicularData((prev) => {
       const existing = prev ? (prev.features as GeoJSON.Feature<GeoJSON.LineString>[]) : [];
+
+      // 去重：检查是否已有同一岸段线同位置（距离误差 < 0.5m）的断面
+      const existingAtSameSpot = existing.some((f: any) => {
+        const props = f.properties || {};
+        const existingDist = Number(props.distance);
+        const existingShoreId = props.shoreLineId;
+        return (
+          existingShoreId === parentId &&
+          Number.isFinite(existingDist) &&
+          Math.abs(existingDist - distanceOnLine) < 0.5
+        );
+      });
+      if (existingAtSameSpot) {
+        alert('该位置已经存在断面，请选择其他位置或先删除已有断面。');
+        return prev;
+      }
+
       const newCrossLineId = existing.length;
 
       const newCrossLine: GeoJSON.Feature<GeoJSON.LineString> = {
@@ -843,7 +875,23 @@ export async function createCrossLineByEndpointsAction(params: {
       if (!f.geometry || (f.geometry.type !== 'LineString' && f.geometry.type !== 'MultiLineString')) return;
 
       const handleLine = (line: GeoJSON.Feature<GeoJSON.LineString>, assumedBankId: string) => {
-        try {
+
+  // 前置去重：如果已有相近位置的断面，不再重复创建
+  if (perpendicularData && perpendicularData.features.length > 0) {
+    const duplicateFound = perpendicularData.features.some((f: any) => {
+      const coords = f.geometry?.coordinates as number[][] | undefined;
+      if (!coords || coords.length < 2) return false;
+      const distStart = turf.distance(turf.point(start), turf.point(coords[0] as any), { units: 'meters' });
+      const distEnd = turf.distance(turf.point(end), turf.point(coords[coords.length - 1] as any), { units: 'meters' });
+      return distStart < 1 && distEnd < 1;
+    });
+    if (duplicateFound) {
+      alert('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
+      return;
+    }
+  }
+
+  try {
           const snapped = turf.nearestPointOnLine(line, mid, { units: 'meters' });
           const d = turf.distance(mid, snapped, { units: 'meters' });
           const loc = snapped.properties.location ?? 0;
@@ -888,6 +936,20 @@ export async function createCrossLineByEndpointsAction(params: {
   if (!taskId || !basicParamId || !sectionId) {
     setPerpendicularData((prev) => {
       const existing = prev ? (prev.features as GeoJSON.Feature<GeoJSON.LineString>[]) : [];
+
+      // 去重：检查是否已有相近位置的断面（起点和终点都接近 < 1m）
+      const existingClose = existing.some((f: any) => {
+        const coords = f.geometry?.coordinates as number[][] | undefined;
+        if (!coords || coords.length < 2) return false;
+        const distStart = turf.distance(turf.point(start), turf.point(coords[0] as any), { units: 'meters' });
+        const distEnd = turf.distance(turf.point(end), turf.point(coords[coords.length - 1] as any), { units: 'meters' });
+        return distStart < 1 && distEnd < 1;
+      });
+      if (existingClose) {
+        alert('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
+        return prev;
+      }
+
       const newCrossLineId = existing.length;
       const left = start;
       const right = end;
@@ -945,6 +1007,20 @@ export async function createCrossLineByEndpointsAction(params: {
 
     setPerpendicularData((prev) => {
       const existing = prev ? (prev.features as GeoJSON.Feature<GeoJSON.LineString>[]) : [];
+
+      // 去重：检查是否已有相近位置的断面
+      const existingClose = existing.some((f: any) => {
+        const coords = f.geometry?.coordinates as number[][] | undefined;
+        if (!coords || coords.length < 2) return false;
+        const distStart = turf.distance(turf.point(start), turf.point(coords[0] as any), { units: 'meters' });
+        const distEnd = turf.distance(turf.point(end), turf.point(coords[coords.length - 1] as any), { units: 'meters' });
+        return distStart < 1 && distEnd < 1;
+      });
+      if (existingClose) {
+        alert('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
+        return prev;
+      }
+
       const newCrossLineId = existing.length;
 
       const newFeature: GeoJSON.Feature<GeoJSON.LineString> = {
