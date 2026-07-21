@@ -660,7 +660,7 @@ function EditorSidebar(props: EditorSidebarProps) {
                       </button>
                     </div>
 
-                    {crossLineControlMode === 'shoreline' ? (
+                    {crossLineControlMode === 'shoreline' && (
                       <>
                         <span className={styles.modeLabel}>沿线平移</span>
                         <div className={styles.buttonGrid}>
@@ -670,20 +670,18 @@ function EditorSidebar(props: EditorSidebarProps) {
                           <button type="button" onClick={() => translateSelectedCrossLine(5)} className={`${styles.outlineButton} ${styles.smallPad}`}>+5m</button>
                         </div>
                       </>
-                    ) : (
-                      <>
-                        <span className={styles.modeLabel}>旋转</span>
-                        <div className={styles.buttonGrid}>
-                          <button type="button" onClick={() => rotateSelectedCrossLine(-5)} className={`${styles.outlineButton} ${styles.smallPad}`} title="逆时针旋转 5°" aria-label="逆时针旋转">-5°</button>
-                          <button type="button" onClick={() => rotateSelectedCrossLine(5)} className={`${styles.outlineButton} ${styles.smallPad}`} title="顺时针旋转 5°" aria-label="顺时针旋转">+5°</button>
-                        </div>
-                        <span className={styles.modeLabel}>缩放</span>
-                        <div className={styles.buttonGrid}>
-                          <button type="button" onClick={() => scaleSelectedCrossLine(-10)} className={`${styles.outlineButton} ${styles.smallPad}`} title="缩短 10m" aria-label="缩短">-10m</button>
-                          <button type="button" onClick={() => scaleSelectedCrossLine(10)} className={`${styles.outlineButton} ${styles.smallPad}`} title="拉长 10m" aria-label="拉长">+10m</button>
-                        </div>
-                      </>
                     )}
+
+                    <span className={styles.modeLabel}>旋转</span>
+                    <div className={styles.buttonGrid}>
+                      <button type="button" onClick={() => rotateSelectedCrossLine(-5)} className={`${styles.outlineButton} ${styles.smallPad}`} title="逆时针旋转 5°" aria-label="逆时针旋转">-5°</button>
+                      <button type="button" onClick={() => rotateSelectedCrossLine(5)} className={`${styles.outlineButton} ${styles.smallPad}`} title="顺时针旋转 5°" aria-label="顺时针旋转">+5°</button>
+                    </div>
+                    <span className={styles.modeLabel}>缩放</span>
+                    <div className={styles.buttonGrid}>
+                      <button type="button" onClick={() => scaleSelectedCrossLine(-10)} className={`${styles.outlineButton} ${styles.smallPad}`} title="缩短 10m" aria-label="缩短">-10m</button>
+                      <button type="button" onClick={() => scaleSelectedCrossLine(10)} className={`${styles.outlineButton} ${styles.smallPad}`} title="拉长 10m" aria-label="拉长">+10m</button>
+                    </div>
 
                     <span className={styles.modeLabel}>其他</span>
                     <div className={styles.buttonGrid}>
