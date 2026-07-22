@@ -3,13 +3,13 @@ import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '../App.css';
-import { getVerticalFootCoordsFromAny, getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
+import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, BarChart3, MessageCircle, Globe } from 'lucide-react';
+import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download } from 'lucide-react';
 import { ConfigProvider, Modal } from 'antd';
 
 // —— Mapbox token
@@ -112,9 +112,6 @@ const RISK_COLORS: Record<string, string> = {
 // 风险等级中文标签
 const RISK_LABELS: Record<number, string> = { 3: '极高风险', 2: '高风险', 1: '一般风险', 0: '低/无风险' };
 
-// 中线闭合距离阈值（米）
-const CLOSE_LOOP_DISTANCE_METERS = 2000;
-
 // 通用 fetch + JSON 解析 + 错误处理
 async function fetchJSON(url: string, init?: RequestInit): Promise<any> {
   const res = await fetch(url, init);
@@ -191,6 +188,7 @@ function ResultPage(props: ResultPageProps) {
   const lastSectionsByTaskRef = useRef<Record<string, SectionResult[]>>({});
   const sectionIndicatorResultCacheRef = useRef<Record<string, Record<string, number | null>>>({});
   const sectionIndicatorResultPromiseRef = useRef<Record<string, Record<string, Promise<number | null> | null>>>({});
+  const bankGeometryCacheRef = useRef<Record<string, GeoJSON.LineString | null>>({});
 
   const sectionClickHandlerRef = useRef<((e: any) => void) | null>(null);
   const sectionEnterHandlerRef = useRef<(() => void) | null>(null);
@@ -278,6 +276,98 @@ function ResultPage(props: ResultPageProps) {
       return;
     }
     doGenerateReport(taskId, taskName);
+  };
+
+  const handleExportSectionsDetail = async (taskId: string, taskName: string) => {
+    try {
+      const sectionsRes = await fetch(`/v0/bank/sections?task_id=${encodeURIComponent(taskId)}`);
+      if (!sectionsRes.ok) throw new Error('获取断面列表失败');
+      const sectionsJs = await sectionsRes.json().catch(() => null);
+      const sections: any[] = (sectionsJs?.sections ?? sectionsJs?.data ?? sectionsJs) || [];
+
+      const resultsRes = await fetch(`/v0/bank/results?task_id=${encodeURIComponent(taskId)}`);
+      const resultsJs = resultsRes.ok ? await resultsRes.json().catch(() => null) : null;
+      const resultsList: any[] = parseList(resultsJs);
+
+      const detailPromises = sections.map(async (s: any) => {
+        try {
+          const r = await fetch(`/v0/bank/results/${encodeURIComponent(s.section_id)}`);
+          if (!r.ok) return null;
+          return await r.json().catch(() => null);
+        } catch { return null; }
+      });
+      const details = await Promise.all(detailPromises);
+
+      // 收集所有指标 key（动态列）
+      const indicatorKeys = new Set<string>();
+      details.forEach(d => {
+        if (!d) return;
+        const ind = d?.indicators ?? d?.result?.indicators ?? d?.data?.indicators ?? d?.data?.result?.indicators;
+        if (ind && typeof ind === 'object') {
+          Object.keys(ind).forEach(k => indicatorKeys.add(k));
+        }
+      });
+      const indKeys = Array.from(indicatorKeys).sort();
+
+      const esc = (v: any): string => {
+        if (v === null || v === undefined) return '';
+        const s = String(v);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+
+      const headers = [
+        '断面ID', '断面名称', '沿程距离(m)', '岸段ID', '风险等级', '状态', '信息',
+        '垂足经度', '垂足纬度', '起点经度', '起点纬度', '终点经度', '终点纬度',
+        ...indKeys,
+      ];
+
+      const rows: string[] = [headers.map(esc).join(',')];
+
+      sections.forEach((s: any, i: number) => {
+        const rid = s.section_id;
+        const matched = resultsList.find((r: any) =>
+          r?.section_id === rid || r?.id === rid || r?.section?.section_id === rid,
+        );
+        const geom = s.geometry ?? s.section_geometry;
+        const coords = geom?.coordinates as number[][] | undefined;
+        const vfp = s.vertical_foot_point?.coordinates as number[] | undefined;
+        const detail = details[i];
+        const ind = detail?.indicators ?? detail?.result?.indicators ?? detail?.data?.indicators ?? detail?.data?.result?.indicators;
+
+        const riskLabel = (() => {
+          const lv = matched?.risk_level ?? matched?.riskLevel ?? s.risk_level;
+          if (lv === null || lv === undefined) return '';
+          const n = Number(lv);
+          if (!Number.isFinite(n)) return String(lv);
+          return RISK_LABELS[n] ?? String(lv);
+        })();
+
+        const row = [
+          s.section_id, s.section_name, s.distance, s.bank_id,
+          riskLabel, matched?.status ?? '', matched?.message ?? '',
+          vfp?.[0] ?? '', vfp?.[1] ?? '',
+          coords?.[0]?.[0] ?? '', coords?.[0]?.[1] ?? '',
+          coords?.[coords.length - 1]?.[0] ?? '', coords?.[coords.length - 1]?.[1] ?? '',
+          ...indKeys.map(k => ind?.[k] ?? ''),
+        ];
+        rows.push(row.map(esc).join(','));
+      });
+
+      const csv = '\uFEFF' + rows.join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `断面详情_${taskName}_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('导出断面详情失败:', err);
+      alert(`导出失败: ${err.message || err}`);
+    }
   };
 
   const fetchReportList = async () => {
@@ -693,17 +783,24 @@ function ResultPage(props: ResultPageProps) {
     const style = map.getStyle();
     if (style && style.layers) {
       style.layers.forEach((layer: any) => {
-        if (layer.id && String(layer.id).startsWith('midline-')) {
+        if (layer.id && String(layer.id).startsWith('bankline-')) {
           if (map.getLayer(layer.id)) map.removeLayer(layer.id);
         }
       });
     }
     if (style && style.sources) {
       Object.keys(style.sources).forEach((sourceId: string) => {
-        if (sourceId.startsWith('midline-')) {
+        if (sourceId.startsWith('bankline-')) {
           if (map.getSource(sourceId)) map.removeSource(sourceId);
         }
       });
+    }
+
+    // 清空岸段几何缓存和基底图层，防止跨任务污染
+    bankGeometryCacheRef.current = {};
+    const uploadedSrc = map.getSource('uploaded-data') as mapboxgl.GeoJSONSource | undefined;
+    if (uploadedSrc) {
+      uploadedSrc.setData(turf.featureCollection([]));
     }
   };
 
@@ -1100,6 +1197,56 @@ function ResultPage(props: ResultPageProps) {
 
       lastSectionsByTaskRef.current[taskId] = sectionResults;
 
+      // 3) 加载岸段几何（用于后续色带渲染）
+      try {
+        const uniqueBankIds = [...new Set(sectionResults.map(s => s.bank_id).filter(Boolean))];
+        const bankFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+        const bankFetchPromises = uniqueBankIds.map(async (bankId) => {
+          try {
+            let res = await fetch(`/v0/bank/banks/${encodeURIComponent(bankId)}`);
+            if (!res.ok) {
+              res = await fetch(`/v0/bank/banks?bank_id=${encodeURIComponent(bankId)}`);
+            }
+            if (!res.ok) {
+              console.warn(`岸段 ${bankId} 加载失败: HTTP ${res.status}`);
+              return;
+            }
+            const data = await res.json().catch(() => null);
+            const bank = (data?.bank || data?.banks?.[0] || data?.data || data) as any;
+            const b = Array.isArray(bank) ? bank[0] : bank;
+            const geom = b?.bank_geometry || b?.geometry;
+            if (geom && geom.type === 'LineString') {
+              bankGeometryCacheRef.current[bankId] = geom as GeoJSON.LineString;
+              bankFeatures.push({
+                type: 'Feature',
+                properties: {
+                  bank_id: b.bank_id || bankId,
+                  bank_name: b.bank_name || '',
+                  from_backend: true,
+                },
+                geometry: geom as GeoJSON.LineString,
+              });
+            } else {
+              console.warn(`岸段 ${bankId} 无有效 LineString 几何数据`);
+            }
+          } catch (err) {
+            console.warn(`岸段 ${bankId} 加载异常:`, err);
+          }
+        });
+        await Promise.allSettled(bankFetchPromises);
+
+        // 推送岸段几何到地图基底图层
+        const map = mapRef.current;
+        if (map && bankFeatures.length > 0) {
+          const src = map.getSource('uploaded-data') as mapboxgl.GeoJSONSource | undefined;
+          if (src) {
+            src.setData(turf.featureCollection(bankFeatures as any));
+          }
+        }
+      } catch {
+        // 忽略岸段加载异常
+      }
+
       // 2) 地图初始渲染（先灰色/未知风险），并缩放到断面范围
       renderSections(sectionResults);
       applyShorelineGradient(sectionResults);
@@ -1335,7 +1482,7 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
-  // 颜色插值逻辑: 基于同一岸段下所有断面中点生成一条折线，并根据中点的风险值插值颜色
+  // 色带逻辑：直接在岸段线几何上按断面风险渲染渐变色带
   const applyShorelineGradient = (sections: SectionResult[]) => {
     const map = mapRef.current;
     if (!map || !sections || sections.length === 0) return;
@@ -1351,75 +1498,52 @@ function ResultPage(props: ResultPageProps) {
     // 2. 遍历每个岸段组
     Object.keys(groups).forEach(bankId => {
       const bankSections = groups[bankId];
-      if (!bankSections || bankSections.length < 2) return;
+      if (!bankSections || bankSections.length === 0) return;
 
-      // 计算每个断面中点，并按传入的断面顺序（即 sections 数组本身的顺序）连接
-      // 说明：此前按经纬度排序（西→东、北→南）会改变生成顺序；现在改为使用后端/生成顺序（section 列表顺序）
-      const points = bankSections
+      // 获取岸段真实几何
+      const bankGeo = bankGeometryCacheRef.current[bankId];
+      if (!bankGeo || bankGeo.type !== 'LineString') return;
+
+      const bankCoords = bankGeo.coordinates as number[][];
+      if (!bankCoords || bankCoords.length < 2) return;
+
+      const bankLine = turf.lineString(bankCoords as any);
+      const totalDist = turf.length(bankLine, { units: 'meters' });
+      if (totalDist <= 0) return;
+
+      // 按断面 distance 排序，计算归一化位置并取颜色
+      const validSections = bankSections
         .filter(s => s && s.geometry && s.geometry.type === 'LineString')
-        .map(s => {
-          const coords = (s.geometry as any).coordinates as number[][];
-          if (!coords || coords.length < 2) return null;
-          const ap = getVerticalFootCoordsFromAny(s);
-          const mid: number[] = ap
-            ? [Number(ap[0]), Number(ap[1])]
-            : [
-                (coords[0][0] + coords[1][0]) / 2,
-                (coords[0][1] + coords[1][1]) / 2,
-              ];
-          const info = computeColorWithMatrix(s.indicator_result);
-          return { mid, color: info.color, section: s, valid: info.valid };
-        })
-        .filter(Boolean) as Array<{ mid: number[]; color: string; section: SectionResult; valid: boolean }>;
+        .sort((a, b) => a.distance - b.distance);
 
-      if (points.length < 2) return;
-
-      const midpoints = points.map(p => p.mid as number[]);
-      const shouldClose = turf.distance(points[0].mid as any, points[points.length - 1].mid as any, { units: 'meters' }) < CLOSE_LOOP_DISTANCE_METERS;
-      const lineCoords = shouldClose ? [...midpoints, midpoints[0]] : midpoints;
-      const newLine = turf.lineString(lineCoords as any);
-      const totalDist = turf.length(newLine, { units: 'meters' });
-
-      // 构建颜色梯度参数（沿排序后的折线累积距离）
       const riskStops: { val: number; color: string }[] = [];
-      let currentDist = 0;
-      for (let idx = 0; idx < points.length; idx++) {
-        if (idx > 0) {
-          const prevMid = points[idx - 1].mid;
-          const currMid = points[idx].mid;
-          currentDist += turf.distance(prevMid as any, currMid as any, { units: 'meters' });
+      validSections.forEach(s => {
+        const progress = Math.max(0, Math.min(1, s.distance / totalDist));
+        const info = computeColorWithMatrix(s.indicator_result);
+        if (info.valid) {
+          riskStops.push({ val: progress, color: info.color });
         }
-        const progress = totalDist > 0 ? (currentDist / totalDist) : 0;
-        if (points[idx].valid) {
-          riskStops.push({ val: progress, color: points[idx].color });
-        }
-      }
+      });
 
-      // Mapbox interpolate 表达式格式
+      // 构建 Mapbox interpolate 表达式
       const stops: any[] = ['interpolate', ['linear'], ['line-progress']];
       if (riskStops.length === 0) {
         stops.push(0, RISK_COLORS.default, 1, RISK_COLORS.default);
       } else if (riskStops.length === 1) {
         stops.push(0, riskStops[0].color, 1, riskStops[0].color);
       } else {
-        riskStops.forEach(rs => {
-          const val = Math.max(0, Math.min(1, rs.val));
-          stops.push(val, rs.color);
-        });
-        if (shouldClose) {
-          stops.push(1, riskStops[0].color);
-        }
+        riskStops.forEach(rs => stops.push(rs.val, rs.color));
       }
 
-      // 渲染新生成的中间折线
-      const layerId = `midline-result-${bankId}`;
-      const sourceId = `midline-source-${bankId}`;
+      // 渲染到岸段线上
+      const layerId = `bankline-result-${bankId}`;
+      const sourceId = `bankline-source-${bankId}`;
 
       const existing = map.getSource(sourceId) as mapboxgl.GeoJSONSource | undefined;
       if (existing) {
-        existing.setData(newLine as any);
+        existing.setData(bankLine as any);
       } else {
-        map.addSource(sourceId, { type: 'geojson', data: newLine as any, lineMetrics: true } as any);
+        map.addSource(sourceId, { type: 'geojson', data: bankLine as any, lineMetrics: true } as any);
       }
 
       if (!map.getLayer(layerId)) {
@@ -1430,8 +1554,8 @@ function ResultPage(props: ResultPageProps) {
           paint: {
             'line-width': 20,
             'line-gradient': stops as any,
-            'line-opacity': 0.7
-          }
+            'line-opacity': 0.7,
+          },
         });
       } else {
         map.setPaintProperty(layerId, 'line-gradient', stops as any);
@@ -1604,11 +1728,12 @@ function ResultPage(props: ResultPageProps) {
                         handleDeleteTaskById(task.task_id);
                       }} title="删除任务">×</button>
                     </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleGenerateReport(task.task_id, task.task_name); }}
                       disabled={generatingTaskId === task.task_id}
                       style={{
-                        marginTop: 6, padding: '5px 14px', fontSize: '0.8rem',
+                        padding: '5px 14px', fontSize: '0.8rem',
                         background: generatingTaskId === task.task_id
                           ? '#94a3b8'
                           : 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(59,130,246,0.22) 100%)',
@@ -1624,6 +1749,24 @@ function ResultPage(props: ResultPageProps) {
                       <FileText size={12} />
                       {generatingTaskId === task.task_id ? '生成中...' : 'AI 出报告'}
                     </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleExportSectionsDetail(task.task_id, task.task_name); }}
+                      style={{
+                        padding: '5px 14px', fontSize: '0.8rem',
+                        background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(16,185,129,0.22) 100%)',
+                        color: '#065F46',
+                        border: '1.5px solid rgba(16,185,129,0.45)',
+                        borderRadius: 14, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        backdropFilter: 'blur(8px) saturate(1.3)',
+                        WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
+                        boxShadow: '0 0 10px rgba(16,185,129,0.1), inset 0 1px 0 rgba(255,255,255,0.4)',
+                      }}
+                    >
+                      <Download size={12} />
+                      导出断面详情
+                    </button>
+                    </div>
                   </div>
                 ))}
               </div>
