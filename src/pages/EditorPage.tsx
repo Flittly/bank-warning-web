@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import * as turf from '@turf/turf';
 import '../App.css';
-import type { SectionParams } from '../types/sections';
+import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import EditorSidebar from '../components/EditorSidebar';
 import EditorMap from '../components/EditorMap';
@@ -10,7 +10,6 @@ import ResizeHandle from '../components/ResizeHandle';
 import { MessageCircle, Globe } from 'lucide-react';
 import { setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
-import type { SelectionGroup } from '../types/selection';
 import { stripZFromGeoJSON } from '../utils/geojson';
 import {
   configureSelectedCrossLinePropertiesAction,
@@ -49,84 +48,61 @@ interface EditorPageProps {
 
 function EditorPage(props: EditorPageProps) {
   const { setPage } = props;
-  // 上传的 GeoJSON 数据 (主线)
-  const [uploadedData, setUploadedData] = useState<GeoJSON.FeatureCollection | null>(null);
-  // 生成的垂线数据
-  const [perpendicularData, setPerpendicularData] = useState<GeoJSON.FeatureCollection | null>(null);
+  // === 持久化状态（使用 zustand store） ===
+  const uploadedData = useEditorStore((s) => s.uploadedData);
+  const setUploadedData = useEditorStore((s) => s.setUploadedData);
+  const perpendicularData = useEditorStore((s) => s.perpendicularData);
+  const setPerpendicularData = useEditorStore((s) => s.setPerpendicularData);
+  const groups = useEditorStore((s) => s.groups);
+  const setGroups = useEditorStore((s) => s.setGroups);
+  const globalInterval = useEditorStore((s) => s.globalInterval);
+  const setGlobalInterval = useEditorStore((s) => s.setGlobalInterval);
+  const globalLength = useEditorStore((s) => s.globalLength);
+  const setGlobalLength = useEditorStore((s) => s.setGlobalLength);
+  const globalProperties = useEditorStore((s) => s.globalProperties);
+  const setGlobalProperties = useEditorStore((s) => s.setGlobalProperties);
+  const selectedLines = useEditorStore((s) => s.selectedLines);
+  const setSelectedLines = useEditorStore((s) => s.setSelectedLines);
+  const selectedBankGroup = useEditorStore((s) => s.selectedBankGroup);
+  const setSelectedBankGroup = useEditorStore((s) => s.setSelectedBankGroup);
+  const selectedLoadedBanks = useEditorStore((s) => s.selectedLoadedBanks);
+  const setSelectedLoadedBanks = useEditorStore((s) => s.setSelectedLoadedBanks);
+  const showCrossLines = useEditorStore((s) => s.showCrossLines);
+  const setShowCrossLines = useEditorStore((s) => s.setShowCrossLines);
+  const satellite = useEditorStore((s) => s.satellite);
+  const setSatellite = useEditorStore((s) => s.setSatellite);
+  const colorBanks = useEditorStore((s) => s.colorBanks);
+  const setColorBanks = useEditorStore((s) => s.setColorBanks);
+  const loadedBanks = useEditorStore((s) => s.loadedBanks);
+  const setLoadedBanks = useEditorStore((s) => s.setLoadedBanks);
+  const crossLineControlMode = useEditorStore((s) => s.crossLineControlMode);
+  const setCrossLineControlMode = useEditorStore((s) => s.setCrossLineControlMode);
+  const selectedBasicParamIdState = useEditorStore((s) => s.selectedBasicParamIdState);
+  const setSelectedBasicParamIdState = useEditorStore((s) => s.setSelectedBasicParamIdState);
+  const clearEditorData = useEditorStore((s) => s.clearEditorData);
 
-  // 参数模板列表与选择（从后端获取并允许用户选择）
+  const prevSelectedBankGroupRef = useRef<string[]>([]);
+
+  // === 非持久化状态（UI 交互模式、瞬时状态） ===
   const [basicParamsList, setBasicParamsList] = useState<any[]>([]);
-  const [selectedBasicParamIdState, setSelectedBasicParamIdState] = useState<string | number | null>(null);
-
-  // 所有选择组
-  const [groups, setGroups] = useState<SelectionGroup[]>([]);
-
-  // 全局垂线配置（用于首次绘制整个 GeoJSON）
-  const [globalInterval, setGlobalInterval] = useState<number>(1000);
-  const [globalLength, setGlobalLength] = useState<number>(1000);
-
-  // 当前正在编辑的组ID
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
-
-  const [showCrossLines, setShowCrossLines] = useState<boolean>(true);
   const [chatCollapsed, setChatCollapsed] = useState<boolean>(false);
   const [leftPanelWidth, setLeftPanelWidth] = useState(350);
   const [rightPanelWidth, setRightPanelWidth] = useState(350);
   const [resizeTrigger, setResizeTrigger] = useState(0);
   const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
   const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [satellite, setSatellite] = useState<boolean>(false);
-  const [colorBanks, setColorBanks] = useState<boolean>(false);
-
-  // 全局属性配置
-  const [globalProperties, setGlobalProperties] = useState<SectionParams | null>(null);
-  // 属性配置弹窗状态
   const [showGlobalPropertiesModal, setShowGlobalPropertiesModal] = useState<boolean>(false);
   const [editingPropertiesGroupId, setEditingPropertiesGroupId] = useState<string | null>(null);
   const [editingBankParams, setEditingBankParams] = useState<{bankId: string; bankName: string; config: any} | null>(null);
-
-  // 新增状态：控制岸段选择模式
   const [isSelectingShoreLines, setIsSelectingShoreLines] = useState<boolean>(false);
-
-  // 新增状态：控制起止点选择模式
   const [isSelectingStartEnd, setIsSelectingStartEnd] = useState<boolean>(false);
-
-  // 新增状态：选中的用于生成垂线的线段（存储线的唯一标识）
-  const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
-
-  // 岸段组（后端 banks 按 region_code 分组）
   const [bankGroups, setBankGroups] = useState<Array<{ region_code: string; count: number }>>([]);
-  // “获取岸段”下拉框支持多选（用于批量加载 bank_id）
-  const [selectedBankGroup, setSelectedBankGroup] = useState<string[]>([]);
-  // 当前可选的岸段列表（按 bank_id）
   const [bankList, setBankList] = useState<any[]>([]);
-  // 已加载到地图上的岸段列表
-  const [loadedBanks, setLoadedBanks] = useState<any[]>([]);
-  // 已加载岸段的多选状态
-  const [selectedLoadedBanks, setSelectedLoadedBanks] = useState<Set<string>>(new Set());
-
-  const prevSelectedBankGroupRef = useRef<string[]>([]);
-
-  // 新增状态：控制断面选择模式
   const [isSelectingCrossLines, setIsSelectingCrossLines] = useState<boolean>(false);
-
-  // 岸段方向修正：对已选岸段逐条点击，批量反转该岸段上的断面，并标记岸段 properties.reversed=true
   const [isFixingShoreLineReversed, setIsFixingShoreLineReversed] = useState<boolean>(false);
-
-  // 新增状态：断面编辑控制模式（岸段线/自由）
-  const [crossLineControlMode, setCrossLineControlMode] = useState<'shoreline' | 'free'>('shoreline');
-
-  // 新增状态：断面编辑模式
-  // - 'none': 不进行选择/添加（用于“释放选择”）
-  // - 'select': 选择现有断面
-  // - 'add': 新建断面
   const [crossLineEditMode, setCrossLineEditMode] = useState<'none' | 'select' | 'add'>('none');
-
-  // 新增状态：选中的断面索引
   const [selectedCrossLineIndex, setSelectedCrossLineIndex] = useState<number | null>(null);
-
-  // 自由模式多选：按住 Ctrl 可选择多个断面
-  // 约定：selectedCrossLineIndex 作为“主选中”（用于侧边栏显示），selectedCrossLineIndices 作为多选集合
   const [selectedCrossLineIndices, setSelectedCrossLineIndices] = useState<Set<number>>(new Set());
 
   const clearSelectedCrossLines = () => {
