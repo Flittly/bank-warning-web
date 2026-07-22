@@ -4,6 +4,7 @@ import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import type { SelectionGroup } from '../types/selection';
 import { getVerticalFootCoordsFromAny } from '../utils/verticalFootPoint';
+import { useEditorStore } from '../store/useEditorStore';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -282,7 +283,11 @@ function EditorMap(props: EditorMapProps) {
   selectedCrossLineIndicesRef.current = selectedCrossLineIndices;
 
   const configRef = useRef({ interval: globalInterval, length: globalLength });
-  const lastCenterRef = useRef({ lng: 119.896, lat: 32.229, zoom: 7 });
+  const savedLng = useEditorStore((s) => s.mapLng);
+  const savedLat = useEditorStore((s) => s.mapLat);
+  const savedZoom = useEditorStore((s) => s.mapZoom);
+  const setMapView = useEditorStore((s) => s.setMapView);
+  const lastCenterRef = useRef({ lng: savedLng, lat: savedLat, zoom: savedZoom });
   useEffect(() => {
     configRef.current = { interval: globalInterval, length: globalLength };
   }, [globalInterval, globalLength]);
@@ -573,6 +578,12 @@ function EditorMap(props: EditorMapProps) {
 
     mapRef.current = map;
     map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+
+    // 持久化地图视角
+    map.on('moveend', () => {
+      const c = map.getCenter();
+      setMapView(c.lng, c.lat, map.getZoom());
+    });
 
     map.on('load', () => {
       map.addSource('perpendicular-lines', { type: 'geojson', data: turf.featureCollection([]) });
