@@ -689,15 +689,26 @@ function EditorPage(props: EditorPageProps) {
   };
 
   const removeBankFromMap = (bankId: string) => {
+    const bid = String(bankId);
     setUploadedData((prev) => {
       if (!prev) return prev;
       const features = (prev.features || []).filter((f: any) => {
         const p = f?.properties || {};
-        return String(p.bank_id || p.bankId || '') !== String(bankId);
+        return String(p.bank_id || p.bankId || '') !== bid;
       });
       return { ...prev, features } as any;
     });
-    setLoadedBanks((prev) => prev.filter((b) => String(b.bank_id) !== bankId));
+    setLoadedBanks((prev) => prev.filter((b) => String(b.bank_id) !== bid));
+    // 同时清除关联断面
+    setPerpendicularData((prev) => {
+      if (!prev) return prev;
+      const features = (prev.features || []).filter((f: any) => {
+        const p = f?.properties || {};
+        return String(p.bank_id || '') !== bid && String(p.shoreLineId || '') !== bid;
+      });
+      if (features.length === (prev.features || []).length) return prev;
+      return { ...prev, features } as any;
+    });
   };
 
   const deleteBankById = async (bankId: string) => {
@@ -728,6 +739,16 @@ function EditorPage(props: EditorPageProps) {
           const p = f?.properties || {};
           return String(p.bank_id || p.bankId || '') !== String(bankId);
         });
+        return { ...prev, features } as any;
+      });
+      // 同时清除关联断面
+      setPerpendicularData((prev) => {
+        if (!prev) return prev;
+        const features = (prev.features || []).filter((f: any) => {
+          const p = f?.properties || {};
+          return String(p.bank_id || '') !== String(bankId) && String(p.shoreLineId || '') !== String(bankId);
+        });
+        if (features.length === (prev.features || []).length) return prev;
         return { ...prev, features } as any;
       });
       await fetchBankGroups();
@@ -783,6 +804,19 @@ function EditorPage(props: EditorPageProps) {
         });
         return { ...prev, features } as any;
       });
+
+      // 同时清除关联断面
+      setPerpendicularData((prev) => {
+        if (!prev) return prev;
+        const features = (prev.features || []).filter((f: any) => {
+          const p = f?.properties || {};
+          const bid = String(p.bank_id || '');
+          const sid = String(p.shoreLineId || '');
+          return !successSet.has(bid) && !successSet.has(sid);
+        });
+        if (features.length === (prev.features || []).length) return prev;
+        return { ...prev, features } as any;
+      });
     }
 
     await fetchBankGroups();
@@ -806,6 +840,8 @@ function EditorPage(props: EditorPageProps) {
     const ok = window.confirm(`确认从地图上清除已选的 ${selected.length} 条岸段？`);
     if (!ok) return;
 
+    const selectedSet = new Set(selected.map(String));
+
     setLoadedBanks((prev) => prev.filter((bank) => !selected.includes(String(bank.bank_id))));
     setSelectedBankGroup((prev) => prev.filter((id) => !selected.includes(String(id))));
 
@@ -816,6 +852,19 @@ function EditorPage(props: EditorPageProps) {
         const id = String(p.bank_id || p.bankId || '');
         return !selected.includes(id);
       });
+      return { ...prev, features } as any;
+    });
+
+    // 同时清除与该岸段关联的断面
+    setPerpendicularData((prev) => {
+      if (!prev) return prev;
+      const features = (prev.features || []).filter((f: any) => {
+        const p = f?.properties || {};
+        const bid = String(p.bank_id || '');
+        const sid = String(p.shoreLineId || '');
+        return !selectedSet.has(bid) && !selectedSet.has(sid);
+      });
+      if (features.length === (prev.features || []).length) return prev;
       return { ...prev, features } as any;
     });
 
