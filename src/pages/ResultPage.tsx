@@ -1933,6 +1933,13 @@ function ResultPage(props: ResultPageProps) {
                     background: s.source === 'local' ? '#dbeafe' : s.source === 'synced' ? '#dcfce7' : '#fef3c7',
                     color: s.source === 'local' ? '#2563eb' : s.source === 'synced' ? '#16a34a' : '#d97706',
                   }}>{s.source === 'local' ? '本地' : s.source === 'synced' ? '已同步' : 'Nacos'}</span>
+                  {s.approval && (
+                    <span style={{
+                      fontSize: '0.6rem', padding: '1px 5px', borderRadius: 3,
+                      background: s.approval === 'APPROVED' ? '#dcfce7' : s.approval === 'PENDING' ? '#fef3c7' : s.approval === 'REJECTED' ? '#fee2e2' : '#f1f5f9',
+                      color: s.approval === 'APPROVED' ? '#16a34a' : s.approval === 'PENDING' ? '#d97706' : s.approval === 'REJECTED' ? '#dc2626' : '#64748b',
+                    }}>{s.approval === 'APPROVED' ? '已批准' : s.approval === 'PENDING' ? '待审批' : s.approval === 'REJECTED' ? '已驳回' : '无需审批'}</span>
+                  )}
                   {s.source === 'local' && (
                     <button
                       onClick={async (e) => {
@@ -1941,7 +1948,7 @@ function ResultPage(props: ResultPageProps) {
                         try {
                           const res = await fetch(`/v0/bank/ai/skill/upload/${encodeURIComponent(s.name)}`, { method: 'POST' });
                           const d = await res.json();
-                          if (d.success) { alert('上传成功！'); fetchSkills(); }
+                          if (d.success) { alert('上传成功，已提交审批'); fetchSkills(); }
                           else alert('上传失败: ' + (d.error || '未知错误'));
                         } catch (err: any) { alert('网络错误'); }
                       }}
@@ -1960,7 +1967,7 @@ function ResultPage(props: ResultPageProps) {
                         try {
                           const res = await fetch(`/v0/bank/ai/skill/download/${encodeURIComponent(s.name)}`, { method: 'POST' });
                           const d = await res.json();
-                          if (d.success) alert('下载成功！重启后端后生效');
+                          if (d.success) alert('下载成功，已提交审批，重启后端后生效');
                           else alert('下载失败: ' + (d.error || '未知错误'));
                         } catch (err: any) { alert('下载失败: ' + (err.message || '网络错误')); }
                       }}
@@ -1972,7 +1979,10 @@ function ResultPage(props: ResultPageProps) {
                     >下载到本地</button>
                   )}
                 </div>
-                <div className="task-meta" style={{ fontSize: '0.7rem' }}>{s.description || ''}</div>
+                <div className="task-meta" style={{ fontSize: '0.7rem' }}>
+                  {s.version ? <span style={{ color: '#64748b', marginRight: 4 }}>v{s.version}</span> : null}
+                  {s.description || ''}
+                </div>
               </div>
             </div>
           ))}

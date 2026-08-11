@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Edit3, BarChart2, BookOpen, Cpu, HelpCircle, Menu } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
-import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import ResultPage from './pages/ResultPage';
@@ -11,6 +11,7 @@ import SmartWorkbenchPage from './pages/SmartWorkbenchPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminUserPage from './pages/AdminUserPage';
+import SkillApprovalsPage from './pages/SkillApprovalsPage';
 
 const roleLabel = (role?: string) =>
   role === 'SUPER_ADMIN' ? '超级管理员' : role === 'ADMIN' ? '管理员' : '普通用户';
@@ -85,6 +86,12 @@ function AppLayout() {
       },
     ];
     if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') {
+      items.unshift({
+        key: 'skillApproval',
+        icon: <SafetyCertificateOutlined />,
+        label: 'Skill 审批',
+        onClick: () => navigate('/admin/skill-approvals'),
+      });
       items.unshift({
         key: 'admin',
         icon: <SettingOutlined />,
@@ -225,6 +232,7 @@ function App() {
         </Route>
         <Route element={<AuthGuard requireAdmin />}>
           <Route path="/admin/users" element={<AdminUserPage />} />
+          <Route path="/admin/skill-approvals" element={<SkillApprovalsPage />} />
         </Route>
       </Route>
     </Routes>
