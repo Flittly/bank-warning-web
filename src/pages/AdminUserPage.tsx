@@ -17,7 +17,7 @@ export default function AdminUserPage() {
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState<number | null>(null);
 
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const token = getAccessToken();
 
   const fetchUsers = async () => {
@@ -45,7 +45,7 @@ export default function AdminUserPage() {
 
   const stats = useMemo(() => {
     const total = users.length;
-    const admins = users.filter((u) => u.role === 'ADMIN').length;
+    const admins = users.filter((u) => u.role === 'ADMIN' || u.role === 'SUPER_ADMIN').length;
     const active = users.filter((u) => u.status === 'ACTIVE').length;
     return { total, admins, active };
   }, [users]);
@@ -82,10 +82,10 @@ export default function AdminUserPage() {
   };
 
   const handleRoleChange = (targetUser: UserResponse, newRole: string) => {
-    const roleLabel = newRole === 'ADMIN' ? '管理员' : '普通用户';
+    const label = roleLabel(newRole);
     Modal.confirm({
       title: '确认操作',
-      content: `确定要将用户「${targetUser.username}」的角色修改为「${roleLabel}」吗？`,
+      content: `确定要将用户「${targetUser.username}」的角色修改为「${label}」吗？`,
       okText: '确认',
       cancelText: '取消',
       onOk: async () => {
@@ -113,10 +113,9 @@ export default function AdminUserPage() {
   };
 
   const isSelf = (targetUser: UserResponse) => user?.id === targetUser.id;
-  const isSuperAdmin = (targetUser: UserResponse) => targetUser.username === 'admin';
 
-  const roleLabel = (role: string, targetUser: UserResponse) => {
-    if (role === 'ADMIN' && isSuperAdmin(targetUser)) return '超级管理员';
+  const roleLabel = (role: string) => {
+    if (role === 'SUPER_ADMIN') return '超级管理员';
     return role === 'ADMIN' ? '管理员' : '普通用户';
   };
 
@@ -151,12 +150,23 @@ export default function AdminUserPage() {
       key: 'role',
       width: 150,
       render: (role: string, record: UserResponse) => {
-        const label = roleLabel(role, record);
-        const color = isSuperAdmin(record) ? 'gold' : role === 'ADMIN' ? 'blue' : 'default';
+        const label = roleLabel(role);
+        const color = role === 'SUPER_ADMIN' ? 'gold' : role === 'ADMIN' ? 'blue' : 'default';
 
-        if (isSelf(record) || isSuperAdmin(record)) {
+        const canManageTarget =
+          !isSelf(record) &&
+          (user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && role === 'USER'));
+        if (!canManageTarget) {
           return <Tag color={color}>{label}</Tag>;
         }
+        const options =
+          user?.role === 'SUPER_ADMIN'
+            ? [
+                { label: '超级管理员', value: 'SUPER_ADMIN' },
+                { label: '管理员', value: 'ADMIN' },
+                { label: '普通用户', value: 'USER' },
+              ]
+            : [{ label: '普通用户', value: 'USER' }];
         return (
           <Select
             value={role}
@@ -164,10 +174,7 @@ export default function AdminUserPage() {
             style={{ width: 130 }}
             disabled={updating === record.id}
             onChange={(value) => handleRoleChange(record, value)}
-            options={[
-              { label: '管理员', value: 'ADMIN' },
-              { label: '普通用户', value: 'USER' },
-            ]}
+            options={options}
           />
         );
       },
@@ -182,7 +189,11 @@ export default function AdminUserPage() {
           value={status}
           popupClassName="admin-select-dropdown"
           style={{ width: 110 }}
-          disabled={updating === record.id}
+          disabled={
+            updating === record.id ||
+            isSelf(record) ||
+            (record.role === 'SUPER_ADMIN' && user?.role !== 'SUPER_ADMIN')
+          }
           onChange={(value) => handleStatusChange(record, value)}
           options={[
             { label: '启用', value: 'ACTIVE' },

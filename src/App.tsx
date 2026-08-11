@@ -11,6 +11,9 @@ import SmartWorkbenchPage from './pages/SmartWorkbenchPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminUserPage from './pages/AdminUserPage';
+
+const roleLabel = (role?: string) =>
+  role === 'SUPER_ADMIN' ? '超级管理员' : role === 'ADMIN' ? '管理员' : '普通用户';
 import AuthGuard from './auth/AuthGuard';
 import { useAuth } from './auth/useAuth';
 import TourGuide from './components/TourGuide';
@@ -81,7 +84,7 @@ function AppLayout() {
         onClick: handleLogout,
       },
     ];
-    if (user?.role === 'ADMIN') {
+    if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') {
       items.unshift({
         key: 'admin',
         icon: <SettingOutlined />,
@@ -143,16 +146,27 @@ function AppLayout() {
                   <span
                     className="nav-role-badge"
                     style={{
-                      background: user?.role === 'ADMIN'
-                        ? 'rgba(59,130,246,0.10)'
-                        : 'rgba(100,116,139,0.08)',
-                      color: user?.role === 'ADMIN' ? '#3b82f6' : '#64748b',
-                      border: user?.role === 'ADMIN'
-                        ? '1px solid rgba(59,130,246,0.18)'
-                        : '1px solid rgba(100,116,139,0.12)',
+                      background:
+                        user?.role === 'SUPER_ADMIN'
+                          ? 'rgba(245,158,11,0.12)'
+                          : user?.role === 'ADMIN'
+                            ? 'rgba(59,130,246,0.10)'
+                            : 'rgba(100,116,139,0.08)',
+                      color:
+                        user?.role === 'SUPER_ADMIN'
+                          ? '#d97706'
+                          : user?.role === 'ADMIN'
+                            ? '#3b82f6'
+                            : '#64748b',
+                      border:
+                        user?.role === 'SUPER_ADMIN'
+                          ? '1px solid rgba(245,158,11,0.25)'
+                          : user?.role === 'ADMIN'
+                            ? '1px solid rgba(59,130,246,0.18)'
+                            : '1px solid rgba(100,116,139,0.12)',
                     }}
                   >
-                    {user?.role}
+                    {roleLabel(user?.role)}
                   </span>
                   <Dropdown menu={{ items: dropdownItems }} placement="bottomRight" trigger={['click']}>
                     <Button

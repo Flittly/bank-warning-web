@@ -20,7 +20,7 @@ export default function AuthGuard({ requireAdmin = false }: AuthGuardProps) {
     return <Navigate to="/login" replace />;
   }
 
-  if (requireAdmin && user?.role !== 'ADMIN') {
+  if (requireAdmin && user?.role !== 'ADMIN' && user?.role !== 'SUPER_ADMIN') {
     return <Navigate to="/" replace />;
   }
 
