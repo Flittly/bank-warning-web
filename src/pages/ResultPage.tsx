@@ -1967,7 +1967,7 @@ function ResultPage(props: ResultPageProps) {
                         try {
                           const res = await fetch(`/v0/bank/ai/skill/download/${encodeURIComponent(s.name)}`, { method: 'POST' });
                           const d = await res.json();
-                          if (d.success) alert('下载成功，已提交审批，重启后端后生效');
+                          if (d.success) alert('下载成功，已提交审批，立即生效');
                           else alert('下载失败: ' + (d.error || '未知错误'));
                         } catch (err: any) { alert('下载失败: ' + (err.message || '网络错误')); }
                       }}
