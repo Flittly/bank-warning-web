@@ -193,6 +193,9 @@ function EditorMap(props: EditorMapProps) {
   useEffect(() => { uploadedDataRef.current = uploadedData; }, [uploadedData]);
   useEffect(() => { tiffBoundsDataRef.current = tiffBoundsData; }, [tiffBoundsData]);
 
+  const selectedLinesRef = useRef<Set<string>>(selectedLines);
+  useEffect(() => { selectedLinesRef.current = selectedLines; }, [selectedLines]);
+
   const groupsRef = useRef<SelectionGroup[]>(groups);
   useEffect(() => {
     groupsRef.current = groups;
@@ -610,6 +613,50 @@ function EditorMap(props: EditorMapProps) {
 
         const arrowSrc = map.getSource('perpendicular-arrows') as mapboxgl.GeoJSONSource;
         if (arrowSrc) arrowSrc.setData(buildCrossLineArrowPoints(perpendicularDataRef.current));
+      }
+
+      // 刷新后恢复“已选岸段”高亮与段落选择组（同步 effect 早于地图创建执行时会被跳过）
+      if (uploadedDataRef.current && selectedLinesRef.current && selectedLinesRef.current.size > 0) {
+        const selectedSrc = map.getSource('selected-shore-lines') as mapboxgl.GeoJSONSource;
+        if (selectedSrc) {
+          const selectedFeatures = uploadedDataRef.current.features.filter((f: any, index: number) =>
+            selectedLinesRef.current.has(getShoreLineId(f, index)),
+          );
+          selectedSrc.setData(turf.featureCollection(selectedFeatures));
+        }
+      }
+      if (groupsRef.current && groupsRef.current.length > 0) {
+        const pointSource = map.getSource('selection-points') as mapboxgl.GeoJSONSource;
+        if (pointSource) {
+          const allPoints: GeoJSON.Feature<GeoJSON.Point>[] = [];
+          groupsRef.current.forEach((group) => {
+            if (group.start !== null) {
+              allPoints.push(turf.along(group.line, group.start, { units: 'meters' }) as GeoJSON.Feature<GeoJSON.Point>);
+            }
+            if (group.end !== null) {
+              allPoints.push(turf.along(group.line, group.end, { units: 'meters' }) as GeoJSON.Feature<GeoJSON.Point>);
+            }
+          });
+          pointSource.setData(turf.featureCollection(allPoints));
+        }
+        const activeLineSource = map.getSource('active-line') as mapboxgl.GeoJSONSource;
+        if (activeLineSource) {
+          const segments: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+          groupsRef.current.forEach((group) => {
+            if (group.start !== null && group.end !== null) {
+              try {
+                const start = Math.min(group.start, group.end);
+                const end = Math.max(group.start, group.end);
+                const segment = turf.lineSliceAlong(group.line, start, end, { units: 'meters' });
+                segment.properties = { groupId: group.id };
+                segments.push(segment as GeoJSON.Feature<GeoJSON.LineString>);
+              } catch (err) {
+                console.warn('切割线段失败', err);
+              }
+            }
+          });
+          activeLineSource.setData(turf.featureCollection(segments));
+        }
       }
 
       map.addLayer({
