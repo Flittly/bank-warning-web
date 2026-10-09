@@ -1,0 +1,336 @@
+/* ============================================================
+   Skill 安全档位页
+   视觉语言沿用 AdminUserPage.css 的浅色毛玻璃体系
+   ============================================================ */
+
+.ssp-badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+
+.ssp-badge-loose {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.ssp-badge-standard {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border-color: rgba(59, 130, 246, 0.22);
+}
+
+.ssp-badge-strict {
+  background: rgba(124, 58, 237, 0.1);
+  color: #6d28d9;
+  border-color: rgba(124, 58, 237, 0.22);
+}
+
+/* ==================== 熔断横幅 ==================== */
+.ssp-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+}
+
+.ssp-banner-danger {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  color: #b91c1c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.ssp-banner-danger > .anticon {
+  font-size: 1.1rem;
+  margin-top: 2px;
+}
+
+.ssp-banner div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ssp-banner span {
+  color: #7f1d1d;
+  opacity: 0.85;
+}
+
+/* ==================== 风险提示 ==================== */
+.ssp-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.ssp-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.09);
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  color: #92400e;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.ssp-warning-dot {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.2);
+  color: #b45309;
+  font-weight: 800;
+  font-size: 0.72rem;
+}
+
+/* ==================== 分区 ==================== */
+.ssp-section {
+  margin-bottom: 22px;
+}
+
+.ssp-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.ssp-section-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: 0.02em;
+}
+
+.ssp-section-hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* ==================== 档位卡片 ==================== */
+.ssp-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+  gap: 14px;
+}
+
+.ssp-preset {
+  position: relative;
+  padding: 16px 18px;
+  border-radius: 18px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.4) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(168, 210, 255, 0.14) 0%, transparent 50%),
+    rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(16px) saturate(1.4) brightness(1.05);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 4px 20px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.ssp-preset:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 8px 26px rgba(0, 0, 0, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.ssp-preset:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
+.ssp-preset-loose.active {
+  border-color: rgba(16, 185, 129, 0.45);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.16), 0 6px 24px rgba(16, 185, 129, 0.12);
+}
+
+.ssp-preset-standard.active {
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.16), 0 6px 24px rgba(59, 130, 246, 0.12);
+}
+
+.ssp-preset-strict.active {
+  border-color: rgba(124, 58, 237, 0.45);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.16), 0 6px 24px rgba(124, 58, 237, 0.12);
+}
+
+.ssp-preset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ssp-preset-name {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1e293b;
+  letter-spacing: 0.02em;
+}
+
+.ssp-preset-loose .ssp-preset-name { color: #047857; }
+.ssp-preset-standard .ssp-preset-name { color: #2563eb; }
+.ssp-preset-strict .ssp-preset-name { color: #6d28d9; }
+
+.ssp-preset-desc {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: #64748b;
+  min-height: 3.1em;
+}
+
+.ssp-preset-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px dashed rgba(148, 163, 184, 0.35);
+}
+
+.ssp-preset-facts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 0.78rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.ssp-preset-facts li:last-child {
+  border-bottom: none;
+}
+
+.ssp-preset-facts span {
+  color: #94a3b8;
+}
+
+.ssp-preset-facts b {
+  color: #334155;
+  font-weight: 600;
+  text-align: right;
+}
+
+.ssp-meta {
+  margin-top: 10px;
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+/* ==================== 生效值 ==================== */
+.ssp-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+  gap: 14px;
+}
+
+.ssp-stage {
+  border-radius: 18px;
+  padding: 14px 16px;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.35) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(168, 210, 255, 0.14) 0%, transparent 50%),
+    rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px) saturate(1.4) brightness(1.05);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 4px 20px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.ssp-stage-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  letter-spacing: 0.02em;
+}
+
+.ssp-stage-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.ssp-knob {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 0.78rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.ssp-knob:last-child {
+  border-bottom: none;
+}
+
+.ssp-knob-label {
+  color: #64748b;
+}
+
+.ssp-knob-value {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ssp-value-ok { color: #059669; }
+.ssp-value-warn { color: #d97706; }
+.ssp-value-danger { color: #dc2626; }
+.ssp-value-text { color: #334155; }
+
+/* ==================== 确认弹窗 ==================== */
+.ssp-confirm p {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.ssp-confirm ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 0.8rem;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.ssp-confirm-note {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.07);
+  border: 1px solid rgba(59, 130, 246, 0.16);
+  color: #475569 !important;
+  font-size: 0.78rem !important;
+}

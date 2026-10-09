@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import { authHeaders } from '../../utils/apiClient';
 import * as turf from '@turf/turf';
 import { generatePerpendicularLines } from '../../utils/geometry';
@@ -117,6 +118,8 @@ async function generateSectionsAndCreateTaskCore(params: {
   setPerpendicularData: (v: GeoJSON.FeatureCollection | null) => void;
   setShowCrossLines: (v: boolean) => void;
   setGlobalProperties: (v: SectionParams | null) => void;
+  // 弹窗获取任务名称（返回 null 表示用户取消）
+  requestTaskName: () => Promise<string | null>;
   // 若为 true，则在生成断面前不将本地岸段同步上传到后端
   skipUploadBanks?: boolean;
   // 若为 true，则对每条断面沿起点->终点方向延长，直到与遇到的第一个岸线相交
@@ -134,7 +137,7 @@ async function generateSectionsAndCreateTaskCore(params: {
   } = params;
 
   if (selectedLines.size === 0) {
-    alert('请先选择用于分析的岸段');
+    message.warning('请先选择用于分析的岸段');
     return;
   }
 
@@ -187,13 +190,13 @@ async function generateSectionsAndCreateTaskCore(params: {
   try {
     const basicParamId = await ensureDefaultBasicParams();
     if (!basicParamId) {
-      alert('初始化默认参数失败，请检查后端连接');
+      message.error('初始化默认参数失败，请检查后端连接');
       return;
     }
 
-    const taskName = window.prompt('请输入任务名称：', '岸线分析任务');
+    const taskName = (await params.requestTaskName())?.trim();
     if (!taskName) {
-      alert('任务名称不能为空');
+      // 用户取消创建任务
       return;
     }
 
@@ -251,7 +254,7 @@ async function generateSectionsAndCreateTaskCore(params: {
     });
 
     if (taskBankIdSet.size === 0) {
-      alert('所选岸段中没有可用的 LineString / MultiLineString，无法创建任务');
+      message.error('所选岸段中没有可用的 LineString / MultiLineString，无法创建任务');
       return;
     }
 
@@ -469,10 +472,10 @@ async function generateSectionsAndCreateTaskCore(params: {
     setShowCrossLines(true);
 
     const modeLabel = params.extendToFirstShorelineIntersection ? '计算断面' : '精细断面';
-    alert(`任务创建成功！\n已为 ${selectedLines.size} 个岸段生成 ${allPerpendicularLines.length} 条${modeLabel}！`);
+    message.success(`任务创建成功！已为 ${selectedLines.size} 个岸段生成 ${allPerpendicularLines.length} 条${modeLabel}`);
   } catch (err: any) {
     console.error('生成断面失败:', err);
-    alert(`生成断面失败: ${err.message}`);
+    message.error(`生成断面失败: ${err.message}`);
   }
 }
 
@@ -485,6 +488,8 @@ export async function generateSectionsAndCreateTask(params: {
   setPerpendicularData: (v: GeoJSON.FeatureCollection | null) => void;
   setShowCrossLines: (v: boolean) => void;
   setGlobalProperties: (v: SectionParams | null) => void;
+  // 弹窗获取任务名称（返回 null 表示用户取消）
+  requestTaskName: () => Promise<string | null>;
   // 若为 true，则在生成断面前不将本地岸段同步上传到后端
   skipUploadBanks?: boolean;
 }) {
@@ -503,6 +508,8 @@ export async function generateComputeSectionsAndCreateTask(params: {
   setPerpendicularData: (v: GeoJSON.FeatureCollection | null) => void;
   setShowCrossLines: (v: boolean) => void;
   setGlobalProperties: (v: SectionParams | null) => void;
+  // 弹窗获取任务名称（返回 null 表示用户取消）
+  requestTaskName: () => Promise<string | null>;
   skipUploadBanks?: boolean;
 }) {
   await generateSectionsAndCreateTaskCore({
@@ -518,13 +525,13 @@ export async function runCurrentTask(params: {
   const { perpendicularData, setPage } = params;
 
   if (!perpendicularData || perpendicularData.features.length === 0) {
-    alert('请先绘制断面');
+    message.warning('请先绘制断面');
     return;
   }
 
   const taskId = getCurrentTaskId();
   if (!taskId) {
-    alert('未找到任务ID，请先绘制断面');
+    message.warning('未找到任务ID，请先绘制断面');
     return;
   }
 
@@ -548,12 +555,12 @@ export async function runCurrentTask(params: {
     console.log('任务运行结果:', result);
 
     if (result.success) {
-      alert(`任务运行成功！\n状态: ${result.status}\n已处理 ${result.results?.length || 0} 个断面`);
+      message.success(`任务运行成功！状态: ${result.status}，已处理 ${result.results?.length || 0} 个断面`);
     } else {
-      alert('任务运行失败，请检查控制台');
+      message.error('任务运行失败，请检查控制台');
     }
   } catch (err: any) {
     console.error('运行任务失败:', err);
-    alert(`运行任务失败: ${err.message}`);
+    message.error(`运行任务失败: ${err.message}`);
   }
 }

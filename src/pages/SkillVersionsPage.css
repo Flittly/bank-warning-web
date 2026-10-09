@@ -1,0 +1,33 @@
+/* ============================================================
+   Skill 版本与隔离页
+   ============================================================ */
+
+.svp-hint {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: #475569;
+  background: rgba(59, 130, 246, 0.07);
+  border: 1px solid rgba(59, 130, 246, 0.16);
+}
+
+.svp-hint code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(100, 116, 139, 0.12);
+  font-size: 0.76rem;
+  color: #334155;
+}
+
+.svp-hint strong {
+  color: #1e293b;
+}
+
+.svp-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}

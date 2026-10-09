@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import * as turf from '@turf/turf';
 import type { ChangeEvent } from 'react';
 import { ensureDefaultBasicParams } from '../../services/basicParamsService';
@@ -107,7 +108,7 @@ export function uploadMainGeoJsonAction(params: {
         });
       }
     } catch {
-      alert('解析 GeoJSON 失败，请检查文件格式');
+      message.error('解析 GeoJSON 失败，请检查文件格式');
     }
   };
   reader.readAsText(file);
@@ -117,6 +118,8 @@ export async function uploadSectionsGeoJsonAndCreateTaskAction(params: {
   e: ChangeEvent<HTMLInputElement>;
   setPerpendicularData: (v: GeoJSON.FeatureCollection | null) => void;
   setShowCrossLines: (v: boolean) => void;
+  // 弹窗获取任务名称（返回 null 表示用户取消）
+  requestTaskName: () => Promise<string | null>;
 }) {
   const { e, setPerpendicularData, setShowCrossLines } = params;
 
@@ -134,19 +137,19 @@ export async function uploadSectionsGeoJsonAndCreateTaskAction(params: {
     >[];
 
     if (lineFeatures.length === 0) {
-      alert('GeoJSON 中未找到 LineString 类型的断面要素');
+      message.warning('GeoJSON 中未找到 LineString 类型的断面要素');
       return;
     }
 
     const basicParamId = await ensureDefaultBasicParams();
     if (!basicParamId) {
-      alert('初始化默认参数失败，请检查后端连接');
+      message.error('初始化默认参数失败，请检查后端连接');
       return;
     }
 
-    const taskName = window.prompt('请输入任务名称：', '导入断面任务');
+    const taskName = (await params.requestTaskName())?.trim();
     if (!taskName) {
-      alert('任务名称不能为空');
+      // 用户取消创建任务
       return;
     }
 
@@ -264,10 +267,10 @@ export async function uploadSectionsGeoJsonAndCreateTaskAction(params: {
     setPerpendicularData(turf.featureCollection(lineFeatures));
     setShowCrossLines(true);
 
-    alert(`导入断面任务创建成功！共导入 ${lineFeatures.length} 条断面。`);
+    message.success(`导入断面任务创建成功！共导入 ${lineFeatures.length} 条断面`);
   } catch (err: any) {
     console.error('导入断面失败:', err);
-    alert(`导入断面失败: ${err.message}`);
+    message.error(`导入断面失败: ${err.message}`);
   } finally {
     e.target.value = '';
   }
@@ -277,7 +280,7 @@ export function exportSectionsSampleAction(params: { perpendicularData: GeoJSON.
   const { perpendicularData } = params;
 
   if (!perpendicularData || perpendicularData.features.length === 0) {
-    alert('当前没有可导出的断面，请先生成或导入断面');
+    message.warning('当前没有可导出的断面，请先生成或导入断面');
     return;
   }
 

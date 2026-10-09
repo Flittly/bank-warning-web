@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Edit3, BarChart2, BookOpen, HelpCircle, Menu } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
-import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import ResultPage from './pages/ResultPage';
@@ -12,6 +12,8 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminUserPage from './pages/AdminUserPage';
 import SkillApprovalsPage from './pages/SkillApprovalsPage';
+import SkillSecurityPage from './pages/SkillSecurityPage';
+import SkillVersionsPage from './pages/SkillVersionsPage';
 
 const roleLabel = (role?: string) =>
   role === 'SUPER_ADMIN' ? '超级管理员' : role === 'ADMIN' ? '管理员' : '普通用户';
@@ -92,6 +94,18 @@ function AppLayout() {
         icon: <SafetyCertificateOutlined />,
         label: 'Skill 审批',
         onClick: () => navigate('/admin/skill-approvals'),
+      });
+      items.unshift({
+        key: 'skillSecurity',
+        icon: <ThunderboltOutlined />,
+        label: 'Skill 安全档位',
+        onClick: () => navigate('/admin/skill-security'),
+      });
+      items.unshift({
+        key: 'skillVersions',
+        icon: <HistoryOutlined />,
+        label: 'Skill 版本与隔离',
+        onClick: () => navigate('/admin/skill-versions'),
       });
       items.unshift({
         key: 'admin',
@@ -238,6 +252,8 @@ function App() {
         <Route element={<AuthGuard requireAdmin />}>
           <Route path="/admin/users" element={<AdminUserPage />} />
           <Route path="/admin/skill-approvals" element={<SkillApprovalsPage />} />
+          <Route path="/admin/skill-security" element={<SkillSecurityPage />} />
+          <Route path="/admin/skill-versions" element={<SkillVersionsPage />} />
         </Route>
       </Route>
     </Routes>

@@ -32,10 +32,44 @@
     inset 0 1px 0 rgba(255,255,255,0.4);
 }
 
+.containerCompact {
+  width: min(420px, calc(100vw - 32px));
+  max-width: 420px;
+}
+
 .title {
   margin-top: 0;
   font-size: 1.05rem;
   color: #1e293b;
+}
+
+.errorText {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #dc2626;
+}
+
+.confirmContent {
+  font-size: 0.85rem;
+  color: #475569;
+  line-height: 1.7;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.dangerButton {
+  padding: 8px 20px;
+  background: linear-gradient(135deg,
+    rgba(255,255,255,0.3) 0%,
+    rgba(254,202,202,0.25) 100%);
+  backdrop-filter: blur(8px) saturate(1.3);
+  -webkit-backdrop-filter: blur(8px) saturate(1.3);
+  color: #b91c1c;
+  border: 1.5px solid rgba(220,38,38,0.35);
+  border-radius: 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(220,38,38,0.08), inset 0 1px 0 rgba(255,255,255,0.5);
 }
 
 .fieldset {

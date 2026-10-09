@@ -1,8 +1,11 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import * as turf from '@turf/turf';
+import { message } from 'antd';
 import '../App.css';
 import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
+import TaskNameModal from '../components/TaskNameModal';
+import ConfirmModal from '../components/ConfirmModal';
 import EditorSidebar from '../components/EditorSidebar';
 import EditorMap from '../components/EditorMap';
 import ChatPanel from '../components/ChatPanel';
@@ -95,6 +98,15 @@ function EditorPage(props: EditorPageProps) {
   const [showGlobalPropertiesModal, setShowGlobalPropertiesModal] = useState<boolean>(false);
   const [editingPropertiesGroupId, setEditingPropertiesGroupId] = useState<string | null>(null);
   const [editingBankParams, setEditingBankParams] = useState<{bankId: string; bankName: string; config: any} | null>(null);
+  const [taskNameDialog, setTaskNameDialog] = useState<{ defaultName: string } | null>(null);
+  const taskNameResolveRef = useRef<((name: string | null) => void) | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    content: string;
+    confirmText?: string;
+    danger?: boolean;
+  } | null>(null);
+  const confirmDialogResolveRef = useRef<((ok: boolean) => void) | null>(null);
   const [isSelectingShoreLines, setIsSelectingShoreLines] = useState<boolean>(false);
   const [isSelectingStartEnd, setIsSelectingStartEnd] = useState<boolean>(false);
   const [bankGroups, setBankGroups] = useState<Array<{ region_code: string; count: number }>>([]);
@@ -108,6 +120,46 @@ function EditorPage(props: EditorPageProps) {
   const clearSelectedCrossLines = () => {
     setSelectedCrossLineIndex(null);
     setSelectedCrossLineIndices(new Set());
+  };
+
+  // 创建任务：弹出居中弹窗获取任务名称（替代原生 window.prompt）
+  const requestTaskName = (defaultName: string) =>
+    new Promise<string | null>((resolve) => {
+      taskNameResolveRef.current?.(null);
+      taskNameResolveRef.current = resolve;
+      setTaskNameDialog({ defaultName });
+    });
+
+  const closeTaskNameDialog = (name: string | null) => {
+    setTaskNameDialog(null);
+    const resolve = taskNameResolveRef.current;
+    taskNameResolveRef.current = null;
+    resolve?.(name);
+  };
+
+  // 通用确认弹窗（替代原生 window.confirm）
+  const requestConfirm = (options: {
+    title?: string;
+    content: string;
+    confirmText?: string;
+    danger?: boolean;
+  }) =>
+    new Promise<boolean>((resolve) => {
+      confirmDialogResolveRef.current?.(false);
+      confirmDialogResolveRef.current = resolve;
+      setConfirmDialog({
+        title: options.title ?? '确认操作',
+        content: options.content,
+        confirmText: options.confirmText,
+        danger: options.danger,
+      });
+    });
+
+  const closeConfirmDialog = (ok: boolean) => {
+    setConfirmDialog(null);
+    const resolve = confirmDialogResolveRef.current;
+    confirmDialogResolveRef.current = null;
+    resolve?.(ok);
   };
 
   const loadBasicParamAsGlobalProperties = async (paramIdStr: string) => {
@@ -448,7 +500,7 @@ function EditorPage(props: EditorPageProps) {
   // 同时与后端联动：对有 sectionId 的断面调用 DELETE /v0/bank/sections/{sectionId}
   const deleteAllInvalidSections = async () => {
     if (!perpendicularData || perpendicularData.features.length === 0) {
-      alert('当前没有断面可删除');
+      message.warning('当前没有断面可删除');
       return;
     }
 
@@ -468,7 +520,7 @@ function EditorPage(props: EditorPageProps) {
     const invalidFeatures = features.filter((f) => isInvalid(f?.properties));
     const removedCount = invalidFeatures.length;
     if (removedCount <= 0) {
-      alert('没有未通过检查的断面');
+      message.warning('没有未通过检查的断面');
       return;
     }
 
@@ -483,11 +535,15 @@ function EditorPage(props: EditorPageProps) {
     const localOnlyCount = removedCount - uniqueSectionIds.length;
 
     const kept = features.filter((f) => !isInvalid(f?.properties));
-    const ok = window.confirm(
-      `确认删除所有未通过检查的断面？\n\n` +
-      `将删除 ${removedCount} 条，保留 ${kept.length} 条。\n` +
-      `其中可同步后端删除 ${uniqueSectionIds.length} 条${localOnlyCount > 0 ? `，仅本地删除 ${localOnlyCount} 条（缺少 sectionId）` : ''}。`,
-    );
+    const ok = await requestConfirm({
+      title: '一键删除错误断面',
+      confirmText: '删除',
+      danger: true,
+      content:
+        `确认删除所有未通过检查的断面？\n\n` +
+        `将删除 ${removedCount} 条，保留 ${kept.length} 条。\n` +
+        `其中可同步后端删除 ${uniqueSectionIds.length} 条${localOnlyCount > 0 ? `，仅本地删除 ${localOnlyCount} 条（缺少 sectionId）` : ''}。`,
+    });
     if (!ok) return;
 
     // 先更新前端（删除后索引会重排）
@@ -501,7 +557,7 @@ function EditorPage(props: EditorPageProps) {
 
     // 再同步后端（仅删除有 sectionId 的）
     if (uniqueSectionIds.length === 0) {
-      alert(`已删除 ${removedCount} 条断面（未同步到后端）`);
+      message.success(`已删除 ${removedCount} 条断面（未同步到后端）`);
       return;
     }
 
@@ -528,11 +584,11 @@ function EditorPage(props: EditorPageProps) {
           }))
           .filter((x) => !x.ok),
       );
-      alert(
+      message.warning(
         `已删除 ${removedCount} 条断面；后端同步成功 ${uniqueSectionIds.length - failCount}，失败 ${failCount}`,
       );
     } else {
-      alert(`已删除 ${removedCount} 条断面（已同步到后端）`);
+      message.success(`已删除 ${removedCount} 条断面（已同步到后端）`);
     }
   };
 
@@ -1898,6 +1954,7 @@ function EditorPage(props: EditorPageProps) {
         setPerpendicularData,
         setShowCrossLines,
         setGlobalProperties,
+        requestTaskName: () => requestTaskName('岸线分析任务'),
         skipUploadBanks: true,
       });
     } finally {
@@ -1924,6 +1981,7 @@ function EditorPage(props: EditorPageProps) {
         setPerpendicularData,
         setShowCrossLines,
         setGlobalProperties,
+        requestTaskName: () => requestTaskName('岸线分析任务'),
         // 与精细断面保持一致：不强制同步上传岸段
         skipUploadBanks: true,
       });
@@ -1981,6 +2039,7 @@ function EditorPage(props: EditorPageProps) {
         e,
         setPerpendicularData,
         setShowCrossLines,
+        requestTaskName: () => requestTaskName('导入断面任务'),
       });
     } finally {
       // 上传断面（导入）完成后刷新“获取岸段”下拉框数据
@@ -2000,7 +2059,7 @@ function EditorPage(props: EditorPageProps) {
     setGroups([]);
     setPerpendicularData(null);
     setEditingGroupId(null);
-    alert('已清除所有选择');
+    message.success('已清除所有选择');
   };
 
   // 删除单个组
@@ -2258,6 +2317,28 @@ function EditorPage(props: EditorPageProps) {
       <div data-tour="chat-panel" style={{ height: '100%', position: 'relative' }}>
         <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} />
       </div>
+
+      {/* 创建任务弹窗 */}
+      {taskNameDialog && (
+        <TaskNameModal
+          title="创建任务"
+          defaultValue={taskNameDialog.defaultName}
+          onConfirm={closeTaskNameDialog}
+          onCancel={() => closeTaskNameDialog(null)}
+        />
+      )}
+
+      {/* 通用确认弹窗 */}
+      {confirmDialog && (
+        <ConfirmModal
+          title={confirmDialog.title}
+          content={confirmDialog.content}
+          confirmText={confirmDialog.confirmText}
+          danger={confirmDialog.danger}
+          onConfirm={() => closeConfirmDialog(true)}
+          onCancel={() => closeConfirmDialog(false)}
+        />
+      )}
 
       {/* 全局属性配置弹窗 */}
       {showGlobalPropertiesModal && globalProperties && (
