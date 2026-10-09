@@ -130,7 +130,7 @@ function AppLayout() {
       <div className="main-nav">
         <div className="nav-logo" onClick={() => navigate('/')}>
           <img src="/logo.svg" alt="YRCW" width="36" height="42" style={{ flexShrink: 0 }} />
-          <span>长江崩岸监测预警应用系统</span>
+          <span>长江崩岸重点险工段智能风险评估应用平台</span>
         </div>
         <div className="nav-tabs">
           <button

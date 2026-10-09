@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🗺️ 长江河岸崩塌风险评估系统 — 前端应用
+# 🗺️ 长江崩岸重点险工段智能风险评估应用平台 — 前端应用
 
 **Yangtze River Bank Collapse Risk Assessment System — Frontend Web Application**
 
@@ -31,7 +31,7 @@
 
 ## 项目简介
 
-`bank-warning-web` 是长江河岸崩塌风险评估系统的 React 前端应用，负责：
+`bank-warning-web` 是长江崩岸重点险工段智能风险评估应用平台的 React 前端应用，负责：
 
 - 断面编辑工具：Mapbox 地图上交互式绘制、拖拽、编辑断面线
 - 任务管理面板：创建/查看/运行风险评估任务

@@ -65,7 +65,7 @@ function HomePage() {
       ))}
 
       <div className="home-center">
-        <h1 className="home-title">长江崩岸监测预警应用系统</h1>
+        <h1 className="home-title">长江崩岸重点险工段智能风险评估应用平台</h1>
         <p className="home-subtitle">YRCW · Yangtze River Collapse Warning</p>
         <button className="start-btn" onClick={() => navigate('/editor')}>进入系统</button>
       </div>

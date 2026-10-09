@@ -136,7 +136,7 @@ function LoginPage() {
           <div className="login-header">
             <p className="login-welcome-en">Welcome!</p>
             <p className="login-welcome-zh">欢迎！</p>
-            <p className="login-brand">长江崩岸监测预警应用系统</p>
+            <p className="login-brand">长江崩岸重点险工段智能风险评估应用平台</p>
           </div>
 
           <Form
