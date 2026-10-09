@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SectionParams } from '../types/sections';
 import TiffResourcePicker from './TiffResourcePicker';
 import styles from './Modal.module.css';
 import { updateSectionParams } from '../pages/editor/sectionApi';
+
+const TIDE_LABELS: Record<string, string> = { xc: '小潮', zc: '中潮', dc: '大潮' };
+
+const formatHydroLabel = (waterQs: string, tidalLevel: string) => {
+  const flow = waterQs ? `${waterQs} m³/s` : '未设流量';
+  const tide = TIDE_LABELS[tidalLevel] || tidalLevel || '未设潮位';
+  return `${flow} · ${tide}`;
+};
 
 interface SectionPropertiesModalProps {
   config: SectionParams | null;
@@ -27,6 +35,29 @@ function SectionPropertiesModal({
   const [isSaving, setIsSaving] = useState(false);
   const [applyScope, setApplyScope] = useState<string>('all');
   const [selectedBankIds, setSelectedBankIds] = useState<string[]>([]);
+  const [hydroOptions, setHydroOptions] = useState<Array<{ water_qs: string; tidal_level: string }>>([]);
+
+  const hydroValue =
+    params.water_qs || params.tidal_level ? `${params.water_qs || ''}|${params.tidal_level || ''}` : '';
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch('/v0/bank/hydro-conditions');
+        const data = await response.json();
+        if (!cancelled && Array.isArray(data?.conditions)) {
+          setHydroOptions(data.conditions);
+        }
+      } catch (err) {
+        console.error('获取水文条件失败:', err);
+        if (!cancelled) setHydroOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const updateDemField = (field: 'bench_id' | 'ref_id', nextValue: string) => {
     setParams((prev) => {
@@ -205,26 +236,32 @@ function SectionPropertiesModal({
             </div>
 
             <div>
-              <label>流量:</label>
-              <input
-                type="text"
-                value={params.water_qs || ''}
-                onChange={(e) => setParams({ ...params, water_qs: e.target.value })}
-                className={styles.input}
-              />
-            </div>
-
-            <div>
-              <label>潮位:</label>
+              <label>水文条件:</label>
               <select
-                value={params.tidal_level || ''}
-                onChange={(e) => setParams({ ...params, tidal_level: e.target.value })}
+                value={hydroValue}
+                onChange={(e) => {
+                  const [waterQs = '', tidalLevel = ''] = e.target.value.split('|');
+                  setParams({ ...params, water_qs: waterQs, tidal_level: tidalLevel });
+                }}
                 className={styles.input}
               >
                 <option value="">请选择</option>
-                <option value="xc">小潮</option>
-                <option value="zc">中潮</option>
-                <option value="dc">大潮</option>
+                {hydroOptions.map((option) => {
+                  const value = `${option.water_qs}|${option.tidal_level}`;
+                  return (
+                    <option key={value} value={value}>
+                      {formatHydroLabel(option.water_qs, option.tidal_level)}
+                    </option>
+                  );
+                })}
+                {hydroValue &&
+                  !hydroOptions.some(
+                    (option) => `${option.water_qs}|${option.tidal_level}` === hydroValue
+                  ) && (
+                    <option value={hydroValue}>
+                      {formatHydroLabel(params.water_qs || '', params.tidal_level || '')}（当前）
+                    </option>
+                  )}
               </select>
             </div>
           </div>
@@ -257,11 +294,11 @@ function SectionPropertiesModal({
 
         {/* 水深参数 */}
         <fieldset className={styles.fieldset}>
-          <legend className={styles.legend}>水深参数</legend>
+          <legend className={styles.legend}>砂土层厚度 / 黏土层厚度</legend>
 
           <div className={styles.grid2}>
             <div>
-              <label>hs:</label>
+              <label>砂土层厚度 (hs):</label>
               <input
                 type="number"
                 step="0.1"
@@ -272,7 +309,7 @@ function SectionPropertiesModal({
             </div>
 
             <div>
-              <label>hc:</label>
+              <label>黏土层厚度 (hc):</label>
               <input
                 type="number"
                 step="0.1"
@@ -284,38 +321,38 @@ function SectionPropertiesModal({
           </div>
         </fieldset>
 
-        {/* 防护控制参数 */}
+        {/* 护岸工程条件 */}
         <fieldset className={styles.fieldset}>
-          <legend className={styles.legend}>防护控制参数</legend>
+          <legend className={styles.legend}>护岸工程条件</legend>
 
           <div className={styles.grid2}>
             <div>
-              <label>防护等级:</label>
+              <label>护岸等级:</label>
               <select
                 value={params.protection_level || ''}
                 onChange={(e) => setParams({ ...params, protection_level: e.target.value })}
                 className={styles.input}
               >
                 <option value="">请选择</option>
-                <option value="systemic">系统防护</option>
-                <option value="normal">常规防护</option>
-                <option value="low">低防护</option>
-                <option value="no">无防护</option>
+                <option value="systemic">强</option>
+                <option value="normal">较强</option>
+                <option value="low">一般</option>
+                <option value="no">弱</option>
               </select>
             </div>
 
             <div>
-              <label>控制等级:</label>
+              <label>工程扰动控制等级:</label>
               <select
                 value={params.control_level || ''}
                 onChange={(e) => setParams({ ...params, control_level: e.target.value })}
                 className={styles.input}
               >
                 <option value="">请选择</option>
-                <option value="strict">严格控制</option>
-                <option value="normal">常规控制</option>
-                <option value="low">低控制</option>
-                <option value="no">无控制</option>
+                <option value="strict">强</option>
+                <option value="normal">较强</option>
+                <option value="low">一般</option>
+                <option value="no">弱</option>
               </select>
             </div>
           </div>

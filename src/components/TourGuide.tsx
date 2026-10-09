@@ -72,7 +72,7 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
     },
     {
       title: '参数配置',
-      description: '在此选择参数模板并配置全局属性，包括水位、潮位、保护等级等水文计算参数',
+      description: '在此选择参数模板并配置全局属性，包括水文条件、护岸等级、工程扰动控制等级等计算参数',
       target: () => getEl('[data-tour="param-config"]'),
       placement: 'right',
     },
