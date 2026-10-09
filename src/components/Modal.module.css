@@ -25,11 +25,41 @@
   border: 1px solid rgba(255, 255, 255, 0.35);
   max-width: 800px;
   max-height: 80vh;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
   box-shadow:
     0 0 0 1px rgba(255,255,255,0.15),
     0 8px 32px rgba(0,0,0,0.12),
     inset 0 1px 0 rgba(255,255,255,0.4);
+}
+
+.container::-webkit-scrollbar,
+.preBox::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.container::-webkit-scrollbar-track,
+.preBox::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.container::-webkit-scrollbar-thumb,
+.preBox::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 4px;
+}
+
+.container::-webkit-scrollbar-thumb:hover,
+.preBox::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+.container::-webkit-scrollbar-corner,
+.preBox::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .containerCompact {
@@ -157,6 +187,7 @@
   border: 1px solid rgba(0,0,0,0.06);
   border-radius: 12px;
   background: rgba(255,255,255,0.3);
+  min-inline-size: 0;
 }
 
 .legend {
@@ -248,6 +279,8 @@
   font-size: 12px;
   max-height: 300px;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
 }
 
 .tiffPickerCard {

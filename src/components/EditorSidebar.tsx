@@ -25,6 +25,7 @@ import {
 import { useState } from 'react';
 import type { SelectionGroup } from '../types/selection';
 import styles from './EditorSidebar.module.css';
+import modalStyles from './Modal.module.css';
 
 interface EditorSidebarProps {
   uploadedData: GeoJSON.FeatureCollection | null;
@@ -194,6 +195,7 @@ function EditorSidebar(props: EditorSidebarProps) {
   } = props;
 
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+  const [showUploadHelp, setShowUploadHelp] = useState(false);
   const activeSelectedBank = selectedBankGroup[selectedBankGroup.length - 1] || '';
 
   return (
@@ -214,6 +216,19 @@ function EditorSidebar(props: EditorSidebarProps) {
                   accept=".geojson,application/json"
                   onChange={handleFileUpload}
                 />
+                <button
+                  type="button"
+                  className={styles.helpBadge}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowUploadHelp(true);
+                  }}
+                  title="数据格式说明"
+                  aria-label="上传岸段数据格式说明"
+                >
+                  ?
+                </button>
               </label>
             </div>
 
@@ -735,6 +750,85 @@ function EditorSidebar(props: EditorSidebarProps) {
         </button>
         <span className={styles.hintText}>执行风险分析</span>
       </div>
+
+      {showUploadHelp && (
+        <div className={modalStyles.overlay} onClick={() => setShowUploadHelp(false)}>
+          <div
+            className={`${modalStyles.container} ${modalStyles.containerCompact}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className={modalStyles.title}>上传岸段 · 数据格式说明</h3>
+
+            <fieldset className={modalStyles.fieldset}>
+              <legend className={modalStyles.legend}>功能</legend>
+              <div className={modalStyles.confirmContent}>
+                选择本地 GeoJSON 文件，将文件中的线要素加载为地图上的岸段；其中的 LineString 岸段会自动逐条保存到后端岸段库。
+              </div>
+            </fieldset>
+
+            <fieldset className={modalStyles.fieldset}>
+              <legend className={modalStyles.legend}>数据格式要求</legend>
+              <div className={modalStyles.confirmContent}>
+                <div>· 文件格式：GeoJSON 文本文件（.geojson 或 .json，UTF-8 编码）</div>
+                <div>· 文件结构：FeatureCollection；单个 Feature 会被自动包装</div>
+                <div>· 几何类型：仅 LineString 会转换为岸段，MultiLineString 请先拆分</div>
+                <div>· 坐标：经纬度坐标（WGS84），高程 Z 值自动去除</div>
+              </div>
+            </fieldset>
+
+            <fieldset className={modalStyles.fieldset}>
+              <legend className={modalStyles.legend}>可选属性（properties）</legend>
+              <div className={modalStyles.confirmContent}>
+                <div>· name / bank_name：岸段名称，缺省为「文件名 线段序号」</div>
+                <div>· region_code：岸段代码，缺省使用上传时输入的代码</div>
+                <div>· description：岸段描述</div>
+                <div>· reversed：是否反向（true / false）</div>
+              </div>
+            </fieldset>
+
+            <fieldset className={modalStyles.fieldset}>
+              <legend className={modalStyles.legend}>操作流程</legend>
+              <div className={modalStyles.confirmContent}>
+                <div>1. 点击「上传岸段」选择本地文件</div>
+                <div>2. 输入岸段代码（如 Mzs，留空则使用 Unknown_region）</div>
+                <div>3. 解析成功后，岸段出现在地图和「本地岸段」列表中，并已同步到后端</div>
+                <div>4. 若提示「解析 GeoJSON 失败」，请检查文件是否为合法的 GeoJSON</div>
+              </div>
+            </fieldset>
+
+            <fieldset className={modalStyles.fieldset}>
+              <legend className={modalStyles.legend}>示例</legend>
+              <pre className={modalStyles.preBox}>{`{
+  "type": "FeatureCollection",
+  "features": [{
+    "type": "Feature",
+    "properties": {
+      "name": "示范岸段",
+      "region_code": "Mzs"
+    },
+    "geometry": {
+      "type": "LineString",
+      "coordinates": [
+        [118.70, 32.05],
+        [118.75, 32.08]
+      ]
+    }
+  }]
+}`}</pre>
+            </fieldset>
+
+            <div className={modalStyles.actions}>
+              <button
+                type="button"
+                className={modalStyles.primaryButton}
+                onClick={() => setShowUploadHelp(false)}
+              >
+                知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

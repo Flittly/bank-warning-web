@@ -267,6 +267,7 @@
   transition: all 0.2s;
   width: 100%;
   box-sizing: border-box;
+  position: relative;
   box-shadow:
     0 0 10px rgba(251, 191, 36, 0.1),
     inset 0 1px 0 rgba(255,255,255,0.5);
@@ -455,6 +456,35 @@
 
 .fileInput {
   display: none;
+}
+
+.helpBadge {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.helpBadge:hover {
+  color: #2563eb;
+  border-color: rgba(59, 130, 246, 0.5);
+  background: #eff6ff;
 }
 
 .mt12 {
