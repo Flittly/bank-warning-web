@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { getBasemapStyle } from '../map/basemapStyle';
 import '../App.css';
 import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
@@ -1567,10 +1568,7 @@ function ResultPage(props: ResultPageProps) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const style = satellite
-      ? 'mapbox://styles/mapbox/satellite-v9'
-      : 'mapbox://styles/mapbox/light-v10';
-    map.setStyle(style);
+    map.setStyle(getBasemapStyle(satellite ? 'satellite' : 'standard'));
   }, [satellite]);
 
   // 初始化地图（沿用 EditorPage 的风格）
@@ -1579,7 +1577,7 @@ function ResultPage(props: ResultPageProps) {
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v10',
+      style: getBasemapStyle('standard'),
       center: [119.89600633, 32.22907004],
       zoom: 7,
     });

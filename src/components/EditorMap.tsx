@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
+import type { ExpressionSpecification } from 'mapbox-gl';
 import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { getBasemapStyle } from '../map/basemapStyle';
 import type { SelectionGroup } from '../types/selection';
 import { getVerticalFootCoordsFromAny } from '../utils/verticalFootPoint';
 import { useEditorStore } from '../store/useEditorStore';
@@ -110,6 +112,59 @@ function buildValidationColorExpression() {
     '#ef4444',
     '#f59e0b',
   ] as any;
+}
+
+function buildArrowIconImageData(color: string): ImageData {
+  const size = 24;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas 2d context unavailable');
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size * 0.42;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.55, cy - r);
+  ctx.lineTo(cx - r * 0.55, cy + r);
+  ctx.lineTo(cx + r, cy);
+  ctx.closePath();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = size * 0.14;
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.fill();
+  return ctx.getImageData(0, 0, size, size);
+}
+
+const ARROW_ICON_DEFS: Array<[string, string]> = [
+  ['cross-arrow-green', '#22c55e'],
+  ['cross-arrow-red', '#ef4444'],
+  ['cross-arrow-amber', '#f59e0b'],
+];
+
+function ensureArrowIcons(map: mapboxgl.Map) {
+  ARROW_ICON_DEFS.forEach(([name, color]) => {
+    if (!map.hasImage(name)) map.addImage(name, buildArrowIconImageData(color));
+  });
+}
+
+function buildArrowIconExpression(): ExpressionSpecification {
+  // pending/unknown => amber, valid => green, invalid => red（与 buildValidationColorExpression 同步）
+  return [
+    'case',
+    ['==', ['get', 'validation_status'], 'valid'],
+    'cross-arrow-green',
+    ['==', ['get', 'validation_status'], 'invalid'],
+    'cross-arrow-red',
+    ['==', ['get', 'is_valid'], true],
+    'cross-arrow-green',
+    ['==', ['get', 'is_valid'], false],
+    'cross-arrow-red',
+    'cross-arrow-amber',
+  ] as unknown as ExpressionSpecification;
 }
 
 interface EditorMapProps {
@@ -565,8 +620,7 @@ function EditorMap(props: EditorMapProps) {
     }
   }, [props.colorBanks]);
 
-  let mapStyle = 'mapbox://styles/mapbox/light-v10';
-  if (props.satellite) mapStyle = 'mapbox://styles/mapbox/satellite-v9';
+  const mapStyle = getBasemapStyle(props.satellite ? 'satellite' : 'standard');
 
   // 初始化地图和交互
   useEffect(() => {
@@ -746,22 +800,18 @@ function EditorMap(props: EditorMapProps) {
         paint: { 'line-color': buildValidationColorExpression(), 'line-width': 4 },
       });
 
+      ensureArrowIcons(map);
       map.addLayer({
         id: 'perpendicular-arrows-layer',
         type: 'symbol',
         source: 'perpendicular-arrows',
         layout: {
-          'text-field': '▶',
-          'text-size': 20,
-          'text-rotate': ['get', 'iconRotate'],
-          'text-rotation-alignment': 'map',
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-        },
-        paint: {
-          'text-color': buildValidationColorExpression(),
-          'text-halo-color': '#ffffff',
-          'text-halo-width': 2,
+          'icon-image': buildArrowIconExpression(),
+          'icon-size': 1,
+          'icon-rotate': ['get', 'iconRotate'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
         },
       });
 
