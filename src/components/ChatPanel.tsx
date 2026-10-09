@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Plus, Trash2, Send, MessageCircle, Save } from 'lucide-react';
+import { getStoredAiModel, setStoredAiModel, onAiModelChanged } from '../utils/aiModelSettings';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -33,8 +34,8 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [models, setModels] = useState<{ name: string; label: string }[]>([]);
-  const [selectedModel, setSelectedModel] = useState('');
+  const [models, setModels] = useState<{ key: string; label: string }[]>([]);
+  const [selectedModel, setSelectedModel] = useState(() => getStoredAiModel());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,13 +43,23 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
     fetchModels();
   }, []);
 
+  useEffect(() => onAiModelChanged((key) => {
+    if (key) setSelectedModel(key);
+  }), []);
+
   const fetchModels = async () => {
     try {
       const res = await fetch('/v0/bank/ai/models');
       const data = await res.json();
       if (data.success && data.models) {
         setModels(data.models);
-        if (!selectedModel && data.models.length > 0) setSelectedModel(data.models[0].key);
+        if (data.models.length > 0) {
+          const stored = getStoredAiModel();
+          const keys = data.models.map((m: { key: string }) => m.key);
+          const next = stored && keys.includes(stored) ? stored : data.models[0].key;
+          if (next !== selectedModel) setSelectedModel(next);
+          if (next !== stored) setStoredAiModel(next);
+        }
       }
     } catch (e) { /* ignore */ }
   };
@@ -477,7 +488,10 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
             <div style={{ padding: '2px 16px 6px 16px', background: '#ffffff' }}>
               <select
                 value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
+                onChange={(e) => {
+                  setSelectedModel(e.target.value);
+                  setStoredAiModel(e.target.value);
+                }}
                 style={{
                   border: 'none', background: 'transparent',
                   fontSize: '0.68rem', color: '#94a3b8', outline: 'none',

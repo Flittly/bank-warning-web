@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Edit3, BarChart2, BookOpen, HelpCircle, Menu } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
-import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import ResultPage from './pages/ResultPage';
@@ -20,6 +20,7 @@ const roleLabel = (role?: string) =>
 import AuthGuard from './auth/AuthGuard';
 import { useAuth } from './auth/useAuth';
 import TourGuide from './components/TourGuide';
+import SettingsModal from './components/SettingsModal';
 import './App.css';
 
 function EditorPageWrapper() {
@@ -48,6 +49,7 @@ function AppLayout() {
   const currentPath = location.pathname;
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [showTour, setShowTour] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const tourCheckedRef = useRef(false);
 
   // 首次访问自动弹出新手引导
@@ -76,6 +78,12 @@ function AppLayout() {
         icon: <HelpCircle size={14} />,
         label: '新手引导',
         onClick: () => setShowTour(true),
+      },
+      {
+        key: 'settings',
+        icon: <SettingOutlined />,
+        label: '设置',
+        onClick: () => setShowSettings(true),
       },
       {
         type: 'divider' as const,
@@ -109,7 +117,7 @@ function AppLayout() {
       });
       items.unshift({
         key: 'admin',
-        icon: <SettingOutlined />,
+        icon: <TeamOutlined />,
         label: '用户管理',
         onClick: () => navigate('/admin/users'),
       });
@@ -227,6 +235,18 @@ function AppLayout() {
       <main className="app-main">
         <Outlet />
       </main>
+      {showSettings && (
+        <SettingsModal
+          username={user?.username}
+          roleLabel={roleLabel(user?.role)}
+          onClose={() => setShowSettings(false)}
+          onReplayTour={() => {
+            setShowSettings(false);
+            localStorage.removeItem('tour-seen');
+            setShowTour(true);
+          }}
+        />
+      )}
       <TourGuide open={showTour} onClose={handleTourClose} />
     </div>
   );

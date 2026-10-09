@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as turf from '@turf/turf';
 import { message } from 'antd';
 import '../App.css';
@@ -6,6 +6,7 @@ import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import TaskNameModal from '../components/TaskNameModal';
 import ConfirmModal from '../components/ConfirmModal';
+import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
 import EditorMap from '../components/EditorMap';
 import ChatPanel from '../components/ChatPanel';
@@ -102,7 +103,7 @@ function EditorPage(props: EditorPageProps) {
   const taskNameResolveRef = useRef<((name: string | null) => void) | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
-    content: string;
+    content: ReactNode;
     confirmText?: string;
     danger?: boolean;
   } | null>(null);
@@ -140,7 +141,7 @@ function EditorPage(props: EditorPageProps) {
   // 通用确认弹窗（替代原生 window.confirm）
   const requestConfirm = (options: {
     title?: string;
-    content: string;
+    content: ReactNode;
     confirmText?: string;
     danger?: boolean;
   }) =>
@@ -539,10 +540,28 @@ function EditorPage(props: EditorPageProps) {
       title: '一键删除错误断面',
       confirmText: '删除',
       danger: true,
-      content:
-        `确认删除所有未通过检查的断面？\n\n` +
-        `将删除 ${removedCount} 条，保留 ${kept.length} 条。\n` +
-        `其中可同步后端删除 ${uniqueSectionIds.length} 条${localOnlyCount > 0 ? `，仅本地删除 ${localOnlyCount} 条（缺少 sectionId）` : ''}。`,
+      content: (
+        <>
+          <div>确认删除所有未通过检查的断面？</div>
+          <div className={modalStyles.statLine}>
+            将删除{' '}
+            <span className={`${modalStyles.statNumber} ${modalStyles.statDanger}`}>{removedCount}</span> 条，保留{' '}
+            <span className={`${modalStyles.statNumber} ${modalStyles.statSuccess}`}>{kept.length}</span> 条。
+          </div>
+          <div className={modalStyles.statLine}>
+            其中可同步后端删除{' '}
+            <span className={`${modalStyles.statNumber} ${modalStyles.statInfo}`}>{uniqueSectionIds.length}</span> 条
+            {localOnlyCount > 0 && (
+              <span>
+                ，仅本地删除{' '}
+                <span className={`${modalStyles.statNumber} ${modalStyles.statWarning}`}>{localOnlyCount}</span>{' '}
+                条（缺少 sectionId）
+              </span>
+            )}
+            。
+          </div>
+        </>
+      ),
     });
     if (!ok) return;
 

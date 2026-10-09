@@ -389,18 +389,26 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: #1e293b;
-  color: white;
-  border: 3px solid #334155;
+  background: #ffffff;
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  color: #ffffff;
+  border: 3px solid #ffffff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 4px 14px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
   transition: all 0.2s;
   margin: 0 auto;
   position: relative;
   z-index: 1;
+}
+
+.analysisButton svg {
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.35));
 }
 
 .analysisButton::before {
@@ -425,15 +433,18 @@
 }
 
 .analysisButton:hover {
-  background: #0f172a;
-  border-color: #475569;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  background: #ffffff;
+  border-color: #ffffff;
+  box-shadow:
+    0 6px 20px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
   transform: scale(1.05);
 }
 
 .analysisButton:disabled {
-  background: #94a3b8;
-  border-color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.65);
+  color: #94a3b8;
+  border-color: #e2e8f0;
   cursor: not-allowed;
   box-shadow: none;
 }

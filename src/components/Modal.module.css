@@ -37,6 +37,54 @@
   max-width: 420px;
 }
 
+.containerMedium {
+  width: min(540px, calc(100vw - 32px));
+  max-width: 540px;
+}
+
+.inputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.inputRow .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.smallButton {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  color: #475569;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.infoRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.hint {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.primaryButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .title {
   margin-top: 0;
   font-size: 1.05rem;
@@ -55,6 +103,37 @@
   line-height: 1.7;
   white-space: pre-line;
   word-break: break-word;
+}
+
+.statLine {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: #334155;
+}
+
+.statNumber {
+  display: inline-block;
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: -2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.statDanger {
+  color: #ef4444;
+}
+
+.statSuccess {
+  color: #22c55e;
+}
+
+.statInfo {
+  color: #3b82f6;
+}
+
+.statWarning {
+  color: #f59e0b;
 }
 
 .dangerButton {
