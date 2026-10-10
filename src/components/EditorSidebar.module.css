@@ -15,7 +15,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  font-family: "STZhongsong", "华文中宋", "Songti SC", SimSun, serif;
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);

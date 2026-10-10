@@ -2,7 +2,7 @@
 
 # 🗺️ 长江崩岸重点险工段智能风险评估应用平台 — 前端应用
 
-**Yangtze River Bank Collapse Risk Assessment System — Frontend Web Application**
+**YRBC-IRAP — Yangtze River Bank Collapse Key Hazard Section Intelligent Risk Assessment Platform — Frontend Web Application**
 
 基于 React 19 + TypeScript + Vite + Mapbox GL JS 的单页应用，提供断面编辑、地图可视化、AI 对话分析和报告管理功能。
 
@@ -244,7 +244,7 @@ npm run preview
 
 <a id="english-version"></a>
 
-# 🗺️ Yangtze River Bank Collapse Risk Assessment System — Frontend Application
+# 🗺️ YRBC-IRAP — Yangtze River Bank Collapse Key Hazard Section Intelligent Risk Assessment Platform — Frontend Application
 
 A single-page application built with React 19 + TypeScript + Vite + Mapbox GL JS, providing section editing, map visualization, AI chat analysis, and report management.
 
@@ -266,7 +266,7 @@ A single-page application built with React 19 + TypeScript + Vite + Mapbox GL JS
 
 ## Introduction
 
-`bank-warning-web` is the React frontend for the Yangtze River Bank Collapse Risk Assessment System. It handles:
+`bank-warning-web` is the React frontend for YRBC-IRAP (Yangtze River Bank Collapse Key Hazard Section Intelligent Risk Assessment Platform). It handles:
 
 - Section editor: interactive drawing, dragging, and editing of cross-section lines on Mapbox
 - Task management panel: create/view/run risk assessment tasks

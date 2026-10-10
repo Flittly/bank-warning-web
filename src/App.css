@@ -47,11 +47,6 @@
 }
 
 /* ==================== 应用布局 ==================== */
-@font-face {
-  font-family: 'Qiji';
-  src: url('/fonts/黄令东齐伋复刻.ttf') format('truetype');
-}
-
 .app-container {
   display: flex;
   flex-direction: column;
@@ -78,7 +73,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-family: 'Qiji', 'KaiTi', 'STKaiti', serif;
+  font-family: "STZhongsong", "华文中宋", "Songti SC", SimSun, serif;
   font-weight: 400;
   color: #1e293b;
   cursor: pointer;
