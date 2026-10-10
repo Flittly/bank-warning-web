@@ -554,7 +554,7 @@ describe('actions', () => {
 Run: `npx vitest run src/tree/actions.test.ts`
 Expected: FAIL
 
-- [ ] **Step 3: 实现（完整注册 46 项操作用到的 key）**
+- [ ] **Step 3: 实现（注册节点触发的操作键，共 43 个）**
 
 Create `src/tree/actions.ts`:
 ```ts
@@ -1444,7 +1444,7 @@ git add src/pages/EditorPage.tsx
 git commit -m "feat(editor): 接线岸段类操作"
 ```
 
-## Task 15: 接线断面类操作（16 项）
+## Task 15: 接线断面类操作（12 项）
 
 **Files:**
 - Modify: `src/pages/EditorPage.tsx`（`handleTreeNodeAction` 内）
@@ -1479,7 +1479,7 @@ git add src/pages/EditorPage.tsx
 git commit -m "feat(editor): 接线断面类操作"
 ```
 
-## Task 16: 接线参数 / DEM / 任务类操作（12 项）
+## Task 16: 接线参数 / DEM / 任务类操作（13 项）
 
 **Files:**
 - Modify: `src/pages/EditorPage.tsx`（`handleTreeNodeAction` 内）
@@ -1613,7 +1613,7 @@ git branch -d feature/resource-tree-sidebar
 **1. 规格覆盖：**
 - 规格 §5 节点模型 → Task 2 ✓
 - §6 数据映射 → Task 3、4 ✓
-- §7 操作清单（46）→ Task 13-16（岸段14/断面16/参数DEM任务12/全局4 由工具栏承载）✓
+- §7 操作清单（规格 46 项）→ Task 13-16：其中 43 项为「节点触发」操作（岸段14/断面12/参数3/DEM4/任务6/全局4），已注册为 ActionKey；其余 3 项为「对话框内/选中后」操作（断面间距长度设置、生成时选段、断面平移/旋转/缩放），无需树操作键，由生成对话框与精调操作栏承载 ✓
 - §8 任务优先流程 → Task 17 ✓
 - §9 状态 → Task 6 ✓
 - §10 样式 → Task 7 ✓
