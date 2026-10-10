@@ -205,8 +205,9 @@ describe('buildParamsFolder', () => {
       { id: 54, param_id: 'PARAM_FLOOD', param_name: '丰水期方案' },
     ]);
     expect(folder.children?.length).toBe(2);
-    expect(folder.children?.[0]).toMatchObject({ id: 'param:53', kind: 'param', meta: '默认' });
-    expect(folder.children?.[1]).toMatchObject({ id: 'param:54', kind: 'param' });
+    // 键与 EditorPage 的匹配规则一致：param_id ?? id（见 EditorPage.tsx:281 / handleSelectBasicParam）
+    expect(folder.children?.[0]).toMatchObject({ id: 'param:PARAM_DEFAULT_TEMPLATE', kind: 'param', meta: '默认' });
+    expect(folder.children?.[1]).toMatchObject({ id: 'param:PARAM_FLOOD', kind: 'param' });
   });
 });
 
@@ -367,8 +368,7 @@ describe('resolveTaskRefs', () => {
   it('resolves section/param/dem references (no copies)', () => {
     const refs = resolveTaskRefs(
       { task_id: 't1' },
-      { sections: [{ section_id: 's1', bank_id: 'b1' }, { section_id: 's2', bank_id: 'b1' }] },
-      { bench_id: 'tiff/Mzs/2023/standard/202304/a.tif', ref_id: 'tiff/Mzs/2019/standard/201904/b.tif' },
+      { sections: [{ section_id: 's1', bank_id: 'b1' }, { section_id: 's2', bank_id: 'b1' }], bench_id: 'tiff/Mzs/2023/standard/202304/a.tif', ref_id: 'tiff/Mzs/2019/standard/201904/b.tif' },
     );
     expect(refs.find((r) => r.id === 'task-ref:t1:sections')?.meta).toBe('2');
     expect(refs.find((r) => r.id === 'task-ref:t1:dems')?.children?.length).toBe(2);
