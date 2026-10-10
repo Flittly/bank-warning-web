@@ -122,7 +122,7 @@ function EditorPage(props: EditorPageProps) {
   const [crossLineEditMode, setCrossLineEditMode] = useState<'none' | 'select' | 'add'>('none');
   const [selectedCrossLineIndex, setSelectedCrossLineIndex] = useState<number | null>(null);
   const [selectedCrossLineIndices, setSelectedCrossLineIndices] = useState<Set<number>>(new Set());
-  const [sidebarMode, setSidebarMode] = useState<'tree' | 'classic'>('tree');
+  const sidebarMode = useEditorStore((s) => s.sidebarMode);
   const [demPickerOpen, setDemPickerOpen] = useState(false);
   const bankUploadInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -2347,10 +2347,6 @@ function EditorPage(props: EditorPageProps) {
   return (
     <div className="editor-layout">
       <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', zIndex: 1, position: 'relative', flexShrink: 0 }}>
-          <button type="button" onClick={() => setSidebarMode('tree')} style={{ flex: 1, padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer', background: sidebarMode === 'tree' ? '#2563eb' : '#fff', color: sidebarMode === 'tree' ? '#fff' : '#334155' }}>资源树</button>
-          <button type="button" onClick={() => setSidebarMode('classic')} style={{ flex: 1, padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer', background: sidebarMode === 'classic' ? '#2563eb' : '#fff', color: sidebarMode === 'classic' ? '#fff' : '#334155' }}>经典面板</button>
-        </div>
         <div style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
           <input ref={bankUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleFileUpload} />
           <input ref={sectionsUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleSectionsFileUpload} />

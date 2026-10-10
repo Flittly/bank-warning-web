@@ -53,7 +53,6 @@ export default function ResourceTree({ root, onNodeSelect, onNodeDoubleClick, on
 
   return (
     <div className={styles.treeWrap}>
-      <div className={styles.legend}>数据资源 · 计算任务</div>
       <div
         className={styles.tree}
         ref={containerRef}

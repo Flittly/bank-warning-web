@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react';
 import {
-  ChevronRight, ChevronDown, Folder, FolderOpen, FileText, Map as MapIcon,
+  ChevronRight, ChevronDown, Folder, Database, ListTodo, FileText, Map as MapIcon,
   Layers, Settings, Zap, Scissors, Trash2, Eye, EyeOff, Target, Ruler,
   CircleCheck, Download, RotateCw, Move, Plus, Play, ChartColumn, Upload,
   Eraser, Globe, Palette, Check,
@@ -11,7 +11,7 @@ import styles from './ResourceSidebar.module.css';
 
 const ICONS: Record<string, any> = {
   folder: Folder, bank: MapIcon, section: FileText, param: Settings,
-  dem: Layers, task: ChartColumn,
+  dem: Layers, task: ChartColumn, resources: Database, tasks: ListTodo,
 };
 const ACTION_ICONS: Record<string, any> = {
   upload: Upload, palette: Palette, eye: Eye, eyeOff: EyeOff, target: Target,
@@ -45,8 +45,7 @@ export default function ResourceTreeNode({
   node, depth, expanded, selected, onToggle, onSelect, onDoubleClick, onAction, onContextMenu,
 }: Props) {
   const hasChildren = Boolean(node.children && node.children.length > 0);
-  const Icon = ICONS[node.kind] || FileText;
-  const RowIcon = hasChildren && expanded ? (node.kind === 'folder' || node.kind === 'group' ? FolderOpen : Icon) : Icon;
+  const Icon = ICONS[node.icon || node.kind] || FileText;
   const hoverKeys = (HOVER_ACTIONS[node.kind] || []).slice(0, 3);
 
   const handleClick = (e: MouseEvent) => {
@@ -67,7 +66,7 @@ export default function ResourceTreeNode({
       <span className={styles.chevron}>
         {hasChildren ? (expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : null}
       </span>
-      <span className={styles.icon}><RowIcon size={14} /></span>
+      <span className={styles.icon}><Icon size={14} /></span>
       <span className={styles.label}>{node.label}</span>
       {node.meta ? <span className={styles.meta}>{node.meta}</span> : null}
       {hoverKeys.length > 0 && (

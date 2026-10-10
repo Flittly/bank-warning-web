@@ -133,7 +133,7 @@ export function buildTasksGroup(tasks: any[]): TreeNode {
       actions: ['task.run', 'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete'],
     };
   });
-  return { id: 'group:tasks', kind: 'group', label: '计算任务', icon: 'task', selectable: false, meta: String(children.length), children, actions: ['task.create'] };
+  return { id: 'group:tasks', kind: 'group', label: '计算任务', icon: 'tasks', selectable: false, meta: String(children.length), children, actions: ['task.create'] };
 }
 
 export function resolveTaskRefs(
@@ -208,6 +208,7 @@ export function buildResourceTree(data: {
         id: 'group:resources',
         kind: 'group',
         label: '数据资源',
+        icon: 'resources',
         selectable: false,
         children: [
           buildBanksFolder(data.banks || []),

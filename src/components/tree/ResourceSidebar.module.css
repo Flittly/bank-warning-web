@@ -107,7 +107,6 @@
   background: var(--tree-sel-bg);
   color: var(--tree-sel-fg);
   border-color: rgba(37, 99, 235, 0.28);
-  box-shadow: inset 2px 0 0 var(--tree-accent);
 }
 .rowInvalid {
   opacity: 0.5;
