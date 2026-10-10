@@ -10,6 +10,11 @@
 
 **依据规格：** `bank-warning-web/docs/superpowers/specs/2026-10-10-resource-tree-sidebar-design.md`
 
+**执行修订说明（取代计划内旧写法）：**
+- 刷新统一走 store：上传/删除后用 `useResourceTreeStore.getState().bumpData()`（`dataVersion` 变化驱动 `ResourceSidebar` 重新拉取）；删除任务用 `removeTask(taskId)`；生成/删除断面后用 `invalidateSections(taskId)`。**不要**使用 `window.dispatchEvent('resource-tree-refresh')`。
+- store 已导出 `ResourceTreeState`，并提供 `setLoading` / `bumpData` / `invalidateSections` / `removeTask`。
+- 参数模板键为 `param_id ?? id`；`resolveTaskRefs` 为 2 参（bench_id/ref_id 在 data 内）。
+
 ---
 
 ## 文件结构（先定边界）
