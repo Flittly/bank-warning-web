@@ -10,6 +10,7 @@ import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
 import ResourceSidebar from '../components/tree/ResourceSidebar';
 import EditorMap from '../components/EditorMap';
+import TiffResourcePicker from '../components/TiffResourcePicker';
 import type { TreeNode } from '../tree/types';
 import { useResourceTreeStore } from '../store/useResourceTreeStore';
 import { authHeaders } from '../utils/apiClient';
@@ -122,6 +123,7 @@ function EditorPage(props: EditorPageProps) {
   const [selectedCrossLineIndex, setSelectedCrossLineIndex] = useState<number | null>(null);
   const [selectedCrossLineIndices, setSelectedCrossLineIndices] = useState<Set<number>>(new Set());
   const [sidebarMode, setSidebarMode] = useState<'tree' | 'classic'>('tree');
+  const [demPickerOpen, setDemPickerOpen] = useState(false);
   const bankUploadInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsUploadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2172,15 +2174,37 @@ function EditorPage(props: EditorPageProps) {
   const bumpTreeData = () => useResourceTreeStore.getState().bumpData();
 
   const handleTreeNodeSelect = (node: TreeNode) => {
-    if (node.kind === 'task' && node.ref?.key) {
-      useResourceTreeStore.getState().setCurrentTask(node.ref.key);
-      setCurrentTaskId(node.ref.key);
+    const key = node.ref?.key || '';
+    if (node.kind === 'task' && key) {
+      useResourceTreeStore.getState().setCurrentTask(key);
+      setCurrentTaskId(key);
+      return;
+    }
+    if (node.ref?.entity === 'bank' && key) {
+      // 地图联动：把岸段加载到地图上（可见即高亮）
+      void loadBankById(key);
+      return;
+    }
+    if (node.ref?.entity === 'section' && key) {
+      const features = perpendicularData?.features || [];
+      const idx = features.findIndex((f: any) => {
+        const p = f.properties || {};
+        return String(p.sectionId ?? p.section_id ?? '') === key;
+      });
+      if (idx >= 0) setSelectedCrossLineIndex(idx);
+      return;
+    }
+    if (node.ref?.entity === 'dem') {
+      setShowTiffBounds(true);
+      return;
     }
   };
 
   const handleTreeNodeDoubleClick = (node: TreeNode) => {
     if (node.ref?.entity === 'bank') {
       void loadBankById(node.ref.key);
+    } else if (node.ref?.entity === 'dem') {
+      setShowTiffBounds(true);
     }
   };
 
@@ -2257,7 +2281,24 @@ function EditorPage(props: EditorPageProps) {
       case 'section.export': handleExportSections(); break;
       case 'section.reverse': await reverseSelectedCrossLine(); break;
       case 'section.fineTune': toggleCrossLineSelection(); break;
-      case 'section.batchParams': await openGlobalPropertiesModal(); break;
+      case 'section.batchParams': {
+        const features = perpendicularData?.features || [];
+        const ids = features
+          .map((f: any) => f.properties?.sectionId ?? f.properties?.section_id)
+          .filter(Boolean) as string[];
+        if (ids.length === 0) { message.warning('当前无断面可批量设置'); break; }
+        if (!globalProperties) { message.warning('请先选择参数模板'); break; }
+        const ok = await requestConfirm({ title: '断面批量参数', content: `将当前参数模板应用到 ${ids.length} 个断面？` });
+        if (ok) {
+          await fetch('/v0/bank/sections/batch-params', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify({ section_ids: ids, params: globalProperties }),
+          });
+          message.success(`已应用参数到 ${ids.length} 个断面`);
+        }
+        break;
+      }
       case 'section.props': await configureSelectedCrossLineProperties(); break;
       case 'section.delete': await deleteSelectedCrossLine(); break;
 
@@ -2265,8 +2306,8 @@ function EditorPage(props: EditorPageProps) {
       case 'param.props': await openGlobalPropertiesModal(); break;
       case 'param.editSectionParams': await configureSelectedCrossLineProperties(); break;
 
-      case 'dem.select': await openGlobalPropertiesModal(); break;
-      case 'dem.upload': await openGlobalPropertiesModal(); break;
+      case 'dem.select':
+      case 'dem.upload': setDemPickerOpen(true); break;
       case 'dem.toggleBounds': setShowTiffBounds(!showTiffBounds); break;
       case 'dem.delete': {
         const svc = await import('../services/tiffService');
@@ -2535,6 +2576,31 @@ function EditorPage(props: EditorPageProps) {
           onConfirm={() => closeConfirmDialog(true)}
           onCancel={() => closeConfirmDialog(false)}
         />
+      )}
+
+      {/* DEM 选择 / 上传弹窗 */}
+      {demPickerOpen && (
+        <div className={modalStyles.overlay} onClick={() => setDemPickerOpen(false)}>
+          <div
+            className={`${modalStyles.container} ${modalStyles.containerCompact}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className={modalStyles.title}>选择 / 上传 DEM</h3>
+            <TiffResourcePicker
+              label="DEM 资源"
+              value=""
+              onConfirm={(key) => {
+                if (key) setShowTiffBounds(true);
+                setDemPickerOpen(false);
+              }}
+            />
+            <div className={modalStyles.actions}>
+              <button type="button" className={modalStyles.cancelButton} onClick={() => setDemPickerOpen(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 全局属性配置弹窗 */}

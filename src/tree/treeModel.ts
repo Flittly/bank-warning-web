@@ -220,3 +220,21 @@ export function buildResourceTree(data: {
     ],
   };
 }
+
+export interface FlatRow {
+  node: TreeNode;
+  depth: number;
+}
+
+/** 按展开态把树摊平为可见行序列（用于虚拟滚动） */
+export function flattenTree(root: TreeNode, expanded: Record<string, boolean>): FlatRow[] {
+  const rows: FlatRow[] = [];
+  const walk = (node: TreeNode, depth: number) => {
+    rows.push({ node, depth });
+    if (node.children && node.children.length > 0 && expanded[node.id]) {
+      for (const child of node.children) walk(child, depth + 1);
+    }
+  };
+  for (const child of root.children || []) walk(child, 0);
+  return rows;
+}

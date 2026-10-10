@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBanksFolder, buildParamsFolder, buildDemFolder, buildSectionsFolder, buildTasksGroup, resolveTaskRefs, buildResourceTree } from './treeModel';
+import { buildBanksFolder, buildParamsFolder, buildDemFolder, buildSectionsFolder, buildTasksGroup, resolveTaskRefs, buildResourceTree, flattenTree } from './treeModel';
 
 describe('buildBanksFolder', () => {
   it('maps banks to nodes, skips clipped', () => {
@@ -84,5 +84,18 @@ describe('buildResourceTree', () => {
     const resources = root.children?.find((c) => c.id === 'group:resources');
     expect(resources?.children?.length).toBe(4);
     expect(resources?.children?.map((c) => c.id)).toEqual(['folder:banks', 'folder:sections', 'folder:params', 'folder:dems']);
+  });
+});
+
+describe('flattenTree', () => {
+  it('includes only expanded descendants, with depth', () => {
+    const root: any = { id: 'root', children: [{ id: 'a', children: [{ id: 'a1', children: [{ id: 'a1x' }] }] }] };
+    expect(flattenTree(root, {}).map((r) => r.node.id)).toEqual(['a']);
+    const rows = flattenTree(root, { a: true, a1: true });
+    expect(rows.map((r) => r.node.id)).toEqual(['a', 'a1', 'a1x']);
+    expect(rows.map((r) => r.depth)).toEqual([0, 1, 2]);
+  });
+  it('handles empty root', () => {
+    expect(flattenTree({ id: 'root' } as any, {})).toEqual([]);
   });
 });
