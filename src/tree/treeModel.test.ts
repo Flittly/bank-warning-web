@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBanksFolder, buildParamsFolder, buildDemFolder } from './treeModel';
+import { buildBanksFolder, buildParamsFolder, buildDemFolder, buildSectionsFolder, buildTasksGroup, resolveTaskRefs, buildResourceTree } from './treeModel';
 
 describe('buildBanksFolder', () => {
   it('maps banks to nodes, skips clipped', () => {
@@ -43,8 +43,6 @@ describe('buildDemFolder', () => {
   });
 });
 
-import { buildSectionsFolder, buildTasksGroup, resolveTaskRefs } from './treeModel';
-
 describe('buildSectionsFolder', () => {
   it('groups sections by task and exposes counts', () => {
     const folder = buildSectionsFolder([
@@ -73,5 +71,18 @@ describe('resolveTaskRefs', () => {
     );
     expect(refs.find((r) => r.id === 'task-ref:t1:sections')?.meta).toBe('2');
     expect(refs.find((r) => r.id === 'task-ref:t1:dems')?.children?.length).toBe(2);
+  });
+});
+
+describe('buildResourceTree', () => {
+  it('builds root with resources and tasks groups', () => {
+    const root = buildResourceTree({ banks: [{ bank_id: 'b1' }], params: [], tiffs: [], tasks: [{ task_id: 't1', task_name: 'X' }], sections: [] });
+    expect(root.id).toBe('root');
+    const groupIds = (root.children || []).map((c) => c.id);
+    expect(groupIds).toContain('group:resources');
+    expect(groupIds).toContain('group:tasks');
+    const resources = root.children?.find((c) => c.id === 'group:resources');
+    expect(resources?.children?.length).toBe(4);
+    expect(resources?.children?.map((c) => c.id)).toEqual(['folder:banks', 'folder:sections', 'folder:params', 'folder:dems']);
   });
 });

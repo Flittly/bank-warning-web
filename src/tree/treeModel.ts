@@ -2,7 +2,10 @@ import type { TreeNode } from './types';
 
 export function buildBanksFolder(banks: any[]): TreeNode {
   const children: TreeNode[] = (banks || [])
-    .filter((b) => !String(b?.bank_id || '').includes('_clip_'))
+    .filter((b) => {
+      const id = String(b?.bank_id || '');
+      return id && !id.includes('_clip_');
+    })
     .map((b) => {
       const bankId = String(b.bank_id);
       const name = String(b.bank_name || b.bankName || bankId);
@@ -79,18 +82,19 @@ export function buildDemFolder(tiffs: any[]): TreeNode {
     }
     children.push({ id: `dem-seg:${seg}`, kind: 'folder', label: seg, selectable: false, meta: String(years.size), children: yearNodes });
   }
-  return { id: 'folder:dems', kind: 'folder', label: 'DEM 资源', icon: 'dem', selectable: false, meta: String((tiffs || []).length), children, actions: ['dem.upload'] };
+  const total = children.reduce((n, seg) => n + (seg.children?.reduce((m, y) => m + (y.children?.length || 0), 0) || 0), 0);
+  return { id: 'folder:dems', kind: 'folder', label: 'DEM 资源', icon: 'dem', selectable: false, meta: String(total), children, actions: ['dem.upload'] };
 }
 
 export function buildSectionsFolder(sections: any[]): TreeNode {
-  const byTask = new Map<string, TreeNode[]>();
+  const byTask = new Map<string, { name: string; nodes: TreeNode[] }>();
   for (const s of sections || []) {
-    const taskId = String(s?.task_id || 'unknown');
+    const taskId = String(s?.task_id ?? 'unknown');
     const secId = String(s?.section_id || s?.id || '');
     if (!secId) continue;
-    if (!byTask.has(taskId)) byTask.set(taskId, []);
-    byTask.get(taskId)!.push({
-      id: `section:${secId}`,
+    if (!byTask.has(taskId)) byTask.set(taskId, { name: String(s?.task_name || taskId), nodes: [] });
+    byTask.get(taskId)!.nodes.push({
+      id: `section:${taskId}:${secId}`,
       kind: 'section',
       label: `#${secId}`,
       icon: 'section',
@@ -100,21 +104,24 @@ export function buildSectionsFolder(sections: any[]): TreeNode {
       actions: ['section.reverse', 'section.props', 'section.delete'],
     });
   }
-  const children: TreeNode[] = [...byTask.entries()].map(([taskId, secs]) => ({
+  const children: TreeNode[] = [...byTask.entries()].map(([taskId, g]) => ({
     id: `sections-task:${taskId}`,
     kind: 'folder',
-    label: taskId,
+    label: g.name,
     selectable: false,
-    meta: String(secs.length),
-    children: secs,
+    meta: String(g.nodes.length),
+    children: g.nodes,
     actions: ['section.validate', 'section.deleteInvalid', 'section.export', 'section.reverse', 'section.batchParams', 'section.fineTune'],
   }));
-  return { id: 'folder:sections', kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String((sections || []).length), children, actions: ['section.upload', 'section.generateDisplay', 'section.toggleVisible'] };
+  const total = children.reduce((n, g) => n + (g.children?.length || 0), 0);
+  return { id: 'folder:sections', kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(total), children, actions: ['section.upload', 'section.generateDisplay', 'section.toggleVisible'] };
 }
 
 export function buildTasksGroup(tasks: any[]): TreeNode {
-  const children: TreeNode[] = (tasks || []).map((t: any) => {
-    const tid = String(t.task_id ?? t.id);
+  const children: TreeNode[] = (tasks || [])
+    .filter((t: any) => t?.task_id != null || t?.id != null)
+    .map((t: any) => {
+      const tid = String(t.task_id ?? t.id);
     return {
       id: `task:${tid}`,
       kind: 'task' as const,
@@ -136,7 +143,10 @@ export function resolveTaskRefs(
   const tid = String(task?.task_id ?? task?.id);
   const secs = data.sections || [];
   const byBank = new Map<string, number>();
-  for (const s of secs) byBank.set(String(s.bank_id || '未知'), (byBank.get(String(s.bank_id || '未知')) || 0) + 1);
+  for (const s of secs) {
+    const bankKey = String(s.bank_id || '未知');
+    byBank.set(bankKey, (byBank.get(bankKey) || 0) + 1);
+  }
   const bankChildren: TreeNode[] = [...byBank.entries()].map(([bankId, count]) => ({
     id: `task-ref:${tid}:bank:${bankId}`,
     kind: 'folder',
@@ -161,14 +171,17 @@ export function resolveTaskRefs(
     meta: '引用',
     ref: data.paramKey ? { entity: 'param', key: data.paramKey } : undefined,
   };
-  const demChildren: TreeNode[] = [data.bench_id, data.ref_id]
-    .filter(Boolean)
-    .map((key, i) => ({
+  const demChildren: TreeNode[] = [
+    { key: data.bench_id, meta: '基准' },
+    { key: data.ref_id, meta: '对照' },
+  ]
+    .filter((d) => d.key)
+    .map((d, i) => ({
       id: `task-ref:${tid}:dem:${i}`,
       kind: 'dem' as const,
-      label: String(key).split('/').pop() || String(key),
-      meta: i === 0 ? '基准' : '对照',
-      ref: { entity: 'dem' as const, key: String(key) },
+      label: String(d.key).split('/').pop() || String(d.key),
+      meta: d.meta,
+      ref: { entity: 'dem' as const, key: String(d.key) },
       selectable: true,
       actions: ['dem.toggleBounds'],
     }));
