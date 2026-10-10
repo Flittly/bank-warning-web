@@ -334,17 +334,17 @@ function EditorPage(props: EditorPageProps) {
 
   const selectBanksByTiffRange = () => {
     const bounds = filteredTiffBoundsData?.features?.[0];
-    if (!bounds) { alert('请先选择一个带 DEM 的参数模板'); return; }
+    if (!bounds) { message.warning('请先选择一个带 DEM 的参数模板'); return; }
     const banks = bankList.filter((b: any) => {
       const geom = b.bank_geometry || b.geometry;
       try {
         return turf.booleanIntersects(geom, bounds.geometry);
       } catch { return false; }
     });
-    if (banks.length === 0) { alert('没有岸段在所选 DEM 范围内'); return; }
+    if (banks.length === 0) { message.info('没有岸段在所选 DEM 范围内'); return; }
     const ids = banks.map((b: any) => String(b.bank_id));
     ids.forEach(id => loadBankById(id));
-    alert(`已加载 ${banks.length} 条岸段到地图`);
+    message.success(`已加载 ${banks.length} 条岸段到地图`);
   };
 
   const validateSectionAsync = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
@@ -1368,13 +1368,13 @@ function EditorPage(props: EditorPageProps) {
   // 反转选中的断面（交换端点并同步到后端如果存在）
   const reverseSelectedCrossLine = async () => {
     if (!perpendicularData || perpendicularData.features.length === 0) {
-      alert('当前没有断面可反切');
+      message.warning('当前没有断面可反切');
       return;
     }
 
     const indices = getSelectedCrossLineIndices();
     if (indices.length === 0) {
-      alert('请先选择要反切的断面');
+      message.warning('请先选择要反切的断面');
       return;
     }
 
@@ -1382,7 +1382,7 @@ function EditorPage(props: EditorPageProps) {
       (i) => Number.isFinite(i) && i >= 0 && i < perpendicularData.features.length,
     );
     if (unique.length === 0) {
-      alert('请选择有效的断面');
+      message.warning('请选择有效的断面');
       return;
     }
 
@@ -1422,10 +1422,8 @@ function EditorPage(props: EditorPageProps) {
     if (sectionIdsToSync.length > 0) {
       const results = await Promise.allSettled(
         sectionIdsToSync.map((sectionId) =>
-          fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}`, {
+          fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}/reverse`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reverse: true }),
           }).then((res) => {
             if (!res.ok) throw new Error(res.statusText);
             return true;
@@ -1435,7 +1433,7 @@ function EditorPage(props: EditorPageProps) {
 
       const failedCount = results.filter((r) => r.status === 'rejected').length;
       if (failedCount > 0) {
-        alert(`反切同步后端失败 ${failedCount} 条（其余已完成）`);
+        message.warning(`反切同步后端失败 ${failedCount} 条（其余已完成）`, 5);
       }
     }
   };
@@ -1523,17 +1521,17 @@ function EditorPage(props: EditorPageProps) {
     const { shoreLineIndex, shoreLineId } = params;
 
     if (!uploadedData) {
-      alert('未加载岸段数据');
+      message.warning('未加载岸段数据');
       return;
     }
 
     if (!perpendicularData || perpendicularData.features.length === 0) {
-      alert('请先生成断面后再修正');
+      message.warning('请先生成断面后再修正');
       return;
     }
 
     if (!selectedLines.has(shoreLineId)) {
-      alert('修正仅对已选岸段生效');
+      message.warning('修正仅对已选岸段生效');
       return;
     }
 
@@ -1572,7 +1570,7 @@ function EditorPage(props: EditorPageProps) {
     });
 
     if (reversedIndices.length === 0) {
-      alert('该岸段下未找到可反转的断面');
+      message.info('该岸段下未找到可反转的断面');
       return;
     }
 
@@ -1598,16 +1596,14 @@ function EditorPage(props: EditorPageProps) {
     const actionLabel = nextReversed ? '反转' : '反转回'
 
     if (sectionsToSync.length === 0) {
-      alert(`已修正岸段 ${shoreLineId}（reversed=${String(nextReversed)}）：${actionLabel} ${reversedIndices.length} 条断面（未同步到后端）`);
+      message.warning(`已修正岸段 ${shoreLineId}（reversed=${String(nextReversed)}）：${actionLabel} ${reversedIndices.length} 条断面（未同步到后端）`);
       return;
     }
 
     const results = await Promise.allSettled(
       sectionsToSync.map((sectionId) =>
-        fetch(`/v0/bank/sections/${sectionId}`, {
+        fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}/reverse`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reverse: true }),
         }).then((res) => {
           if (!res.ok) throw new Error(res.statusText);
           return true;
@@ -1619,21 +1615,22 @@ function EditorPage(props: EditorPageProps) {
     const failedCount = results.length - successCount;
 
     if (failedCount > 0) {
-      alert(
+      message.warning(
         `已修正岸段 ${shoreLineId}（reversed=${String(nextReversed)}）：${actionLabel} ${reversedIndices.length} 条断面；后端同步成功 ${successCount}，失败 ${failedCount}`,
+        5,
       );
     } else {
-      alert(`已修正岸段 ${shoreLineId}（reversed=${String(nextReversed)}）：${actionLabel} ${reversedIndices.length} 条断面（已同步到后端）`);
+      message.success(`已修正岸段 ${shoreLineId}（reversed=${String(nextReversed)}）：${actionLabel} ${reversedIndices.length} 条断面（已同步到后端）`);
     }
   };
 
   const sendSelectedShoreLinesGeoJson = async () => {
     if (!uploadedData) {
-      alert('未加载岸段数据');
+      message.warning('未加载岸段数据');
       return;
     }
     if (selectedLines.size === 0) {
-      alert('请先选择用于生成断面的岸段');
+      message.warning('请先选择用于生成断面的岸段');
       return;
     }
 
@@ -1685,7 +1682,7 @@ function EditorPage(props: EditorPageProps) {
     });
 
     if (banksToSend.length === 0) {
-      alert('没有可发送的岸段（仅支持 LineString / MultiLineString）');
+      message.warning('没有可发送的岸段（仅支持 LineString / MultiLineString）');
       return;
     }
 
@@ -1693,7 +1690,8 @@ function EditorPage(props: EditorPageProps) {
       const results: Array<{ bank_id: string; ok: boolean; status?: number; message?: string }> = [];
 
       for (const bank of banksToSend) {
-        const payload = { banks: [bank], overwrite: false };
+        // overwrite=true：bank_id 已存在时覆盖更新（重复上传视为最新数据）
+        const payload = { banks: [bank], overwrite: true };
         try {
           console.log('POST /v0/bank/banks payload for', bank.bank_id, JSON.stringify(payload, null, 2));
         } catch (e) {
@@ -1724,15 +1722,15 @@ function EditorPage(props: EditorPageProps) {
       if (fail.length > 0) {
         const first = fail[0];
         console.error('发送岸段失败明细:', fail);
-        alert(`发送完成：成功 ${okCount}，失败 ${fail.length}。首个失败 bank_id=${first.bank_id}：${first.message}`);
+        message.error(`发送完成：成功 ${okCount}，失败 ${fail.length}。首个失败 bank_id=${first.bank_id}：${first.message}`, 6);
       } else {
-        alert(`已成功发送 ${okCount} 条岸段到后端`);
+        message.success(`已成功发送 ${okCount} 条岸段到后端`);
       }
 
       await fetchBankGroups();
     } catch (err: any) {
       console.error('发送岸段到 /v0/bank/banks 失败:', err);
-      alert(`发送岸段失败: ${err?.message || String(err)}`);
+      message.error(`发送岸段失败: ${err?.message || String(err)}`);
     }
   };
 
@@ -2013,13 +2011,13 @@ function EditorPage(props: EditorPageProps) {
   // 开始分析：运行任务中的所有断面
   const handleStartAnalysis = async () => {
     if (!perpendicularData) {
-      alert('请先绘制断面');
+      message.warning('请先绘制断面');
       return;
     }
 
     const check = await validateAllSectionsBeforeAnalysis();
     if (!check.ok) {
-      alert(check.reason || '断面校验未通过，已拒绝执行分析');
+      message.warning(check.reason || '断面校验未通过，已拒绝执行分析', 5);
       return;
     }
 
