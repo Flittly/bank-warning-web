@@ -42,3 +42,36 @@ describe('buildDemFolder', () => {
     expect(dem).toMatchObject({ kind: 'dem', ref: { entity: 'dem', key: 'tiff/Mzs/2019/standard/201904/b.tif' } });
   });
 });
+
+import { buildSectionsFolder, buildTasksGroup, resolveTaskRefs } from './treeModel';
+
+describe('buildSectionsFolder', () => {
+  it('groups sections by task and exposes counts', () => {
+    const folder = buildSectionsFolder([
+      { task_id: 't1', task_name: '任务1234', section_id: 's1', bank_id: 'b1' },
+      { task_id: 't1', task_name: '任务1234', section_id: 's2', bank_id: 'b1' },
+    ]);
+    const g = folder.children?.[0];
+    expect(g?.id).toBe('sections-task:t1');
+    expect(g?.meta).toBe('2');
+    expect(g?.children?.[0]).toMatchObject({ kind: 'section', ref: { entity: 'section', key: 's1' } });
+  });
+});
+
+describe('buildTasksGroup', () => {
+  it('creates task nodes', () => {
+    const group = buildTasksGroup([{ task_id: 't1', task_name: '任务1234' }]);
+    expect(group.children?.[0]).toMatchObject({ id: 'task:t1', kind: 'task', label: '任务1234' });
+  });
+});
+
+describe('resolveTaskRefs', () => {
+  it('resolves section/param/dem references (no copies)', () => {
+    const refs = resolveTaskRefs(
+      { task_id: 't1' },
+      { sections: [{ section_id: 's1', bank_id: 'b1' }, { section_id: 's2', bank_id: 'b1' }], bench_id: 'tiff/Mzs/2023/standard/202304/a.tif', ref_id: 'tiff/Mzs/2019/standard/201904/b.tif' },
+    );
+    expect(refs.find((r) => r.id === 'task-ref:t1:sections')?.meta).toBe('2');
+    expect(refs.find((r) => r.id === 'task-ref:t1:dems')?.children?.length).toBe(2);
+  });
+});
