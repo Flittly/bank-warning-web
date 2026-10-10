@@ -1,9 +1,8 @@
-﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams } from 'react-router-dom';
+﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Edit3, BarChart2, BookOpen, HelpCircle, Menu } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
-import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import ResultPage from './pages/ResultPage';
 import KnowledgePage from './pages/KnowledgePage';
@@ -27,7 +26,6 @@ function EditorPageWrapper() {
   const navigate = useNavigate();
   return <EditorPage setPage={(page, taskId) => {
     if (page === 'result') navigate(`/result/${taskId || ''}`);
-    if (page === 'home') navigate('/');
     if (page === 'editor') navigate('/editor');
   }} />;
 }
@@ -68,7 +66,7 @@ function AppLayout() {
 
   const handleLogout = () => {
     logout();
-    navigate('/');
+    navigate('/login');
   };
 
   const dropdownItems = useMemo(() => {
@@ -128,9 +126,12 @@ function AppLayout() {
   return (
     <div className="app-container">
       <div className="main-nav">
-        <div className="nav-logo" onClick={() => navigate('/')}>
+        <div className="nav-logo" onClick={() => navigate('/editor')}>
           <img src="/logo.png" alt="YRBC-IRAP" width="48" height="40" style={{ flexShrink: 0, objectFit: 'contain' }} />
-          <span>长江崩岸重点险工段智能风险评估应用平台</span>
+          <div className="nav-titles">
+            <span className="nav-title">长江崩岸重点险工段智能风险评估应用平台</span>
+            <span className="nav-title-en">Yangtze River Bank Collapse Key Hazard Section Intelligent Risk Assessment Platform</span>
+          </div>
         </div>
         <div className="nav-tabs">
           <button
@@ -258,7 +259,7 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route element={<AuthGuard />}>
-        <Route index element={<HomePage />} />
+        <Route index element={<Navigate to="/editor" replace />} />
         <Route element={<AppLayout />}>
           <Route path="/editor" element={<EditorPageWrapper />} />
           <Route path="/result" element={<ResultPageWrapper />} />

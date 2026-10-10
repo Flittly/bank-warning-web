@@ -19,7 +19,7 @@ export default function RegisterPage() {
       const { confirmPassword: _confirmPassword, ...registerData } = values;
       await register(registerData);
       message.success('注册成功');
-      navigate('/', { replace: true });
+      navigate('/editor', { replace: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : '注册失败，请稍后重试';
       message.error(msg);

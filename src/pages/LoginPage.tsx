@@ -111,7 +111,7 @@ function LoginPage() {
     try {
       await login({ username: values.username, password: values.password });
       message.success('登录成功');
-      navigate('/');
+      navigate('/editor');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '登录失败，请重试';
       message.error(msg);

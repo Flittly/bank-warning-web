@@ -77,8 +77,25 @@
   font-weight: 400;
   color: #1e293b;
   cursor: pointer;
+}
+
+.nav-titles {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.nav-title {
   font-size: 1.05rem;
   letter-spacing: 0.05em;
+}
+
+.nav-title-en {
+  font-size: 8px;
+  letter-spacing: 0;
+  color: #94a3b8;
+  white-space: nowrap;
+  margin-top: 1px;
 }
 
 .nav-tabs {

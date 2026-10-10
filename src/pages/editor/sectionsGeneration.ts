@@ -520,7 +520,7 @@ export async function generateComputeSectionsAndCreateTask(params: {
 
 export async function runCurrentTask(params: { 
   perpendicularData: GeoJSON.FeatureCollection;
-  setPage?: (page: 'home' | 'editor' | 'result', taskId?: string) => void;
+  setPage?: (page: 'editor' | 'result', taskId?: string) => void;
 }) {
   const { perpendicularData, setPage } = params;
 

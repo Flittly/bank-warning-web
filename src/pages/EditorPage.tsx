@@ -47,7 +47,7 @@ import {
 import { getCurrentTaskId } from './editor/taskState';
 
 interface EditorPageProps {
-  setPage?: (page: 'home' | 'editor' | 'result', taskId?: string) => void;
+  setPage?: (page: 'editor' | 'result', taskId?: string) => void;
 }
 
 function EditorPage(props: EditorPageProps) {
