@@ -227,29 +227,45 @@ function EditorPage(props: EditorPageProps) {
     return String(p.bank_id || p.bankId || `line-${index}`);
   };
 
+  // 校验补丁按帧合并：几十/上百个断面并发校验时，每个 fetch 回调各 set 一次会触发
+  // React 19 useSyncExternalStore 的 forceStoreRerender 风暴（渲染被反复打断重排），
+  // 单轮渲染内嵌套更新超过 50 次即抛 "Maximum update depth exceeded"，并被当时执行的
+  // validateSectionAsync 的 catch 记为该断面的 validation_error。合并为每帧最多一次
+  // set 后，渲染可以正常 commit（嵌套计数随 commit 归零），竞争消失。
+  const pendingValidationPatchesRef = useRef<Map<string, Record<string, any>>>(new Map());
+  const validationPatchScheduledRef = useRef(false);
+
   const patchSectionValidationProps = (sectionId: string, patch: Record<string, any>) => {
-    setPerpendicularData((prev) => {
-      if (!prev) return prev;
-      const features = [...prev.features] as any[];
-      let changed = false;
+    const merged = pendingValidationPatchesRef.current;
+    merged.set(sectionId, { ...(merged.get(sectionId) || {}), ...patch });
+    if (validationPatchScheduledRef.current) return;
+    validationPatchScheduledRef.current = true;
 
-      for (let i = 0; i < features.length; i++) {
-        const f = features[i];
-        const sid = f?.properties?.sectionId;
-        if (!sid || sid !== sectionId) continue;
+    const flush = () => {
+      validationPatchScheduledRef.current = false;
+      if (merged.size === 0) return;
+      const pending = new Map(merged);
+      merged.clear();
 
-        features[i] = {
-          ...f,
-          properties: {
-            ...(f.properties || {}),
-            ...patch,
-          },
-        };
-        changed = true;
-      }
+      setPerpendicularData((prev) => {
+        if (!prev) return prev;
+        let changed = false;
+        const features = (prev.features as any[]).map((f) => {
+          const sid = f?.properties?.sectionId;
+          const p = sid ? pending.get(sid) : undefined;
+          if (!p) return f;
+          changed = true;
+          return { ...f, properties: { ...(f.properties || {}), ...p } };
+        });
+        return changed ? turf.featureCollection(features as any) : prev;
+      });
+    };
 
-      return changed ? turf.featureCollection(features as any) : prev;
-    });
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(flush);
+    } else {
+      setTimeout(flush, 16);
+    }
   };
 
   useEffect(() => {
