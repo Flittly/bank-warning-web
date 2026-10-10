@@ -48,7 +48,7 @@ import {
   fetchBasicParamsList,
   updateBasicParamAsSectionParams,
 } from './editor/basicParamsApi';
-import { getCurrentTaskId } from './editor/taskState';
+import { getCurrentTaskId, setCurrentTaskId } from './editor/taskState';
 
 interface EditorPageProps {
   setPage?: (page: 'editor' | 'result', taskId?: string) => void;
@@ -1996,6 +1996,7 @@ function EditorPage(props: EditorPageProps) {
         setGlobalProperties,
         requestTaskName: () => requestTaskName('岸线分析任务'),
         skipUploadBanks: true,
+        existingTaskId: getCurrentTaskId(),
       });
     } finally {
       fetchBankGroups();
@@ -2024,6 +2025,7 @@ function EditorPage(props: EditorPageProps) {
         requestTaskName: () => requestTaskName('岸线分析任务'),
         // 与精细断面保持一致：不强制同步上传岸段
         skipUploadBanks: true,
+        existingTaskId: getCurrentTaskId(),
       });
     } finally {
       fetchBankGroups();
@@ -2172,6 +2174,7 @@ function EditorPage(props: EditorPageProps) {
   const handleTreeNodeSelect = (node: TreeNode) => {
     if (node.kind === 'task' && node.ref?.key) {
       useResourceTreeStore.getState().setCurrentTask(node.ref.key);
+      setCurrentTaskId(node.ref.key);
     }
   };
 

@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react';
+import { useState } from 'react';
 import {
   ChevronRight, ChevronDown, Folder, FolderOpen, FileText, Map as MapIcon,
   Layers, Settings, Zap, Scissors, Trash2, Eye, EyeOff, Target, Ruler,
@@ -41,13 +42,19 @@ const HOVER_ACTIONS: Record<string, string[]> = {
   param: ['param.props'],
 };
 
+const CHILD_CAP = 200;
+
 export default function ResourceTreeNode({
   node, depth, expanded, selected, onToggle, onSelect, onDoubleClick, onAction, onContextMenu,
 }: Props) {
+  const [showAll, setShowAll] = useState(false);
   const hasChildren = Boolean(node.children && node.children.length > 0);
   const Icon = ICONS[node.kind] || FileText;
   const RowIcon = hasChildren && expanded ? (node.kind === 'folder' || node.kind === 'group' ? FolderOpen : Icon) : Icon;
   const hoverKeys = (HOVER_ACTIONS[node.kind] || []).slice(0, 3);
+  const allChildren = node.children || [];
+  const capped = !showAll && allChildren.length > CHILD_CAP;
+  const visibleChildren = capped ? allChildren.slice(0, CHILD_CAP) : allChildren;
 
   const handleClick = (e: MouseEvent) => {
     e.stopPropagation();
@@ -91,7 +98,7 @@ export default function ResourceTreeNode({
       </div>
       {hasChildren && expanded && (
         <div>
-          {node.children!.map((child) => (
+          {visibleChildren.map((child) => (
             <ResourceTreeNodeBridge
               key={child.id}
               node={child}
@@ -103,6 +110,15 @@ export default function ResourceTreeNode({
               onContextMenu={onContextMenu}
             />
           ))}
+          {capped && (
+            <div
+              className={styles.row}
+              style={{ paddingLeft: (depth + 1) * 20 + 6, color: '#2563eb', fontStyle: 'italic' }}
+              onClick={(e) => { e.stopPropagation(); setShowAll(true); }}
+            >
+              显示全部 {allChildren.length} 条…
+            </div>
+          )}
         </div>
       )}
     </div>
