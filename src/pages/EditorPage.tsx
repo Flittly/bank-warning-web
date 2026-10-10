@@ -8,7 +8,11 @@ import TaskNameModal from '../components/TaskNameModal';
 import ConfirmModal from '../components/ConfirmModal';
 import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
+import ResourceSidebar from '../components/tree/ResourceSidebar';
 import EditorMap from '../components/EditorMap';
+import type { TreeNode } from '../tree/types';
+import { useResourceTreeStore } from '../store/useResourceTreeStore';
+import { authHeaders } from '../utils/apiClient';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
 import { MessageCircle, Globe } from 'lucide-react';
@@ -117,6 +121,9 @@ function EditorPage(props: EditorPageProps) {
   const [crossLineEditMode, setCrossLineEditMode] = useState<'none' | 'select' | 'add'>('none');
   const [selectedCrossLineIndex, setSelectedCrossLineIndex] = useState<number | null>(null);
   const [selectedCrossLineIndices, setSelectedCrossLineIndices] = useState<Set<number>>(new Set());
+  const [sidebarMode, setSidebarMode] = useState<'tree' | 'classic'>('tree');
+  const bankUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const sectionsUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearSelectedCrossLines = () => {
     setSelectedCrossLineIndex(null);
@@ -2159,13 +2166,165 @@ function EditorPage(props: EditorPageProps) {
 
 
 
+  // === 资源树侧栏：节点操作分发 ===
+  const bumpTreeData = () => useResourceTreeStore.getState().bumpData();
+
+  const handleTreeNodeSelect = (node: TreeNode) => {
+    if (node.kind === 'task' && node.ref?.key) {
+      useResourceTreeStore.getState().setCurrentTask(node.ref.key);
+    }
+  };
+
+  const handleTreeNodeDoubleClick = (node: TreeNode) => {
+    if (node.ref?.entity === 'bank') {
+      void loadBankById(node.ref.key);
+    }
+  };
+
+  const handleOpenBankParams = (bankId: string) => {
+    const features = perpendicularData?.features || [];
+    const section = features.find((f: any) => f.properties?.bank_id === bankId);
+    if (!section) {
+      message.warning('该岸段暂无断面数据，请先生成断面');
+      return;
+    }
+    const lineProps: any = section.properties || {};
+    const bankName = lineProps.bank_name || lineProps.bankName || bankId;
+    const currentConfig = {
+      param_name: lineProps.paramName || lineProps.param_name || '',
+      segment: lineProps.segment || '',
+      current_timepoint: lineProps.currentTimepoint || lineProps.current_timepoint || '',
+      set_name: lineProps.setName || lineProps.set_name || '',
+      water_qs: lineProps.waterQs || lineProps.water_qs || '',
+      tidal_level: lineProps.tidalLevel || lineProps.tidal_level || '',
+      bench_id: lineProps.benchId || lineProps.bench_id || '',
+      ref_id: lineProps.refId || lineProps.ref_id || '',
+      hs: lineProps.hs,
+      hc: lineProps.hc,
+      protection_level: lineProps.protectionLevel || lineProps.protection_level || '',
+      control_level: lineProps.controlLevel || lineProps.control_level || '',
+      comparison_timepoint: lineProps.comparisonTimepoint || lineProps.comparison_timepoint || '',
+      risk_thresholds: lineProps.riskThresholds || lineProps.risk_thresholds || {},
+      weights: lineProps.weights || {},
+      other_params: lineProps.otherParams || lineProps.other_params || {},
+    } as any;
+    setEditingBankParams({ bankId, bankName, config: currentConfig });
+  };
+
+  const handleNewTask = async () => {
+    const name = await requestTaskName('岸线分析任务');
+    if (!name) return;
+    const res = await fetch('/v0/bank/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ task_name: name, description: `通过前端创建的任务: ${name}` }),
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      const tid = String(data?.task_id ?? data?.id ?? '');
+      if (tid) useResourceTreeStore.getState().setCurrentTask(tid);
+      bumpTreeData();
+    }
+  };
+
+  const handleTreeNodeAction = async (node: TreeNode, actionKey: string) => {
+    const key = node.ref?.key || '';
+    switch (actionKey) {
+      case 'bank.upload': bankUploadInputRef.current?.click(); break;
+      case 'bank.colorToggle': setColorBanks(!colorBanks); break;
+      case 'bank.loadMap':
+      case 'bank.locate': await loadBankById(key); break;
+      case 'bank.removeMap': removeBankFromMap(key); break;
+      case 'bank.props': handleOpenBankParams(key); break;
+      case 'bank.smooth': smoothSelectedShoreLines(); break;
+      case 'bank.clip': toggleStartEndSelection(); break;
+      case 'bank.confirmClip': await clipSelectedBank(); break;
+      case 'bank.selectByTiff': selectBanksByTiffRange(); break;
+      case 'bank.fixReversed': setIsFixingShoreLineReversed((v) => !v); break;
+      case 'bank.uploadSelected': await sendSelectedShoreLinesGeoJson(); break;
+      case 'bank.delete': await deleteBankById(key); bumpTreeData(); break;
+      case 'bank.clearLoaded': deleteLoadedBanks(); break;
+
+      case 'section.upload': sectionsUploadInputRef.current?.click(); break;
+      case 'section.toggleVisible': setShowCrossLines(!showCrossLines); break;
+      case 'section.generateDisplay': await handleGenerateSections(); bumpTreeData(); break;
+      case 'section.generateCompute': await handleGenerateComputeSections(); bumpTreeData(); break;
+      case 'section.validate': await validateAllPendingSections(); break;
+      case 'section.deleteInvalid': await deleteAllInvalidSections(); break;
+      case 'section.export': handleExportSections(); break;
+      case 'section.reverse': await reverseSelectedCrossLine(); break;
+      case 'section.fineTune': toggleCrossLineSelection(); break;
+      case 'section.batchParams': await openGlobalPropertiesModal(); break;
+      case 'section.props': await configureSelectedCrossLineProperties(); break;
+      case 'section.delete': await deleteSelectedCrossLine(); break;
+
+      case 'param.select': await handleSelectBasicParam(key); break;
+      case 'param.props': await openGlobalPropertiesModal(); break;
+      case 'param.editSectionParams': await configureSelectedCrossLineProperties(); break;
+
+      case 'dem.select': await openGlobalPropertiesModal(); break;
+      case 'dem.upload': await openGlobalPropertiesModal(); break;
+      case 'dem.toggleBounds': setShowTiffBounds(!showTiffBounds); break;
+      case 'dem.delete': {
+        const svc = await import('../services/tiffService');
+        await svc.deleteTiffResource(key);
+        svc.invalidateTiffResourceCache();
+        bumpTreeData();
+        break;
+      }
+
+      case 'task.create': await handleNewTask(); break;
+      case 'task.run': useResourceTreeStore.getState().setCurrentTask(key); await handleStartAnalysis(); break;
+      case 'task.generateCompute': useResourceTreeStore.getState().setCurrentTask(key); await handleGenerateComputeSections(); bumpTreeData(); break;
+      case 'task.setParam': useResourceTreeStore.getState().setCurrentTask(key); await openGlobalPropertiesModal(); break;
+      case 'task.viewResult': setPage?.('result', key); break;
+      case 'task.delete': {
+        const ok = await requestConfirm({ title: '删除任务', content: `确认删除任务「${node.label}」？`, danger: true });
+        if (ok) {
+          await fetch(`/v0/bank/tasks/${encodeURIComponent(key)}`, { method: 'DELETE', headers: { ...authHeaders() } });
+          useResourceTreeStore.getState().removeTask(key);
+          bumpTreeData();
+        }
+        break;
+      }
+
+      case 'global.clear': onClear(); break;
+      case 'global.satellite': setSatellite(!satellite); break;
+      case 'global.uploadBank': bankUploadInputRef.current?.click(); break;
+      case 'global.uploadSections': sectionsUploadInputRef.current?.click(); break;
+      default: console.warn('未绑定资源树操作:', actionKey);
+    }
+  };
+
   const totalCrossLinesCount = perpendicularData?.features.length || 0;
   const totalSelectedSegments = groups.filter(g => g.end !== null).length;
   const clippedBanks = (bankList || []).filter((b: any) => String(b.bank_id || '').includes('_clip_'));
 
   return (
     <div className="editor-layout">
-      <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth }}>
+      <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', zIndex: 1, position: 'relative', flexShrink: 0 }}>
+          <button type="button" onClick={() => setSidebarMode('tree')} style={{ flex: 1, padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer', background: sidebarMode === 'tree' ? '#2563eb' : '#fff', color: sidebarMode === 'tree' ? '#fff' : '#334155' }}>资源树</button>
+          <button type="button" onClick={() => setSidebarMode('classic')} style={{ flex: 1, padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer', background: sidebarMode === 'classic' ? '#2563eb' : '#fff', color: sidebarMode === 'classic' ? '#fff' : '#334155' }}>经典面板</button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
+          <input ref={bankUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleFileUpload} />
+          <input ref={sectionsUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleSectionsFileUpload} />
+          {sidebarMode === 'tree' && (
+            <ResourceSidebar
+              handlers={{
+                onAction: handleTreeNodeAction,
+                onNodeSelect: handleTreeNodeSelect,
+                onNodeDoubleClick: handleTreeNodeDoubleClick,
+                onUploadBank: () => bankUploadInputRef.current?.click(),
+                onUploadSections: () => sectionsUploadInputRef.current?.click(),
+                onNewTask: handleNewTask,
+                onClear,
+                onRun: handleStartAnalysis,
+              }}
+            />
+          )}
+          {sidebarMode === 'classic' && (
         <EditorSidebar
           uploadedData={uploadedData}
           bankGroups={bankGroups}
@@ -2275,6 +2434,8 @@ function EditorPage(props: EditorPageProps) {
           handleSelectBasicParam={handleSelectBasicParam}
           clippedBanks={clippedBanks}
         />
+          )}
+        </div>
       </div>
       <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
       <div className="editor-map-panel">
