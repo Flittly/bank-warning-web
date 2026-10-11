@@ -1,6 +1,6 @@
-﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
+﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams, useSearchParams, Navigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Edit3, BarChart2, BookOpen, HelpCircle, Menu } from 'lucide-react';
+import { Edit3, BarChart3, BookOpen, HelpCircle, Menu, List, FileText, Box } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
 import EditorPage from './pages/EditorPage';
@@ -41,10 +41,41 @@ function ResultPageWrapper() {
 //   return <SmartWorkbenchPage initialTaskId={taskId} />;
 // }
 
-function AppLayout() {
+function ActivityBar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const currentPath = location.pathname;
+  const [searchParams] = useSearchParams();
+  const path = location.pathname;
+  const panel = searchParams.get('panel') || 'tasks';
+  const isEditor = path.startsWith('/editor');
+  const isKnowledge = path.startsWith('/knowledge');
+  const isResult = path.startsWith('/result');
+
+  const items = [
+    { key: 'editor', icon: Edit3, label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
+    { key: 'tasks', icon: List, label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
+    { key: 'reports', icon: FileText, label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
+    { key: 'skills', icon: Box, label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
+    { key: 'progress', icon: BarChart3, label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
+    { key: 'knowledge', icon: BookOpen, label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
+  ];
+
+  return (
+    <div className="activity-bar">
+      {items.map((it) => {
+        const Icon = it.icon;
+        return (
+          <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label}>
+            <Icon size={18} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AppLayout() {
+  const navigate = useNavigate();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [showTour, setShowTour] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -133,42 +164,6 @@ function AppLayout() {
             <span className="nav-title-en">Yangtze River Bank Collapse Key Hazard Section Intelligent Risk Assessment Platform</span>
           </div>
         </div>
-        <div className="nav-tabs">
-          <button
-            type="button"
-            className={`nav-tab ${currentPath.startsWith('/editor') ? 'active' : ''}`}
-            onClick={() => navigate('/editor')}
-          >
-            <Edit3 size={18} />
-            断面编辑器
-          </button>
-          <button
-            type="button"
-            className={`nav-tab ${currentPath.startsWith('/result') ? 'active' : ''}`}
-            onClick={() => navigate('/result')}
-          >
-            <BarChart2 size={18} />
-            结果查看器
-          </button>
-          {/* 智能工作台页面暂时隐藏
-          <button
-            type="button"
-            className={`nav-tab ${currentPath.startsWith('/workbench') ? 'active' : ''}`}
-            onClick={() => navigate('/workbench')}
-          >
-            <Cpu size={18} />
-            智能工作台
-          </button>
-          */}
-          <button
-            type="button"
-            className={`nav-tab ${currentPath.startsWith('/knowledge') ? 'active' : ''}`}
-            onClick={() => navigate('/knowledge')}
-          >
-            <BookOpen size={18} />
-            知识库
-          </button>
-        </div>
         <div className="nav-right">
               {!isLoading && (
             isAuthenticated ? (
@@ -233,9 +228,12 @@ function AppLayout() {
           )}
         </div>
       </div>
-      <main className="app-main">
-        <Outlet />
-      </main>
+      <div className="app-body">
+        <ActivityBar />
+        <main className="app-main">
+          <Outlet />
+        </main>
+      </div>
       {showSettings && (
         <SettingsModal
           username={user?.username}
