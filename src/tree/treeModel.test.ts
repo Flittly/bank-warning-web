@@ -99,3 +99,32 @@ describe('flattenTree', () => {
     expect(flattenTree({ id: 'root' } as any, {})).toEqual([]);
   });
 });
+
+describe('buildTasksGroup task children', () => {
+  it('attaches 岸段/断面/参数/DEM when sections loaded', () => {
+    const tasks = [{ task_id: 't1', task_name: '任务A', bank_ids: ['b1'] }];
+    const sectionsByTask = {
+      t1: [
+        { section_id: 's1', section_name: '断面1', bank_id: 'b1', param_name: '默认', basic_param_id: 159, bench_id: 'tiff/A.tif', ref_id: 'tiff/B.tif', validation_status: 'valid' },
+        { section_id: 's2', bank_id: 'b1', validation_status: 'invalid' },
+      ],
+    };
+    const banksById = { b1: { bank_id: 'b1', bank_name: '岸段一' } };
+    const group = buildTasksGroup(tasks, { sectionsByTask, banksById });
+    const task = group.children![0];
+    expect((task.children || []).map((c) => c.id)).toEqual(['task-banks:t1', 'task-sections:t1', 'task-param:t1', 'task-dems:t1']);
+    const banksFolder = task.children!.find((c) => c.id === 'task-banks:t1')!;
+    expect(banksFolder.children?.[0].label).toBe('岸段一');
+    const sectionsFolder = task.children!.find((c) => c.id === 'task-sections:t1')!;
+    expect(sectionsFolder.meta).toBe('2');
+    const bankFolder = sectionsFolder.children![0];
+    expect(bankFolder.children?.length).toBe(2);
+    expect(bankFolder.children?.[1].invalid).toBe(true);
+    const dems = task.children!.find((c) => c.id === 'task-dems:t1')!;
+    expect(dems.children?.length).toBe(2);
+  });
+  it('adds a loading placeholder when sections not loaded', () => {
+    const group = buildTasksGroup([{ task_id: 't2', task_name: 'B' }]);
+    expect(group.children![0].children?.[0].label).toContain('展开以加载');
+  });
+});

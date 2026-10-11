@@ -117,22 +117,103 @@ export function buildSectionsFolder(sections: any[]): TreeNode {
   return { id: 'folder:sections', kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(total), children, actions: ['section.upload', 'section.generateDisplay', 'section.toggleVisible'] };
 }
 
-export function buildTasksGroup(tasks: any[]): TreeNode {
+export function buildTasksGroup(
+  tasks: any[],
+  opts?: { sectionsByTask?: Record<string, any[]>; banksById?: Record<string, any> },
+): TreeNode {
+  const sectionsByTask = opts?.sectionsByTask || {};
+  const banksById = opts?.banksById || {};
   const children: TreeNode[] = (tasks || [])
     .filter((t: any) => t?.task_id != null || t?.id != null)
     .map((t: any) => {
       const tid = String(t.task_id ?? t.id);
-    return {
-      id: `task:${tid}`,
-      kind: 'task' as const,
-      label: String(t.task_name || tid),
-      icon: 'task',
-      meta: t?.status ? String(t.status) : undefined,
-      ref: { entity: 'task' as const, key: tid },
-      selectable: true,
-      actions: ['task.run', 'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete'],
-    };
-  });
+      const secs = sectionsByTask[tid];
+      let kids: TreeNode[];
+      if (secs) {
+        const bankIds: string[] = Array.isArray(t.bank_ids) && t.bank_ids.length > 0
+          ? t.bank_ids.map((b: any) => String(b))
+          : [...new Set(secs.map((s: any) => String(s.bank_id || '未知')))];
+        const bankLabel = (bid: string) =>
+          banksById[bid]?.bank_name || banksById[bid]?.bankName || bid;
+        const bankNodes: TreeNode[] = bankIds.map((bid) => ({
+          id: `task-bank:${tid}:${bid}`,
+          kind: 'bank' as const,
+          label: bankLabel(bid),
+          icon: 'bank',
+          meta: bid,
+          ref: { entity: 'bank' as const, key: bid },
+          selectable: true,
+          actions: ['bank.loadMap', 'bank.locate'],
+        }));
+        const byBank = new Map<string, any[]>();
+        for (const s of secs) {
+          const bid = String(s.bank_id || '未知');
+          if (!byBank.has(bid)) byBank.set(bid, []);
+          byBank.get(bid)!.push(s);
+        }
+        const sectionBankFolders: TreeNode[] = [...byBank.entries()].map(([bid, list]) => ({
+          id: `task-sections-bank:${tid}:${bid}`,
+          kind: 'folder' as const,
+          label: bankLabel(bid),
+          selectable: false,
+          meta: String(list.length),
+          ref: { entity: 'bank' as const, key: bid },
+          children: list.map((s: any) => {
+            const sid = String(s.section_id ?? s.id);
+            const status = String(s.validation_status || '');
+            return {
+              id: `task-section:${tid}:${sid}`,
+              kind: 'section' as const,
+              label: String(s.section_name || s.section_id || sid),
+              icon: 'section',
+              meta: status && status !== 'valid' ? status : undefined,
+              ref: { entity: 'section' as const, key: String(s.section_id ?? sid) },
+              selectable: true,
+              actions: ['section.props', 'section.delete'],
+              invalid: Boolean(status && status !== 'valid'),
+            };
+          }),
+        }));
+        const firstWith = (k: string) => secs.find((s: any) => s[k] != null && s[k] !== '');
+        const paramName = firstWith('param_name')?.param_name;
+        const paramKey = firstWith('basic_param_id')?.basic_param_id;
+        const bench = firstWith('bench_id')?.bench_id;
+        const refId = firstWith('ref_id')?.ref_id;
+        const demChildren: TreeNode[] = [
+          bench ? { key: String(bench), label: '基准' } : null,
+          refId ? { key: String(refId), label: '对照' } : null,
+        ]
+          .filter(Boolean)
+          .map((d: any) => ({
+            id: `task-dem:${tid}:${d.label}`,
+            kind: 'dem' as const,
+            label: String(d.key).split('/').pop() || String(d.key),
+            meta: d.label,
+            ref: { entity: 'dem' as const, key: String(d.key) },
+            selectable: true,
+            actions: ['dem.toggleBounds'],
+          }));
+        kids = [
+          { id: `task-banks:${tid}`, kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(bankNodes.length), children: bankNodes },
+          { id: `task-sections:${tid}`, kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(secs.length), children: sectionBankFolders },
+          { id: `task-param:${tid}`, kind: 'task-ref', label: `参数模板: ${paramName || '未设置'}`, selectable: false, meta: '引用', ref: paramKey != null ? { entity: 'param' as const, key: String(paramKey) } : undefined },
+          { id: `task-dems:${tid}`, kind: 'task-ref', label: 'DEM', icon: 'dem', selectable: false, children: demChildren },
+        ];
+      } else {
+        kids = [{ id: `task-loading:${tid}`, kind: 'task-ref', label: '展开以加载…', selectable: false }];
+      }
+      return {
+        id: `task:${tid}`,
+        kind: 'task' as const,
+        label: String(t.task_name || tid),
+        icon: 'task',
+        meta: t?.status ? String(t.status) : undefined,
+        ref: { entity: 'task' as const, key: tid },
+        selectable: true,
+        actions: ['task.run', 'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete'],
+        children: kids,
+      };
+    });
   return { id: 'group:tasks', kind: 'group', label: '计算任务', icon: 'tasks', selectable: false, meta: String(children.length), children, actions: ['task.create'] };
 }
 
@@ -197,7 +278,12 @@ export function resolveTaskRefs(
 
 export function buildResourceTree(data: {
   banks?: any[]; params?: any[]; tiffs?: any[]; tasks?: any[]; sections?: any[];
+  sectionsByTask?: Record<string, any[]>;
 }): TreeNode {
+  const banksById: Record<string, any> = {};
+  for (const b of data.banks || []) {
+    if (b?.bank_id) banksById[String(b.bank_id)] = b;
+  }
   return {
     id: 'root',
     kind: 'root',
@@ -217,7 +303,7 @@ export function buildResourceTree(data: {
           buildDemFolder(data.tiffs || []),
         ],
       },
-      buildTasksGroup(data.tasks || []),
+      buildTasksGroup(data.tasks || [], { sectionsByTask: data.sectionsByTask, banksById }),
     ],
   };
 }

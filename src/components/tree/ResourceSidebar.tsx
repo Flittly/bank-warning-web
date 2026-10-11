@@ -40,6 +40,7 @@ export default function ResourceSidebar({ handlers }: Props) {
   const sectionsByTask = useResourceTreeStore((s) => s.sectionsByTask);
   const setSectionsForTask = useResourceTreeStore((s) => s.setSectionsForTask);
   const currentTaskId = useResourceTreeStore((s) => s.currentTaskId);
+  const expanded = useResourceTreeStore((s) => s.expanded);
   const showCrossLines = useEditorStore((s) => s.showCrossLines);
   const setShowCrossLines = useEditorStore((s) => s.setShowCrossLines);
   const [loaded, setLoaded] = useState(false);
@@ -68,21 +69,29 @@ export default function ResourceSidebar({ handlers }: Props) {
   }, [setData, dataVersion]);
 
   useEffect(() => {
-    if (!currentTaskId || sectionsByTask[currentTaskId]) return;
+    const ids = new Set<string>();
+    if (currentTaskId) ids.add(currentTaskId);
+    for (const [k, v] of Object.entries(expanded)) {
+      if (v && k.startsWith('task:')) ids.add(k.slice(5));
+    }
+    const missing = [...ids].filter((id) => !sectionsByTask[id]);
+    if (missing.length === 0) return;
     (async () => {
-      try {
-        const res = await fetchJSON(`/v0/bank/sections?task_id=${encodeURIComponent(currentTaskId)}`);
-        setSectionsForTask(currentTaskId, res?.sections ?? res?.data ?? []);
-      } catch (e) {
-        console.error('断面加载失败:', e);
+      for (const id of missing) {
+        try {
+          const res = await fetchJSON(`/v0/bank/sections?task_id=${encodeURIComponent(id)}`);
+          setSectionsForTask(id, res?.sections ?? res?.data ?? []);
+        } catch (e) {
+          console.error('断面加载失败:', e);
+        }
       }
     })();
-  }, [currentTaskId, sectionsByTask, setSectionsForTask, dataVersion]);
+  }, [currentTaskId, expanded, sectionsByTask, setSectionsForTask, dataVersion]);
 
   const allSections = useMemo(() => Object.values(sectionsByTask).flat(), [sectionsByTask]);
   const tree = useMemo(
-    () => buildResourceTree({ banks, params, tiffs, tasks, sections: allSections }),
-    [banks, params, tiffs, tasks, allSections],
+    () => buildResourceTree({ banks, params, tiffs, tasks, sections: allSections, sectionsByTask }),
+    [banks, params, tiffs, tasks, allSections, sectionsByTask],
   );
 
   const onToggleCross = useCallback(() => setShowCrossLines(!showCrossLines), [setShowCrossLines, showCrossLines]);
