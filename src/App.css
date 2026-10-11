@@ -402,14 +402,22 @@
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(26px) saturate(1.8) brightness(1.08);
-  -webkit-backdrop-filter: blur(26px) saturate(1.8) brightness(1.08);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow: 0 6px 22px rgba(15, 23, 42, 0.1);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(32px) saturate(1.9);
+  -webkit-backdrop-filter: blur(32px) saturate(1.9);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.editor-map-toolbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.06) 45%, rgba(255, 255, 255, 0) 65%);
+  pointer-events: none;
 }
 .editor-map-toolbar .emt-btn {
   display: inline-flex;
@@ -417,23 +425,25 @@
   gap: 5px;
   padding: 7px 12px;
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(255, 255, 255, 0.55);
-  color: #334155;
+  border: none;
+  background: transparent;
+  color: #1e293b;
   font-size: 0.82rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.18s;
+  transition: background 0.18s, color 0.18s;
   white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.65);
+  position: relative;
+  z-index: 1;
 }
 .editor-map-toolbar .emt-btn:hover {
-  background: #f1f5f9;
-  border-color: rgba(37, 99, 235, 0.4);
+  background: rgba(255, 255, 255, 0.26);
 }
 .editor-map-toolbar .emt-btn.emt-active {
-  background: rgba(37, 99, 235, 0.12);
-  border-color: rgba(37, 99, 235, 0.5);
-  color: #2563eb;
+  background: rgba(37, 99, 235, 0.16);
+  color: #1d4ed8;
+  text-shadow: none;
 }
 .editor-map-toolbar .emt-create {
   position: relative;
