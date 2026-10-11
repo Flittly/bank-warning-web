@@ -2045,6 +2045,12 @@ function EditorPage(props: EditorPageProps) {
       });
     } finally {
       fetchBankGroups();
+      const tid = getCurrentTaskId();
+      if (tid) {
+        useResourceTreeStore.getState().setCurrentTask(tid);
+        useResourceTreeStore.getState().invalidateSections(tid);
+      }
+      useResourceTreeStore.getState().bumpData();
       isGeneratingRef.current = false;
     }
   };
@@ -2074,6 +2080,12 @@ function EditorPage(props: EditorPageProps) {
       });
     } finally {
       fetchBankGroups();
+      const tid = getCurrentTaskId();
+      if (tid) {
+        useResourceTreeStore.getState().setCurrentTask(tid);
+        useResourceTreeStore.getState().invalidateSections(tid);
+      }
+      useResourceTreeStore.getState().bumpData();
       isGeneratingRef.current = false;
     }
   };
@@ -2309,7 +2321,10 @@ function EditorPage(props: EditorPageProps) {
         console.warn('加载参数模板失败:', err);
       }
     }
-    await generateComputeSectionsAndCreateTask({
+    const genFn = form.sectionType === 'display'
+      ? generateSectionsAndCreateTask
+      : generateComputeSectionsAndCreateTask;
+    await genFn({
       uploadedData,
       selectedLines,
       globalInterval: form.interval,
@@ -2322,6 +2337,11 @@ function EditorPage(props: EditorPageProps) {
       skipUploadBanks: true,
       existingTaskId: null,
     });
+    const tid = getCurrentTaskId();
+    if (tid) {
+      useResourceTreeStore.getState().setCurrentTask(tid);
+      useResourceTreeStore.getState().invalidateSections(tid);
+    }
     bumpTreeData();
     fetchBankGroups();
   };

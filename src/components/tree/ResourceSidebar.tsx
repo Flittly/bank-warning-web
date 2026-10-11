@@ -80,10 +80,10 @@ export default function ResourceSidebar({ handlers }: Props) {
     })();
   }, [currentTaskId, expanded, sectionsByTask, setSectionsForTask, dataVersion]);
 
-  const allSections = useMemo(() => Object.values(sectionsByTask).flat(), [sectionsByTask]);
+  const currentSections = useMemo(() => sectionsByTask[currentTaskId || ''] || [], [sectionsByTask, currentTaskId]);
   const tree = useMemo(
-    () => buildResourceTree({ banks, params, tiffs, tasks, sections: allSections, sectionsByTask }),
-    [banks, params, tiffs, tasks, allSections, sectionsByTask],
+    () => buildResourceTree({ banks, params, tiffs, tasks, sections: currentSections, sectionsByTask }),
+    [banks, params, tiffs, tasks, currentSections, sectionsByTask],
   );
 
   const currentTaskName = useMemo(

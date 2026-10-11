@@ -86,13 +86,17 @@ export function buildDemFolder(tiffs: any[]): TreeNode {
   return { id: 'folder:dems', kind: 'folder', label: 'DEM 资源', icon: 'dem', selectable: false, meta: String(total), children, actions: ['dem.upload'] };
 }
 
-export function buildSectionsFolder(sections: any[]): TreeNode {
+export function buildSectionsFolder(sections: any[], tasks?: any[]): TreeNode {
   const byTask = new Map<string, { name: string; nodes: TreeNode[] }>();
+  const taskNameOf = (taskId: string) => {
+    const t = (tasks || []).find((x) => String(x?.task_id ?? x?.id) === taskId);
+    return t?.task_name || t?.taskName || taskId;
+  };
   for (const s of sections || []) {
     const taskId = String(s?.task_id ?? 'unknown');
     const secId = String(s?.section_id || s?.id || '');
     if (!secId) continue;
-    if (!byTask.has(taskId)) byTask.set(taskId, { name: String(s?.task_name || taskId), nodes: [] });
+    if (!byTask.has(taskId)) byTask.set(taskId, { name: String(s?.task_name || taskNameOf(taskId)), nodes: [] });
     byTask.get(taskId)!.nodes.push({
       id: `section:${taskId}:${secId}`,
       kind: 'section',
@@ -299,7 +303,7 @@ export function buildResourceTree(data: {
         selectable: false,
         children: [
           buildBanksFolder(data.banks || []),
-          buildSectionsFolder(data.sections || []),
+          buildSectionsFolder(data.sections || [], data.tasks || []),
           buildParamsFolder(data.params || []),
           buildDemFolder(data.tiffs || []),
         ],

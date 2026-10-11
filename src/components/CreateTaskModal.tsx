@@ -6,6 +6,7 @@ export interface CreateTaskForm {
   interval: number;
   length: number;
   templateId: string | null;
+  sectionType: 'display' | 'compute';
 }
 
 interface Props {
@@ -33,6 +34,7 @@ export default function CreateTaskModal({
   const [iv, setIv] = useState(interval);
   const [ln, setLn] = useState(length);
   const [tpl, setTpl] = useState<string>(selectedTemplateId ?? '');
+  const [stype, setStype] = useState<'display' | 'compute'>('compute');
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -47,7 +49,7 @@ export default function CreateTaskModal({
       setError('任务名称不能为空');
       return;
     }
-    onConfirm({ name: n, interval: iv, length: ln, templateId: tpl || null });
+    onConfirm({ name: n, interval: iv, length: ln, templateId: tpl || null, sectionType: stype });
   };
 
   return (
@@ -94,6 +96,14 @@ export default function CreateTaskModal({
               onChange={(e) => setLn(Number(e.target.value))}
             />
           </div>
+        </div>
+
+        <div className={styles.mb15}>
+          <label className={styles.label}>断面类型</label>
+          <select className={styles.select} value={stype} onChange={(e) => setStype(e.target.value as 'display' | 'compute')}>
+            <option value="display">展示断面（精细断面，预览用）</option>
+            <option value="compute">计算断面（延长到对岸，用于计算）</option>
+          </select>
         </div>
 
         <div className={styles.mb15}>
