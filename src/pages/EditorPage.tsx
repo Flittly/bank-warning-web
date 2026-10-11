@@ -2604,7 +2604,7 @@ function EditorPage(props: EditorPageProps) {
             <Ruler size={15} /> 上传断面
           </button>
           <button type="button" className="emt-create" onClick={handleNewTask} title="新建任务">
-            <Plus size={28} />
+            <Plus size={20} />
           </button>
           <button
             type="button"
