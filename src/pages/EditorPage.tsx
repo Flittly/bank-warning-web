@@ -357,36 +357,54 @@ function EditorPage(props: EditorPageProps) {
     } catch (err: any) { alert('截取失败: ' + err.message); }
   };
 
-  const applyTiffRangeSelection = (bounds: any) => {
-    const banks = bankList.filter((b: any) => {
+  const applyTiffRangeSelection = async (bounds: any) => {
+    let banks = bankList;
+    if (!banks || banks.length === 0) {
+      try {
+        const res = await fetch('/v0/bank/banks', { headers: { ...authHeaders() } });
+        const data = await res.json();
+        const list = (data?.banks || data?.data || data) as any[];
+        if (Array.isArray(list)) {
+          banks = list;
+          setBankList(list);
+        }
+      } catch {
+        banks = [];
+      }
+    }
+    const matched = (banks || []).filter((b: any) => {
       const geom = b.bank_geometry || b.geometry;
+      if (!geom) return false;
       try {
         return turf.booleanIntersects(geom, bounds.geometry);
       } catch { return false; }
     });
-    if (banks.length === 0) { message.info('没有岸段在所选 DEM 范围内'); return; }
-    banks.forEach((b: any) => { void loadBankById(String(b.bank_id)); });
-    message.success(`已加载 ${banks.length} 条岸段到地图`);
+    if (matched.length === 0) { message.info('没有岸段在所选 DEM 范围内'); return; }
+    matched.forEach((b: any) => { void loadBankById(String(b.bank_id)); });
+    message.success(`已加载 ${matched.length} 条岸段到地图`);
   };
 
-  const selectBanksByTiffRange = (demKey?: string) => {
-    if (demKey) {
-      const bounds = tiffBoundsData?.features?.find(
+  const selectBanksByTiffRange = async (demKey?: string) => {
+    if (demKey && typeof demKey === 'string') {
+      let bounds = tiffBoundsData?.features?.find(
         (f: any) => String(f.properties?.tiff_key) === String(demKey),
       );
-      if (bounds) { applyTiffRangeSelection(bounds); return; }
-      // 范围数据尚未加载：拉取一次后重试
-      fetchTiffBounds().then((data) => {
-        if (data) setTiffBoundsData(data);
-        const b = data?.features?.find((f: any) => String(f.properties?.tiff_key) === String(demKey));
-        if (b) applyTiffRangeSelection(b);
-        else message.warning('未找到该 DEM 的范围数据');
-      });
+      if (!bounds) {
+        const data = await fetchTiffBounds();
+        if (data) {
+          setTiffBoundsData(data);
+          bounds = data.features?.find((f: any) => String(f.properties?.tiff_key) === String(demKey));
+        }
+      }
+      if (!bounds) { message.warning('未找到该 DEM 的范围数据'); return; }
+      setShowTiffBounds(true);
+      await applyTiffRangeSelection(bounds);
       return;
     }
-    const bounds = filteredTiffBoundsData?.features?.[0];
+    const bounds = filteredTiffBoundsData?.features?.[0] || tiffBoundsData?.features?.[0];
     if (!bounds) { message.warning('请先选择一个带 DEM 的参数模板'); return; }
-    applyTiffRangeSelection(bounds);
+    setShowTiffBounds(true);
+    await applyTiffRangeSelection(bounds);
   };
 
   const validateSectionAsync = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
@@ -2539,7 +2557,7 @@ function EditorPage(props: EditorPageProps) {
           applyCrossLineGeometriesLocal={applyCrossLineGeometriesLocal}
           persistCrossLineGeometry={persistCrossLineGeometry}
           createCrossLineByEndpoints={createCrossLineByEndpoints}
-          tiffBoundsData={filteredTiffBoundsData}
+          tiffBoundsData={tiffBoundsData}
           showTiffBounds={showTiffBounds}
           resizeTrigger={resizeTrigger}
           satellite={satellite}
