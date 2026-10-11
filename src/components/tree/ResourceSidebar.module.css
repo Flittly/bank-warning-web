@@ -188,10 +188,10 @@
   justify-content: center;
   gap: 7px;
   flex: 1;
-  background: #2563eb;
+  background: #000000;
   color: #fff;
   border: none;
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 9px 12px;
   font-size: 13px;
   font-weight: 600;
@@ -199,7 +199,7 @@
   transition: background 0.18s;
 }
 .run:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: #262626;
 }
 .run:disabled {
   background: #e2e8f0;
