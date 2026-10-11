@@ -431,6 +431,17 @@ async function generateSectionsAndCreateTaskCore(params: {
       };
     });
 
+    if (existingTaskId) {
+      // 任务优先：重算前先清空该任务既有断面与结果，避免 section_id 唯一约束冲突
+      const clearRes = await fetch(`/v0/bank/tasks/${encodeURIComponent(existingTaskId)}/clear`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
+      });
+      if (!clearRes.ok) {
+        console.warn('清空任务既有断面失败:', clearRes.status, clearRes.statusText);
+      }
+    }
+
     const sectionsPayload = {
       task_id: taskId,
       sections: sectionsToCreate,
