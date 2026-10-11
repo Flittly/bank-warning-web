@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Play } from 'lucide-react';
+import { Play, Edit3 } from 'lucide-react';
 import { authHeaders } from '../../utils/apiClient';
 import { buildResourceTree } from '../../tree/treeModel';
 import type { TreeNode } from '../../tree/types';
@@ -93,6 +93,10 @@ export default function ResourceSidebar({ handlers }: Props) {
 
   return (
     <div className={styles.sidebar}>
+      <div className="sidebar-header" style={{ padding: '12px 14px 8px', margin: 0, flexShrink: 0 }}>
+        <Edit3 size={14} />
+        <h4>断面编辑器</h4>
+      </div>
       <div style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
         {loaded && (
           <ResourceTree
