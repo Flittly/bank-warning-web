@@ -19,7 +19,7 @@ export function buildBanksFolder(banks: any[]): TreeNode {
         selectable: true,
         actions: [
           'bank.loadMap', 'bank.locate', 'bank.props', 'bank.smooth',
-          'bank.clip', 'bank.selectByTiff', 'bank.delete',
+          'bank.clip', 'bank.selectByTiff', 'section.toggleVisible', 'bank.delete',
         ],
       };
     });

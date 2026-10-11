@@ -16,7 +16,7 @@ import { useResourceTreeStore } from '../store/useResourceTreeStore';
 import { authHeaders } from '../utils/apiClient';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
-import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, Eye, EyeOff } from 'lucide-react';
+import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser } from 'lucide-react';
 import { setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
 import { stripZFromGeoJSON } from '../utils/geojson';
@@ -2603,8 +2603,8 @@ function EditorPage(props: EditorPageProps) {
           <button type="button" className="emt-btn" onClick={() => sectionsUploadInputRef.current?.click()} title="上传断面">
             <Ruler size={15} /> 上传断面
           </button>
-          <button type="button" className="emt-btn emt-primary" onClick={handleNewTask} title="新建任务">
-            <Plus size={18} /> 新建任务
+          <button type="button" className="emt-create" onClick={handleNewTask} title="新建任务">
+            <Plus size={28} />
           </button>
           <button
             type="button"
@@ -2614,16 +2614,8 @@ function EditorPage(props: EditorPageProps) {
           >
             <MousePointer2 size={15} /> 选中岸段
           </button>
-          <button type="button" className="emt-btn" onClick={onClear} title="清除">
-            <Eraser size={15} /> 清除
-          </button>
-          <button
-            type="button"
-            className="emt-btn"
-            onClick={() => setShowCrossLines(!showCrossLines)}
-            title="显示/隐藏设计（断面）"
-          >
-            {showCrossLines ? <Eye size={15} /> : <EyeOff size={15} />} {showCrossLines ? '隐藏设计' : '显示设计'}
+          <button type="button" className="emt-btn" onClick={onClear} title="清除断面">
+            <Eraser size={15} /> 清除断面
           </button>
         </div>
       </div>
