@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Play } from 'lucide-react';
 import { authHeaders } from '../../utils/apiClient';
 import { buildResourceTree } from '../../tree/treeModel';
 import type { TreeNode } from '../../tree/types';
 import { useResourceTreeStore } from '../../store/useResourceTreeStore';
-import { useEditorStore } from '../../store/useEditorStore';
-import TreeToolbar from './TreeToolbar';
 import ResourceTree from './ResourceTree';
 import styles from './ResourceSidebar.module.css';
 
@@ -13,10 +11,6 @@ export interface ResourceSidebarHandlers {
   onAction: (node: TreeNode, actionKey: string) => void;
   onNodeSelect: (node: TreeNode) => void;
   onNodeDoubleClick: (node: TreeNode) => void;
-  onUploadBank: () => void;
-  onUploadSections: () => void;
-  onNewTask: () => void;
-  onClear: () => void;
   onRun: () => void;
 }
 
@@ -41,8 +35,6 @@ export default function ResourceSidebar({ handlers }: Props) {
   const setSectionsForTask = useResourceTreeStore((s) => s.setSectionsForTask);
   const currentTaskId = useResourceTreeStore((s) => s.currentTaskId);
   const expanded = useResourceTreeStore((s) => s.expanded);
-  const showCrossLines = useEditorStore((s) => s.showCrossLines);
-  const setShowCrossLines = useEditorStore((s) => s.setShowCrossLines);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -94,7 +86,6 @@ export default function ResourceSidebar({ handlers }: Props) {
     [banks, params, tiffs, tasks, allSections, sectionsByTask],
   );
 
-  const onToggleCross = useCallback(() => setShowCrossLines(!showCrossLines), [setShowCrossLines, showCrossLines]);
   const currentTaskName = useMemo(
     () => tasks.find((t: any) => String(t.task_id ?? t.id) === currentTaskId)?.task_name || currentTaskId || '',
     [tasks, currentTaskId],
@@ -102,15 +93,16 @@ export default function ResourceSidebar({ handlers }: Props) {
 
   return (
     <div className={styles.sidebar}>
-      <TreeToolbar
-        onUploadBank={handlers.onUploadBank}
-        onUploadSections={handlers.onUploadSections}
-        onNewTask={handlers.onNewTask}
-        onClear={handlers.onClear}
-        showCrossLines={showCrossLines}
-        onToggleCrossLines={onToggleCross}
-      />
-      {loaded && <ResourceTree root={tree} onNodeSelect={handlers.onNodeSelect} onNodeDoubleClick={handlers.onNodeDoubleClick} onNodeAction={handlers.onAction} />}
+      <div style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
+        {loaded && (
+          <ResourceTree
+            root={tree}
+            onNodeSelect={handlers.onNodeSelect}
+            onNodeDoubleClick={handlers.onNodeDoubleClick}
+            onNodeAction={handlers.onAction}
+          />
+        )}
+      </div>
       <div className={styles.footer}>
         <button type="button" className={styles.run} onClick={handlers.onRun} title="执行风险分析">
           <Play size={15} /> 执行风险分析

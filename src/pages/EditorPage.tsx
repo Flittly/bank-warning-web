@@ -16,7 +16,7 @@ import { useResourceTreeStore } from '../store/useResourceTreeStore';
 import { authHeaders } from '../utils/apiClient';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
-import { MessageCircle, Globe } from 'lucide-react';
+import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, Eye, EyeOff } from 'lucide-react';
 import { setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
 import { stripZFromGeoJSON } from '../utils/geojson';
@@ -2408,10 +2408,6 @@ function EditorPage(props: EditorPageProps) {
                 onAction: handleTreeNodeAction,
                 onNodeSelect: handleTreeNodeSelect,
                 onNodeDoubleClick: handleTreeNodeDoubleClick,
-                onUploadBank: () => bankUploadInputRef.current?.click(),
-                onUploadSections: () => sectionsUploadInputRef.current?.click(),
-                onNewTask: handleNewTask,
-                onClear,
                 onRun: handleStartAnalysis,
               }}
             />
@@ -2598,6 +2594,38 @@ function EditorPage(props: EditorPageProps) {
           <MessageCircle size={14} />
           {chatCollapsed ? 'AI' : '收起'}
         </button>
+
+        {/* 地图底部居中操作条 */}
+        <div className="editor-map-toolbar">
+          <button type="button" className="emt-btn" onClick={() => bankUploadInputRef.current?.click()} title="上传岸段">
+            <Upload size={15} /> 上传岸段
+          </button>
+          <button type="button" className="emt-btn" onClick={() => sectionsUploadInputRef.current?.click()} title="上传断面">
+            <Ruler size={15} /> 上传断面
+          </button>
+          <button type="button" className="emt-btn emt-primary" onClick={handleNewTask} title="新建任务">
+            <Plus size={18} /> 新建任务
+          </button>
+          <button
+            type="button"
+            className={`emt-btn ${isSelectingShoreLines ? 'emt-active' : ''}`}
+            onClick={toggleShoreLineSelection}
+            title="在地图上点选岸段"
+          >
+            <MousePointer2 size={15} /> 选中岸段
+          </button>
+          <button type="button" className="emt-btn" onClick={onClear} title="清除">
+            <Eraser size={15} /> 清除
+          </button>
+          <button
+            type="button"
+            className="emt-btn"
+            onClick={() => setShowCrossLines(!showCrossLines)}
+            title="显示/隐藏设计（断面）"
+          >
+            {showCrossLines ? <Eye size={15} /> : <EyeOff size={15} />} {showCrossLines ? '隐藏设计' : '显示设计'}
+          </button>
+        </div>
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <div data-tour="chat-panel" style={{ height: '100%', position: 'relative' }}>
