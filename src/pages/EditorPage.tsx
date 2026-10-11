@@ -5,6 +5,7 @@ import '../App.css';
 import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import TaskNameModal from '../components/TaskNameModal';
+import CreateTaskModal, { type CreateTaskForm } from '../components/CreateTaskModal';
 import ConfirmModal from '../components/ConfirmModal';
 import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
@@ -124,6 +125,7 @@ function EditorPage(props: EditorPageProps) {
   const [selectedCrossLineIndices, setSelectedCrossLineIndices] = useState<Set<number>>(new Set());
   const sidebarMode = useEditorStore((s) => s.sidebarMode);
   const [demPickerOpen, setDemPickerOpen] = useState(false);
+  const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
   const bankUploadInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsUploadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2279,37 +2281,49 @@ function EditorPage(props: EditorPageProps) {
     setEditingBankParams({ bankId, bankName, config: currentConfig });
   };
 
-  const handleNewTask = async () => {
-    const hasBanks = !!uploadedData && selectedLines.size > 0;
-    const hasSections = !!perpendicularData && perpendicularData.features.length > 0;
-    if (!hasBanks && !hasSections) {
-      const proceed = await requestConfirm({
-        title: '尚未加载岸段/断面',
-        content: '当前页面还没有已加载的岸段和断面。建议先「上传岸段」加载并选择岸段、生成断面后再创建任务。仍要继续创建任务吗？',
-        confirmText: '继续创建',
-      });
-      if (!proceed) return;
+  const handleNewTask = () => {
+    if (!uploadedData || selectedLines.size === 0) {
+      message.warning('请先在地图上选中岸段（底部「选中岸段」点选），再创建任务');
+      return;
     }
-    const name = await requestTaskName('岸线分析任务');
-    if (!name) return;
-    const taskId = `task-${Date.now()}`;
-    const res = await fetch('/v0/bank/tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({
-        tasks: [{ task_id: taskId, task_name: name, description: `通过前端创建的任务: ${name}` }],
-        overwrite: false,
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json().catch(() => null);
-      const tid = String(data?.tasks?.[0]?.task_id ?? data?.task_id ?? taskId);
-      if (tid) {
-        useResourceTreeStore.getState().setCurrentTask(tid);
-        setCurrentTaskId(tid);
+    setCreateTaskModalOpen(true);
+  };
+
+  const handleCreateTaskConfirm = async (form: CreateTaskForm) => {
+    setCreateTaskModalOpen(false);
+    if (!uploadedData || selectedLines.size === 0) {
+      message.warning('没有已选中的岸段，无法生成断面');
+      return;
+    }
+    setGlobalInterval(form.interval);
+    setGlobalLength(form.length);
+    let sectionParams = globalProperties;
+    if (form.templateId) {
+      try {
+        const { numericId, sectionParams: sp } = await fetchBasicParamDetailAsSectionParams(form.templateId);
+        sectionParams = sp;
+        setGlobalProperties(sp);
+        setSelectedBasicParamIdState(form.templateId);
+        setCurrentBasicParamId(numericId);
+      } catch (err) {
+        console.warn('加载参数模板失败:', err);
       }
-      bumpTreeData();
     }
+    await generateComputeSectionsAndCreateTask({
+      uploadedData,
+      selectedLines,
+      globalInterval: form.interval,
+      globalLength: form.length,
+      globalProperties: sectionParams,
+      setPerpendicularData,
+      setShowCrossLines,
+      setGlobalProperties,
+      requestTaskName: () => Promise.resolve(form.name),
+      skipUploadBanks: true,
+      existingTaskId: null,
+    });
+    bumpTreeData();
+    fetchBankGroups();
   };
 
   const handleTreeNodeAction = async (node: TreeNode, actionKey: string) => {
@@ -2638,6 +2652,23 @@ function EditorPage(props: EditorPageProps) {
           defaultValue={taskNameDialog.defaultName}
           onConfirm={closeTaskNameDialog}
           onCancel={() => closeTaskNameDialog(null)}
+        />
+      )}
+
+      {/* 创建任务（含断面属性/参数模板）弹窗 */}
+      {createTaskModalOpen && (
+        <CreateTaskModal
+          defaultName="岸线分析任务"
+          interval={globalInterval}
+          length={globalLength}
+          templates={basicParamsList.map((p: any) => ({
+            id: p.param_id ?? p.id ?? '',
+            label: p.param_name || p.paramName || String(p.param_id ?? p.id),
+          }))}
+          selectedTemplateId={selectedBasicParamIdState === null ? null : String(selectedBasicParamIdState)}
+          bankCount={selectedLines.size}
+          onConfirm={handleCreateTaskConfirm}
+          onCancel={() => setCreateTaskModalOpen(false)}
         />
       )}
 
