@@ -7,7 +7,8 @@ import ResourceTreeNode from './ResourceTreeNode';
 import TreeContextMenu from './TreeContextMenu';
 import styles from './ResourceSidebar.module.css';
 
-const ROW_HEIGHT = 28;
+const ROW_H = 28;
+const ROW_TALL = 46;
 const OVERSCAN = 8;
 
 interface Props {
@@ -37,9 +38,27 @@ export default function ResourceTree({ root, onNodeSelect, onNodeDoubleClick, on
   }, []);
 
   const rows = useMemo(() => flattenTree(root, expanded), [root, expanded]);
-  const total = rows.length * ROW_HEIGHT;
-  const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const end = Math.min(rows.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
+  const { offsets, total } = useMemo(() => {
+    const offsets = new Array<number>(rows.length);
+    let acc = 0;
+    for (let i = 0; i < rows.length; i++) {
+      offsets[i] = acc;
+      acc += rows[i].node.subtitle ? ROW_TALL : ROW_H;
+    }
+    return { offsets, total: acc };
+  }, [rows]);
+
+  let start = 0;
+  let end = rows.length;
+  for (let i = 0; i < rows.length; i++) {
+    const h = rows[i].node.subtitle ? ROW_TALL : ROW_H;
+    if (offsets[i] + h < scrollTop) start = i + 1;
+  }
+  for (let i = start; i < rows.length; i++) {
+    if (offsets[i] > scrollTop + viewportH) { end = i; break; }
+  }
+  start = Math.max(0, start - OVERSCAN);
+  end = Math.min(rows.length, end + OVERSCAN);
   const visible = rows.slice(start, end);
 
   const handleToggle = useCallback((node: TreeNode) => toggleExpanded(node.id), [toggleExpanded]);
@@ -60,7 +79,7 @@ export default function ResourceTree({ root, onNodeSelect, onNodeDoubleClick, on
         onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}
       >
         <div style={{ height: total, position: 'relative' }}>
-          <div style={{ position: 'absolute', top: start * ROW_HEIGHT, left: 0, right: 0 }}>
+          <div style={{ position: 'absolute', top: offsets[start], left: 0, right: 0 }}>
             {visible.map((r) => (
               <ResourceTreeNode
                 key={r.node.id}

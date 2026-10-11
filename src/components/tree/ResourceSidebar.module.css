@@ -140,6 +140,15 @@
   border-radius: 8px;
   flex: 0 0 auto;
 }
+.subtitle {
+  color: #9aa3af;
+  font-size: 11px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: none;
+}
 
 .hoverActions {
   margin-left: auto;
@@ -176,26 +185,26 @@
 .run {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  justify-content: center;
+  gap: 7px;
+  flex: 1;
+  background: #2563eb;
   color: #fff;
   border: none;
-  border-radius: 12px;
-  padding: 7px 16px;
+  border-radius: 10px;
+  padding: 9px 12px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  transition: all 0.2s;
+  transition: background 0.18s;
 }
 .run:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  background: #1d4ed8;
 }
 .run:disabled {
-  background: #cbd5e1;
-  color: #f8fafc;
+  background: #e2e8f0;
+  color: #94a3b8;
   cursor: not-allowed;
-  box-shadow: none;
 }
 .footerHint {
   color: #64748b;

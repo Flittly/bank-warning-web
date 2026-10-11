@@ -24,6 +24,7 @@ export interface TreeNode {
   label: string;
   icon?: string;
   meta?: string;
+  subtitle?: string;
   ref?: TreeRef;
   children?: TreeNode[];
   selectable: boolean;

@@ -41,12 +41,16 @@ const HOVER_ACTIONS: Record<string, string[]> = {
   param: ['param.props'],
 };
 
+const ROW_H = 28;
+const ROW_TALL = 46;
+
 export default function ResourceTreeNode({
   node, depth, expanded, selected, onToggle, onSelect, onDoubleClick, onAction, onContextMenu,
 }: Props) {
   const hasChildren = Boolean(node.children && node.children.length > 0);
   const Icon = ICONS[node.icon || node.kind] || FileText;
   const hoverKeys = (HOVER_ACTIONS[node.kind] || []).slice(0, 3);
+  const tall = Boolean(node.subtitle);
 
   const handleClick = (e: MouseEvent) => {
     e.stopPropagation();
@@ -55,36 +59,43 @@ export default function ResourceTreeNode({
   };
 
   return (
-    <div
-      className={`${styles.row} ${selected ? styles.rowSelected : ''} ${node.invalid ? styles.rowInvalid : ''}`}
-      style={{ paddingLeft: depth * 20 + 6 }}
-      onClick={handleClick}
-      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(node); }}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e.clientX, e.clientY); }}
-      title={node.label}
-    >
-      <span className={styles.chevron}>
-        {hasChildren ? (expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : null}
-      </span>
-      <span className={styles.icon}><Icon size={14} /></span>
-      <span className={styles.label}>{node.label}</span>
-      {node.meta ? <span className={styles.meta}>{node.meta}</span> : null}
-      {hoverKeys.length > 0 && (
-        <span className={styles.hoverActions}>
-          {getActions(hoverKeys).map((a) => {
-            const AIcon = ACTION_ICONS[a.icon] || Settings;
-            return (
-              <span
-                key={a.key}
-                className={styles.hIcon}
-                title={a.label}
-                onClick={(e) => { e.stopPropagation(); onAction(node, a.key); }}
-              >
-                <AIcon size={13} />
-              </span>
-            );
-          })}
+    <div style={{ height: tall ? ROW_TALL : ROW_H }}>
+      <div
+        className={`${styles.row} ${selected ? styles.rowSelected : ''} ${node.invalid ? styles.rowInvalid : ''}`}
+        style={{ paddingLeft: depth * 20 + 6, height: ROW_H }}
+        onClick={handleClick}
+        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(node); }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e.clientX, e.clientY); }}
+        title={node.label}
+      >
+        <span className={styles.chevron}>
+          {hasChildren ? (expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : null}
         </span>
+        <span className={styles.icon}><Icon size={14} /></span>
+        <span className={styles.label}>{node.label}</span>
+        {node.meta ? <span className={styles.meta}>{node.meta}</span> : null}
+        {hoverKeys.length > 0 && (
+          <span className={styles.hoverActions}>
+            {getActions(hoverKeys).map((a) => {
+              const AIcon = ACTION_ICONS[a.icon] || Settings;
+              return (
+                <span
+                  key={a.key}
+                  className={styles.hIcon}
+                  title={a.label}
+                  onClick={(e) => { e.stopPropagation(); onAction(node, a.key); }}
+                >
+                  <AIcon size={13} />
+                </span>
+              );
+            })}
+          </span>
+        )}
+      </div>
+      {tall && (
+        <div className={styles.subtitle} style={{ paddingLeft: depth * 20 + 40 }}>
+          {node.subtitle}
+        </div>
       )}
     </div>
   );
