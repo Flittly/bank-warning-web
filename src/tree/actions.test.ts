@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { ACTION_META, getActions } from './actions';
 
 describe('actions', () => {
@@ -10,9 +10,9 @@ describe('actions', () => {
     const list = getActions(['bank.smooth', 'bank.delete']);
     expect(list.map((a) => a.key)).toEqual(['bank.smooth', 'bank.delete']);
   });
-  it('registers 43 keys with matching key fields', () => {
+  it('registers 44 keys with matching key fields', () => {
     const entries = Object.entries(ACTION_META);
-    expect(entries.length).toBe(43);
+    expect(entries.length).toBe(44);
     for (const [k, v] of entries) expect(v.key).toBe(k);
   });
   it('getActions drops unknown keys', () => {

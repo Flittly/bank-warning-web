@@ -63,7 +63,7 @@ export function buildDemFolder(tiffs: any[]): TreeNode {
       meta: t?.timepoint ? String(t.timepoint) : undefined,
       ref: { entity: 'dem', key },
       selectable: true,
-      actions: ['dem.toggleBounds', 'dem.delete'],
+      actions: ['dem.toggleBounds', 'dem.selectBanks', 'dem.delete'],
     });
   }
   const children: TreeNode[] = [];
@@ -191,7 +191,7 @@ export function buildTasksGroup(
             meta: d.label,
             ref: { entity: 'dem' as const, key: String(d.key) },
             selectable: true,
-            actions: ['dem.toggleBounds'],
+            actions: ['dem.toggleBounds', 'dem.selectBanks'],
           }));
         kids = [
           { id: `task-banks:${tid}`, kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(bankNodes.length), children: bankNodes },

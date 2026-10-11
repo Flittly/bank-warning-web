@@ -357,9 +357,7 @@ function EditorPage(props: EditorPageProps) {
     } catch (err: any) { alert('截取失败: ' + err.message); }
   };
 
-  const selectBanksByTiffRange = () => {
-    const bounds = filteredTiffBoundsData?.features?.[0];
-    if (!bounds) { message.warning('请先选择一个带 DEM 的参数模板'); return; }
+  const applyTiffRangeSelection = (bounds: any) => {
     const banks = bankList.filter((b: any) => {
       const geom = b.bank_geometry || b.geometry;
       try {
@@ -367,9 +365,28 @@ function EditorPage(props: EditorPageProps) {
       } catch { return false; }
     });
     if (banks.length === 0) { message.info('没有岸段在所选 DEM 范围内'); return; }
-    const ids = banks.map((b: any) => String(b.bank_id));
-    ids.forEach(id => loadBankById(id));
+    banks.forEach((b: any) => { void loadBankById(String(b.bank_id)); });
     message.success(`已加载 ${banks.length} 条岸段到地图`);
+  };
+
+  const selectBanksByTiffRange = (demKey?: string) => {
+    if (demKey) {
+      const bounds = tiffBoundsData?.features?.find(
+        (f: any) => String(f.properties?.tiff_key) === String(demKey),
+      );
+      if (bounds) { applyTiffRangeSelection(bounds); return; }
+      // 范围数据尚未加载：拉取一次后重试
+      fetchTiffBounds().then((data) => {
+        if (data) setTiffBoundsData(data);
+        const b = data?.features?.find((f: any) => String(f.properties?.tiff_key) === String(demKey));
+        if (b) applyTiffRangeSelection(b);
+        else message.warning('未找到该 DEM 的范围数据');
+      });
+      return;
+    }
+    const bounds = filteredTiffBoundsData?.features?.[0];
+    if (!bounds) { message.warning('请先选择一个带 DEM 的参数模板'); return; }
+    applyTiffRangeSelection(bounds);
   };
 
   const validateSectionAsync = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
@@ -692,7 +709,7 @@ function EditorPage(props: EditorPageProps) {
 
   const fetchBankGroups = async () => {
     try {
-      const res = await fetch('/v0/bank/banks');
+      const res = await fetch('/v0/bank/banks', { headers: { ...authHeaders() } });
       if (!res.ok) {
         throw new Error(`${res.status} ${res.statusText}`);
       }
@@ -724,12 +741,18 @@ function EditorPage(props: EditorPageProps) {
     console.log('[loadBankById] 加载岸段:', bankId);
     if (!bankId) return;
     try {
-      let res = await fetch(`/v0/bank/banks/${encodeURIComponent(bankId)}`);
+      let res = await fetch(`/v0/bank/banks/${encodeURIComponent(bankId)}`, { headers: { ...authHeaders() } });
       if (!res.ok) {
         // 退回到查询参数形式
-        res = await fetch(`/v0/bank/banks?bank_id=${encodeURIComponent(bankId)}`);
+        res = await fetch(`/v0/bank/banks?bank_id=${encodeURIComponent(bankId)}`, { headers: { ...authHeaders() } });
       }
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          message.error('登录已过期或无权限，请重新登录后再加载岸段');
+          return;
+        }
+        throw new Error(`${res.status} ${res.statusText}`);
+      }
       const data = await res.json();
       const bank = (data?.bank || data?.banks?.[0] || data?.data || data) as any;
       const b = Array.isArray(bank) ? bank[0] : bank;
@@ -2239,6 +2262,16 @@ function EditorPage(props: EditorPageProps) {
   };
 
   const handleNewTask = async () => {
+    const hasBanks = !!uploadedData && selectedLines.size > 0;
+    const hasSections = !!perpendicularData && perpendicularData.features.length > 0;
+    if (!hasBanks && !hasSections) {
+      const proceed = await requestConfirm({
+        title: '尚未加载岸段/断面',
+        content: '当前页面还没有已加载的岸段和断面。建议先「上传岸段」加载并选择岸段、生成断面后再创建任务。仍要继续创建任务吗？',
+        confirmText: '继续创建',
+      });
+      if (!proceed) return;
+    }
     const name = await requestTaskName('岸线分析任务');
     if (!name) return;
     const res = await fetch('/v0/bank/tasks', {
@@ -2309,6 +2342,7 @@ function EditorPage(props: EditorPageProps) {
       case 'dem.select':
       case 'dem.upload': setDemPickerOpen(true); break;
       case 'dem.toggleBounds': setShowTiffBounds(!showTiffBounds); break;
+      case 'dem.selectBanks': selectBanksByTiffRange(key); break;
       case 'dem.delete': {
         const svc = await import('../services/tiffService');
         await svc.deleteTiffResource(key);

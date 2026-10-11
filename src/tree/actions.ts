@@ -43,6 +43,7 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
 
   'dem.upload': { key: 'dem.upload', label: '上传自定义 DEM', icon: 'upload' },
   'dem.select': { key: 'dem.select', label: '选择 DEM', icon: 'layers' },
+  'dem.selectBanks': { key: 'dem.selectBanks', label: '按此 DEM 选岸段', icon: 'layers' },
   'dem.toggleBounds': { key: 'dem.toggleBounds', label: '显示/隐藏 TIF 范围', icon: 'eye' },
   'dem.delete': { key: 'dem.delete', label: '删除 DEM', icon: 'trash', danger: true, separatorBefore: true },
 

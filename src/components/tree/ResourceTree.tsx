@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { TreeNode } from '../../tree/types';
 import { flattenTree } from '../../tree/treeModel';
 import { useResourceTreeStore } from '../../store/useResourceTreeStore';
@@ -77,14 +78,15 @@ export default function ResourceTree({ root, onNodeSelect, onNodeDoubleClick, on
           </div>
         </div>
       </div>
-      {ctx && (
+      {ctx && createPortal(
         <TreeContextMenu
           node={ctx.node}
           x={ctx.x}
           y={ctx.y}
           onAction={onNodeAction}
           onClose={() => setCtx(null)}
-        />
+        />,
+        document.body,
       )}
     </div>
   );

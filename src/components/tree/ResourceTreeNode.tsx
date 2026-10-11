@@ -36,7 +36,7 @@ interface Props {
 const HOVER_ACTIONS: Record<string, string[]> = {
   bank: ['bank.loadMap', 'bank.removeMap', 'bank.delete'],
   task: ['task.run'],
-  dem: ['dem.toggleBounds'],
+  dem: ['dem.toggleBounds', 'dem.selectBanks'],
   section: ['section.props'],
   param: ['param.props'],
 };
