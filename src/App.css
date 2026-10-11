@@ -373,8 +373,8 @@
 }
 
 .activity-bar {
-  width: 54px;
-  min-width: 54px;
+  width: 42px;
+  min-width: 42px;
   background: rgba(255, 255, 255, 0.55);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -387,15 +387,15 @@
   z-index: 50;
 }
 .activity-btn {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 11px;
+  border-radius: 9px;
   background: transparent;
-  color: #64748b;
+  color: #475569;
   cursor: pointer;
   transition: all 0.15s;
 }

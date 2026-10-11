@@ -1,6 +1,6 @@
 ﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams, useSearchParams, Navigate } from 'react-router-dom';
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { Edit3, BarChart3, BookOpen, HelpCircle, Menu, List, FileText, Box } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
+import { HelpCircle, Menu } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
 import EditorPage from './pages/EditorPage';
@@ -41,6 +41,15 @@ function ResultPageWrapper() {
 //   return <SmartWorkbenchPage initialTaskId={taskId} />;
 // }
 
+const ACTIVITY_PATHS: Record<string, ReactNode> = {
+  editor: <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
+  list: <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
+  reports: (<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" /><path d="M16 13H8M16 17H8M10 9H8" /></>),
+  skills: (<><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></>),
+  progress: (<><path d="M3 3v18h18" /><path d="M18 17V9M13 17V5M8 17v-3" /></>),
+  knowledge: <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />,
+};
+
 function ActivityBar() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -52,24 +61,23 @@ function ActivityBar() {
   const isResult = path.startsWith('/result');
 
   const items = [
-    { key: 'editor', icon: Edit3, label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
-    { key: 'tasks', icon: List, label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
-    { key: 'reports', icon: FileText, label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
-    { key: 'skills', icon: Box, label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
-    { key: 'progress', icon: BarChart3, label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
-    { key: 'knowledge', icon: BookOpen, label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
+    { key: 'editor', label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
+    { key: 'tasks', label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
+    { key: 'reports', label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
+    { key: 'skills', label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
+    { key: 'progress', label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
+    { key: 'knowledge', label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
   ];
 
   return (
     <div className="activity-bar">
-      {items.map((it) => {
-        const Icon = it.icon;
-        return (
-          <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label}>
-            <Icon size={20} />
-          </button>
-        );
-      })}
+      {items.map((it) => (
+        <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label}>
+          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            {ACTIVITY_PATHS[it.key]}
+          </svg>
+        </button>
+      ))}
     </div>
   );
 }
