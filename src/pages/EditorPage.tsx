@@ -2292,15 +2292,22 @@ function EditorPage(props: EditorPageProps) {
     }
     const name = await requestTaskName('岸线分析任务');
     if (!name) return;
+    const taskId = `task-${Date.now()}`;
     const res = await fetch('/v0/bank/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ task_name: name, description: `通过前端创建的任务: ${name}` }),
+      body: JSON.stringify({
+        tasks: [{ task_id: taskId, task_name: name, description: `通过前端创建的任务: ${name}` }],
+        overwrite: false,
+      }),
     });
     if (res.ok) {
       const data = await res.json().catch(() => null);
-      const tid = String(data?.task_id ?? data?.id ?? '');
-      if (tid) useResourceTreeStore.getState().setCurrentTask(tid);
+      const tid = String(data?.tasks?.[0]?.task_id ?? data?.task_id ?? taskId);
+      if (tid) {
+        useResourceTreeStore.getState().setCurrentTask(tid);
+        setCurrentTaskId(tid);
+      }
       bumpTreeData();
     }
   };
