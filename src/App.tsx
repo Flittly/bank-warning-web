@@ -1,6 +1,6 @@
 ﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams, useSearchParams, Navigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { HelpCircle, Menu, Edit3, List, FileText, Box, BarChart3, BookOpen } from 'lucide-react';
+import { HelpCircle, Menu } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
 import EditorPage from './pages/EditorPage';
@@ -41,6 +41,15 @@ function ResultPageWrapper() {
 //   return <SmartWorkbenchPage initialTaskId={taskId} />;
 // }
 
+const ACTIVITY_ICONS: Record<string, string> = {
+  editor: 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
+  list: 'M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13',
+  reports: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
+  skills: 'M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z m3.3 7 8.7 5 8.7-5 M12 22V12',
+  progress: 'M3 3v18h18 M18 17V9 M13 17V5 M8 17v-3',
+  knowledge: 'M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20',
+};
+
 function ActivityBar() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -52,24 +61,23 @@ function ActivityBar() {
   const isResult = path.startsWith('/result');
 
   const items = [
-    { key: 'editor', icon: Edit3, label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
-    { key: 'tasks', icon: List, label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
-    { key: 'reports', icon: FileText, label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
-    { key: 'skills', icon: Box, label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
-    { key: 'progress', icon: BarChart3, label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
-    { key: 'knowledge', icon: BookOpen, label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
+    { key: 'editor', label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
+    { key: 'tasks', label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
+    { key: 'reports', label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
+    { key: 'skills', label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
+    { key: 'progress', label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
+    { key: 'knowledge', label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
   ];
 
   return (
     <div className="activity-bar">
-      {items.map((it) => {
-        const Icon = it.icon;
-        return (
-          <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label}>
-            <Icon size={18} />
-          </button>
-        );
-      })}
+      {items.map((it) => (
+        <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label}>
+          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={it.active ? '#2563eb' : '#334155'} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d={ACTIVITY_ICONS[it.key]} />
+          </svg>
+        </button>
+      ))}
     </div>
   );
 }
