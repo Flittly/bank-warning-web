@@ -66,7 +66,7 @@ function ActivityBar() {
         const Icon = it.icon;
         return (
           <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label}>
-            <Icon size={18} />
+            <Icon size={20} />
           </button>
         );
       })}
