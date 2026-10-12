@@ -1658,7 +1658,7 @@ function ResultPage(props: ResultPageProps) {
           {/* === TASKS PANEL === */}
           {activeSidebarPanel === 'tasks' && (
             <>
-              <div className="sidebar-header">
+              <div className="sidebar-header" data-tour="result-tasks">
                 <List size={14} />
                 <h4>任务列表</h4>
               </div>
@@ -1759,7 +1759,7 @@ function ResultPage(props: ResultPageProps) {
           {/* === REPORTS PANEL === */}
           {activeSidebarPanel === 'reports' && (
             <>
-              <div className="sidebar-header">
+              <div className="sidebar-header" data-tour="result-reports">
                 <FileText size={14} />
                 <h4>报告查看</h4>
               </div>
@@ -1802,7 +1802,7 @@ function ResultPage(props: ResultPageProps) {
           {/* === PROGRESS PANEL === */}
           {activeSidebarPanel === 'progress' && (
             <>
-              <div className="sidebar-header">
+              <div className="sidebar-header" data-tour="result-progress">
                 <BarChart3 size={14} />
                 <h4>计算进度</h4>
               </div>
@@ -1869,7 +1869,7 @@ function ResultPage(props: ResultPageProps) {
     {/* === SKILLS PANEL === */}
     {activeSidebarPanel === 'skills' && (
       <>
-        <div className="sidebar-header">
+        <div className="sidebar-header" data-tour="result-skills">
           <Box size={14} />
           <h4>Skills</h4>
         </div>
@@ -1953,7 +1953,7 @@ function ResultPage(props: ResultPageProps) {
         </div>
       </div>
       <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
-      <div className="editor-map-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div className="editor-map-panel" data-tour="result-workspace" style={{ display: 'flex', flexDirection: 'column' }}>
         <div ref={mapContainer} className="map-full" style={{ flex: 1 }} />
 
         {matrixOpen && (

@@ -75,9 +75,9 @@ function ActivityBar() {
   ];
 
   return (
-    <div className="activity-bar">
+    <div className="activity-bar" data-tour="activity-bar">
       {items.map((it) => (
-        <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label}>
+        <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label} data-tour={`activity-${it.key}`}>
           <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={it.active ? '#2563eb' : '#334155'} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d={ACTIVITY_ICONS[it.key]} />
           </svg>
@@ -214,6 +214,7 @@ function AppLayout() {
                       size="small"
                       type="text"
                       icon={<Menu size={16} />}
+                      data-tour="nav-menu"
                     />
                   </Dropdown>
                 </Space>

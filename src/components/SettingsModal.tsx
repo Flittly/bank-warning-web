@@ -330,7 +330,7 @@ export default function SettingsModal({ username, roleLabel, onClose, onReplayTo
         <fieldset className={styles.fieldset}>
           <legend className={styles.legend}>通用</legend>
           <div className={styles.infoRow}>
-            <span>新手引导</span>
+            <span title="引导步骤会按当前「编辑器左侧面板」的风格（资源树 / 经典面板）自动切换">新手引导（跟随当前面板）</span>
             <button type="button" className={styles.smallButton} onClick={onReplayTour}>
               重新播放
             </button>

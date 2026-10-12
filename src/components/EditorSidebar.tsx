@@ -199,7 +199,7 @@ function EditorSidebar(props: EditorSidebarProps) {
   const activeSelectedBank = selectedBankGroup[selectedBankGroup.length - 1] || '';
 
   return (
-    <div className={styles.sidebarContainer}>
+    <div className={styles.sidebarContainer} data-tour="classic-root">
       <div className={styles.sidebarContent}>
         {/* 数据加载 */}
         <section className={styles.configSection}>

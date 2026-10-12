@@ -93,11 +93,11 @@ export default function ResourceSidebar({ handlers }: Props) {
 
   return (
     <div className={styles.sidebar}>
-      <div className="sidebar-header" style={{ padding: '12px 14px 8px', margin: 0, flexShrink: 0 }}>
+      <div className="sidebar-header" data-tour="tree-header" style={{ padding: '12px 14px 8px', margin: 0, flexShrink: 0 }}>
         <Edit3 size={14} />
         <h4>断面编辑器</h4>
       </div>
-      <div style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div data-tour="tree-root" style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
         {loaded && (
           <ResourceTree
             root={tree}
@@ -107,7 +107,7 @@ export default function ResourceSidebar({ handlers }: Props) {
           />
         )}
       </div>
-      <div className={styles.footer}>
+      <div className={styles.footer} data-tour="tree-footer">
         <button type="button" className={styles.run} onClick={handlers.onRun} title="执行风险分析">
           <Play size={15} /> 执行风险分析
         </button>
