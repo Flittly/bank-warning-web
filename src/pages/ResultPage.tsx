@@ -10,7 +10,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download } from 'lucide-react';
+import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search } from 'lucide-react';
 import { ConfigProvider, Modal } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 
@@ -202,6 +202,10 @@ function ResultPage(props: ResultPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSections, setShowSections] = useState(true);
+  // 任务搜索（T0：纯前端本地过滤，零后端改动）
+  // 分两个 state：input 是输入框实时值，query 是「已提交」的关键字（点搜索按钮/回车才同步）
+  const [taskSearchInput, setTaskSearchInput] = useState('');
+  const [taskSearchQuery, setTaskSearchQuery] = useState('');
 
   const [progressOpen, setProgressOpen] = useState(false);
   const [progress, setProgress] = useState<TaskProgressSnapshot | null>(null);
@@ -1627,6 +1631,18 @@ function ResultPage(props: ResultPageProps) {
     return Math.round((progress.processedCount / progress.expectedTotal) * 100);
   }, [progress]);
 
+  // 任务列表本地过滤（T0）。
+  // 任务列表接口是整份拉下来的（无分页），所以在前端过滤即可，不发新请求。
+  // 匹配范围：任务名称 + 任务 ID，大小写不敏感。
+  const filteredTasks = useMemo(() => {
+    const q = taskSearchQuery.trim().toLowerCase();
+    if (!q) return taskList;
+    return taskList.filter(t =>
+      (t.task_name || '').toLowerCase().includes(q) ||
+      String(t.task_id || '').toLowerCase().includes(q)
+    );
+  }, [taskList, taskSearchQuery]);
+
   const toggleErrorExpanded = (sectionId: string) => {
     const willExpand = !expandedErrorIds[sectionId];
     setExpandedErrorIds(prev => ({ ...prev, [sectionId]: willExpand }));
@@ -1657,14 +1673,63 @@ function ResultPage(props: ResultPageProps) {
         <div className="upload-control result-sidebar" style={{ position: 'static', flex: 1, height: '100%', top: 0, left: 0, background: 'transparent' }}>
           {/* === TASKS PANEL === */}
           {activeSidebarPanel === 'tasks' && (
-            <>
+            <div className="result-tasks-panel">
               <div className="sidebar-header" data-tour="result-tasks">
                 <List size={14} />
                 <h4>任务列表</h4>
               </div>
+
+              {/* 任务搜索（T0：前端本地过滤） */}
+              <div className="task-search-bar" data-tour="task-search">
+                <div className="task-search-input-wrap">
+                  <Search size={13} className="task-search-icon" />
+                  <input
+                    className="task-search-input"
+                    type="text"
+                    placeholder="搜索任务名称 / ID"
+                    value={taskSearchInput}
+                    onChange={(e) => {
+                      setTaskSearchInput(e.target.value);
+                      // 清空输入框时取消过滤，避免"看着空却还在筛"
+                      if (e.target.value === '') setTaskSearchQuery('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') setTaskSearchQuery(taskSearchInput);
+                    }}
+                  />
+                  {taskSearchInput && (
+                    <button
+                      className="task-search-clear"
+                      title="清空"
+                      onClick={() => { setTaskSearchInput(''); setTaskSearchQuery(''); }}
+                    >×</button>
+                  )}
+                </div>
+                <button
+                  className="task-search-btn"
+                  onClick={() => setTaskSearchQuery(taskSearchInput)}
+                >
+                  <Search size={13} />
+                  搜索
+                </button>
+              </div>
+
+              {taskSearchQuery.trim() && !loading && (
+                <div className="task-search-hint">
+                  找到 <b>{filteredTasks.length}</b> 条 / 共 {taskList.length} 条
+                  <button
+                    className="task-search-hint-reset"
+                    onClick={() => { setTaskSearchInput(''); setTaskSearchQuery(''); }}
+                  >重置</button>
+                </div>
+              )}
+
               <div className="task-list-container">
                 {taskList.length === 0 && !loading && <p className="empty-hint">暂无任务</p>}
-                {taskList.map(task => (
+                {taskList.length > 0 && filteredTasks.length === 0 && (
+                  <p className="empty-hint">没有匹配「{taskSearchQuery}」的任务</p>
+                )}
+                {filteredTasks.map(task => (
                   <div 
                     key={task.task_id} 
                     className={`task-item ${selectedTask === task.task_id ? 'active' : ''}`}
@@ -1753,7 +1818,7 @@ function ResultPage(props: ResultPageProps) {
                   </div>
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {/* === REPORTS PANEL === */}
