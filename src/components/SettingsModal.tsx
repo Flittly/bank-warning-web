@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { message } from 'antd';
 import styles from './Modal.module.css';
 import { getStoredAiModel, setStoredAiModel } from '../utils/aiModelSettings';
+import { useEditorStore } from '../store/useEditorStore';
 
 interface AiModel {
   key: string;
@@ -21,6 +22,8 @@ interface SettingsModalProps {
 const EMPTY_ADD_FORM = { key: '', label: '', modelName: '', baseUrl: '', apiKey: '' };
 
 export default function SettingsModal({ username, roleLabel, onClose, onReplayTour }: SettingsModalProps) {
+  const sidebarMode = useEditorStore((s) => s.sidebarMode);
+  const setSidebarMode = useEditorStore((s) => s.setSidebarMode);
   const [models, setModels] = useState<AiModel[]>([]);
   const [selectedKey, setSelectedKey] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -297,6 +300,31 @@ export default function SettingsModal({ username, roleLabel, onClose, onReplayTo
               </div>
             </>
           )}
+        </fieldset>
+
+        <fieldset className={styles.fieldset}>
+          <legend className={styles.legend}>界面</legend>
+          <div className={styles.infoRow}>
+            <span>编辑器左侧面板</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className={styles.smallButton}
+                style={{ background: sidebarMode === 'tree' ? '#2563eb' : undefined, color: sidebarMode === 'tree' ? '#fff' : undefined }}
+                onClick={() => setSidebarMode('tree')}
+              >
+                资源树
+              </button>
+              <button
+                type="button"
+                className={styles.smallButton}
+                style={{ background: sidebarMode === 'classic' ? '#2563eb' : undefined, color: sidebarMode === 'classic' ? '#fff' : undefined }}
+                onClick={() => setSidebarMode('classic')}
+              >
+                经典面板
+              </button>
+            </div>
+          </div>
         </fieldset>
 
         <fieldset className={styles.fieldset}>

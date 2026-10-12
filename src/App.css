@@ -60,7 +60,7 @@
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+  border-bottom: 2px solid #1e2a52;
   display: flex;
   align-items: center;
   padding: 0 24px;
@@ -365,6 +365,60 @@
   overflow: hidden;
 }
 
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.activity-bar {
+  width: 42px;
+  min-width: 42px;
+  background: rgba(241, 245, 249, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-right: 1px solid rgba(255, 255, 255, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12px;
+  gap: 4px;
+  z-index: 50;
+}
+.activity-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  /* ⚠ 必须清零内边距：index.css 里有一条全局 `button { padding: .6em 1.2em }`（Vite 模板遗留），
+     而 button 在浏览器 UA 样式表里是 box-sizing: border-box —— 32px 的宽度会被 38.4px 的
+     横向内边距整个吃掉，内容宽度归 0，里面的内联 SVG 作为 flex 子项被压成 0 宽，
+     于是所有图标都"看不见"。这一行就是活动栏图标不显示的根因。 */
+  padding: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+/* 图标不参与伸缩：宽度不够时宁可溢出也不要被挤成 0 宽而静默消失 */
+.activity-btn svg {
+  flex: 0 0 auto;
+}
+.activity-btn:hover {
+  background: rgba(255, 255, 255, 0.75);
+  color: #334155;
+}
+/* 选中态为纯矩形色块：去掉圆角，与其它按钮的 9px 圆角形成明确区分 */
+.activity-btn.active {
+  border-radius: 0;
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
 .map-wrapper {
   position: relative;
   width: 100%;
@@ -392,6 +446,92 @@
   height: 100%;
   position: relative;
   overflow: hidden;
+}
+
+.editor-map-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(32px) saturate(1.9);
+  -webkit-backdrop-filter: blur(32px) saturate(1.9);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.editor-map-toolbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.06) 45%, rgba(255, 255, 255, 0) 65%);
+  pointer-events: none;
+}
+.editor-map-toolbar .emt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  color: #1e293b;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.65);
+  position: relative;
+  z-index: 1;
+}
+.editor-map-toolbar .emt-btn:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+.editor-map-toolbar .emt-btn.emt-active {
+  background: rgba(37, 99, 235, 0.16);
+  color: #1d4ed8;
+  text-shadow: none;
+}
+.editor-map-toolbar .emt-create {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.2), inset 0 1px 0 rgba(255, 255, 255, 1);
+  transition: transform 0.18s;
+}
+.editor-map-toolbar .emt-create:hover {
+  transform: scale(1.06);
+}
+.editor-map-toolbar .emt-create::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: conic-gradient(#facc15, #2563eb, #ef4444, #facc15);
+  filter: blur(8px);
+  opacity: 0.85;
+  z-index: -1;
+  animation: emt-rainbow-spin 4s linear infinite;
+}
+@keyframes emt-rainbow-spin {
+  to { transform: rotate(360deg); }
 }
 
 .editor-chat-panel {

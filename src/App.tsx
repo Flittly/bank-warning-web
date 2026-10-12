@@ -1,6 +1,6 @@
-﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
+﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams, useSearchParams, Navigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Edit3, BarChart2, BookOpen, HelpCircle, Menu } from 'lucide-react';
+import { HelpCircle, Menu } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
 import EditorPage from './pages/EditorPage';
@@ -41,10 +41,54 @@ function ResultPageWrapper() {
 //   return <SmartWorkbenchPage initialTaskId={taskId} />;
 // }
 
-function AppLayout() {
+// 活动栏图标（内联 SVG path，避免依赖图标库）
+// ⚠ key 必须与下面 items 里的 key 一一对应：任何一个对不上，d 就是 undefined，
+//   React 会渲染出一个没有 d 的 <path>，那个图标会静默变成空白（不报错、不警告）。
+const ACTIVITY_ICONS: Record<string, string> = {
+  editor: 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
+  tasks: 'M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13',
+  reports: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
+  // 注意：合并成一条 path 后，Z 之后的点会回到子路径起点，所以原来那句相对坐标
+  // `m3.3 7 8.7 5 8.7-5` 会被算到 (24.3,15) 去（越出 24x24 视口被裁掉），必须是绝对坐标 `M3.3 7`
+  skills: 'M7.5 4.27l9 5.15 M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z M3.3 7l8.7 5 8.7-5 M12 22V12',
+  progress: 'M3 3v18h18 M18 17V9 M13 17V5 M8 17v-3',
+  knowledge: 'M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20',
+};
+
+function ActivityBar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const currentPath = location.pathname;
+  const [searchParams] = useSearchParams();
+  const path = location.pathname;
+  const panel = searchParams.get('panel') || 'tasks';
+  const isEditor = path.startsWith('/editor');
+  const isKnowledge = path.startsWith('/knowledge');
+  const isResult = path.startsWith('/result');
+
+  const items = [
+    { key: 'editor', label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
+    { key: 'tasks', label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
+    { key: 'reports', label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
+    { key: 'skills', label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
+    { key: 'progress', label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
+    { key: 'knowledge', label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
+  ];
+
+  return (
+    <div className="activity-bar">
+      {items.map((it) => (
+        <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label}>
+          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={it.active ? '#2563eb' : '#334155'} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d={ACTIVITY_ICONS[it.key]} />
+          </svg>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AppLayout() {
+  const navigate = useNavigate();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [showTour, setShowTour] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -133,42 +177,6 @@ function AppLayout() {
             <span className="nav-title-en">Yangtze River Bank Collapse Key Hazard Section Intelligent Risk Assessment Platform</span>
           </div>
         </div>
-        <div className="nav-tabs">
-          <button
-            type="button"
-            className={`nav-tab ${currentPath.startsWith('/editor') ? 'active' : ''}`}
-            onClick={() => navigate('/editor')}
-          >
-            <Edit3 size={18} />
-            断面编辑器
-          </button>
-          <button
-            type="button"
-            className={`nav-tab ${currentPath.startsWith('/result') ? 'active' : ''}`}
-            onClick={() => navigate('/result')}
-          >
-            <BarChart2 size={18} />
-            结果查看器
-          </button>
-          {/* 智能工作台页面暂时隐藏
-          <button
-            type="button"
-            className={`nav-tab ${currentPath.startsWith('/workbench') ? 'active' : ''}`}
-            onClick={() => navigate('/workbench')}
-          >
-            <Cpu size={18} />
-            智能工作台
-          </button>
-          */}
-          <button
-            type="button"
-            className={`nav-tab ${currentPath.startsWith('/knowledge') ? 'active' : ''}`}
-            onClick={() => navigate('/knowledge')}
-          >
-            <BookOpen size={18} />
-            知识库
-          </button>
-        </div>
         <div className="nav-right">
               {!isLoading && (
             isAuthenticated ? (
@@ -233,9 +241,12 @@ function AppLayout() {
           )}
         </div>
       </div>
-      <main className="app-main">
-        <Outlet />
-      </main>
+      <div className="app-body">
+        <ActivityBar />
+        <main className="app-main">
+          <Outlet />
+        </main>
+      </div>
       {showSettings && (
         <SettingsModal
           username={user?.username}

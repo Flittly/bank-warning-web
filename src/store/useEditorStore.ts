@@ -20,6 +20,7 @@ interface EditorData {
   loadedBanks: any[];
   crossLineControlMode: 'shoreline' | 'free';
   selectedBasicParamIdState: string | number | null;
+  sidebarMode: 'tree' | 'classic';
   mapLng: number;
   mapLat: number;
   mapZoom: number;
@@ -46,6 +47,7 @@ interface EditorActions {
   setLoadedBanks: (v: any[] | ((prev: any[]) => any[])) => void;
   setCrossLineControlMode: (v: 'shoreline' | 'free') => void;
   setSelectedBasicParamIdState: (v: string | number | null) => void;
+  setSidebarMode: (v: 'tree' | 'classic') => void;
   setMapView: (lng: number, lat: number, zoom: number) => void;
   /** 清除所有编辑器数据（切换任务/重置时调用） */
   clearEditorData: () => void;
@@ -76,6 +78,7 @@ const initialData: EditorData = {
   loadedBanks: [],
   crossLineControlMode: 'shoreline',
   selectedBasicParamIdState: null,
+  sidebarMode: 'tree',
   mapLng: 119.896,
   mapLat: 32.229,
   mapZoom: 7,
@@ -101,6 +104,7 @@ export const useEditorStore = create<EditorState>()(
       setLoadedBanks: setter(set, 'loadedBanks'),
       setCrossLineControlMode: setter(set, 'crossLineControlMode'),
       setSelectedBasicParamIdState: setter(set, 'selectedBasicParamIdState'),
+      setSidebarMode: setter(set, 'sidebarMode'),
       setMapView: (lng: number, lat: number, zoom: number) => set({ mapLng: lng, mapLat: lat, mapZoom: zoom }),
       clearEditorData: () => set({ ...initialData }),
     }),
@@ -122,6 +126,7 @@ export const useEditorStore = create<EditorState>()(
         loadedBanks: state.loadedBanks,
         crossLineControlMode: state.crossLineControlMode,
         selectedBasicParamIdState: state.selectedBasicParamIdState,
+        sidebarMode: state.sidebarMode,
         mapLng: state.mapLng,
         mapLat: state.mapLat,
         mapZoom: state.mapZoom,

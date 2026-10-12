@@ -96,6 +96,12 @@ export default function KnowledgeSidebar({ onSelectDoc, onSearch, style }: Props
       borderRight: '1px solid rgba(255,255,255,0.3)',
       ...style,
     }}>
+      {/* Header */}
+      <div className="sidebar-header" style={{ padding: '0 0 12px', margin: 0 }}>
+        <BookOpen size={14} />
+        <h4>知识库</h4>
+      </div>
+
       {/* Upload */}
       <label style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',

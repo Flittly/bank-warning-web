@@ -5,13 +5,19 @@ import '../App.css';
 import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import TaskNameModal from '../components/TaskNameModal';
+import CreateTaskModal, { type CreateTaskForm } from '../components/CreateTaskModal';
 import ConfirmModal from '../components/ConfirmModal';
 import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
+import ResourceSidebar from '../components/tree/ResourceSidebar';
 import EditorMap from '../components/EditorMap';
+import TiffResourcePicker from '../components/TiffResourcePicker';
+import type { TreeNode } from '../tree/types';
+import { useResourceTreeStore } from '../store/useResourceTreeStore';
+import { authHeaders } from '../utils/apiClient';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
-import { MessageCircle, Globe } from 'lucide-react';
+import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser } from 'lucide-react';
 import { setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
 import { stripZFromGeoJSON } from '../utils/geojson';
@@ -44,7 +50,7 @@ import {
   fetchBasicParamsList,
   updateBasicParamAsSectionParams,
 } from './editor/basicParamsApi';
-import { getCurrentTaskId } from './editor/taskState';
+import { getCurrentTaskId, setCurrentTaskId } from './editor/taskState';
 
 interface EditorPageProps {
   setPage?: (page: 'editor' | 'result', taskId?: string) => void;
@@ -117,6 +123,11 @@ function EditorPage(props: EditorPageProps) {
   const [crossLineEditMode, setCrossLineEditMode] = useState<'none' | 'select' | 'add'>('none');
   const [selectedCrossLineIndex, setSelectedCrossLineIndex] = useState<number | null>(null);
   const [selectedCrossLineIndices, setSelectedCrossLineIndices] = useState<Set<number>>(new Set());
+  const sidebarMode = useEditorStore((s) => s.sidebarMode);
+  const [demPickerOpen, setDemPickerOpen] = useState(false);
+  const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
+  const bankUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const sectionsUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearSelectedCrossLines = () => {
     setSelectedCrossLineIndex(null);
@@ -348,19 +359,54 @@ function EditorPage(props: EditorPageProps) {
     } catch (err: any) { alert('截取失败: ' + err.message); }
   };
 
-  const selectBanksByTiffRange = () => {
-    const bounds = filteredTiffBoundsData?.features?.[0];
-    if (!bounds) { message.warning('请先选择一个带 DEM 的参数模板'); return; }
-    const banks = bankList.filter((b: any) => {
+  const applyTiffRangeSelection = async (bounds: any) => {
+    let banks = bankList;
+    if (!banks || banks.length === 0) {
+      try {
+        const res = await fetch('/v0/bank/banks', { headers: { ...authHeaders() } });
+        const data = await res.json();
+        const list = (data?.banks || data?.data || data) as any[];
+        if (Array.isArray(list)) {
+          banks = list;
+          setBankList(list);
+        }
+      } catch {
+        banks = [];
+      }
+    }
+    const matched = (banks || []).filter((b: any) => {
       const geom = b.bank_geometry || b.geometry;
+      if (!geom) return false;
       try {
         return turf.booleanIntersects(geom, bounds.geometry);
       } catch { return false; }
     });
-    if (banks.length === 0) { message.info('没有岸段在所选 DEM 范围内'); return; }
-    const ids = banks.map((b: any) => String(b.bank_id));
-    ids.forEach(id => loadBankById(id));
-    message.success(`已加载 ${banks.length} 条岸段到地图`);
+    if (matched.length === 0) { message.info('没有岸段在所选 DEM 范围内'); return; }
+    matched.forEach((b: any) => { void loadBankById(String(b.bank_id)); });
+    message.success(`已加载 ${matched.length} 条岸段到地图`);
+  };
+
+  const selectBanksByTiffRange = async (demKey?: string) => {
+    if (demKey && typeof demKey === 'string') {
+      let bounds = tiffBoundsData?.features?.find(
+        (f: any) => String(f.properties?.tiff_key) === String(demKey),
+      );
+      if (!bounds) {
+        const data = await fetchTiffBounds();
+        if (data) {
+          setTiffBoundsData(data);
+          bounds = data.features?.find((f: any) => String(f.properties?.tiff_key) === String(demKey));
+        }
+      }
+      if (!bounds) { message.warning('未找到该 DEM 的范围数据'); return; }
+      setShowTiffBounds(true);
+      await applyTiffRangeSelection(bounds);
+      return;
+    }
+    const bounds = filteredTiffBoundsData?.features?.[0] || tiffBoundsData?.features?.[0];
+    if (!bounds) { message.warning('请先选择一个带 DEM 的参数模板'); return; }
+    setShowTiffBounds(true);
+    await applyTiffRangeSelection(bounds);
   };
 
   const validateSectionAsync = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
@@ -683,7 +729,7 @@ function EditorPage(props: EditorPageProps) {
 
   const fetchBankGroups = async () => {
     try {
-      const res = await fetch('/v0/bank/banks');
+      const res = await fetch('/v0/bank/banks', { headers: { ...authHeaders() } });
       if (!res.ok) {
         throw new Error(`${res.status} ${res.statusText}`);
       }
@@ -715,12 +761,18 @@ function EditorPage(props: EditorPageProps) {
     console.log('[loadBankById] 加载岸段:', bankId);
     if (!bankId) return;
     try {
-      let res = await fetch(`/v0/bank/banks/${encodeURIComponent(bankId)}`);
+      let res = await fetch(`/v0/bank/banks/${encodeURIComponent(bankId)}`, { headers: { ...authHeaders() } });
       if (!res.ok) {
         // 退回到查询参数形式
-        res = await fetch(`/v0/bank/banks?bank_id=${encodeURIComponent(bankId)}`);
+        res = await fetch(`/v0/bank/banks?bank_id=${encodeURIComponent(bankId)}`, { headers: { ...authHeaders() } });
       }
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          message.error('登录已过期或无权限，请重新登录后再加载岸段');
+          return;
+        }
+        throw new Error(`${res.status} ${res.statusText}`);
+      }
       const data = await res.json();
       const bank = (data?.bank || data?.banks?.[0] || data?.data || data) as any;
       const b = Array.isArray(bank) ? bank[0] : bank;
@@ -1989,9 +2041,16 @@ function EditorPage(props: EditorPageProps) {
         setGlobalProperties,
         requestTaskName: () => requestTaskName('岸线分析任务'),
         skipUploadBanks: true,
+        existingTaskId: getCurrentTaskId(),
       });
     } finally {
       fetchBankGroups();
+      const tid = getCurrentTaskId();
+      if (tid) {
+        useResourceTreeStore.getState().setCurrentTask(tid);
+        useResourceTreeStore.getState().invalidateSections(tid);
+      }
+      useResourceTreeStore.getState().bumpData();
       isGeneratingRef.current = false;
     }
   };
@@ -2017,9 +2076,16 @@ function EditorPage(props: EditorPageProps) {
         requestTaskName: () => requestTaskName('岸线分析任务'),
         // 与精细断面保持一致：不强制同步上传岸段
         skipUploadBanks: true,
+        existingTaskId: getCurrentTaskId(),
       });
     } finally {
       fetchBankGroups();
+      const tid = getCurrentTaskId();
+      if (tid) {
+        useResourceTreeStore.getState().setCurrentTask(tid);
+        useResourceTreeStore.getState().invalidateSections(tid);
+      }
+      useResourceTreeStore.getState().bumpData();
       isGeneratingRef.current = false;
     }
   };
@@ -2159,13 +2225,235 @@ function EditorPage(props: EditorPageProps) {
 
 
 
+  // === 资源树侧栏：节点操作分发 ===
+  const bumpTreeData = () => useResourceTreeStore.getState().bumpData();
+
+  const handleTreeNodeSelect = (node: TreeNode) => {
+    const key = node.ref?.key || '';
+    if (node.kind === 'task' && key) {
+      useResourceTreeStore.getState().setCurrentTask(key);
+      setCurrentTaskId(key);
+      return;
+    }
+    if (node.ref?.entity === 'bank' && key) {
+      // 地图联动：把岸段加载到地图上（可见即高亮）
+      void loadBankById(key);
+      return;
+    }
+    if (node.ref?.entity === 'section' && key) {
+      const features = perpendicularData?.features || [];
+      const idx = features.findIndex((f: any) => {
+        const p = f.properties || {};
+        return String(p.sectionId ?? p.section_id ?? '') === key;
+      });
+      if (idx >= 0) setSelectedCrossLineIndex(idx);
+      return;
+    }
+    if (node.ref?.entity === 'dem') {
+      setShowTiffBounds(true);
+      return;
+    }
+  };
+
+  const handleTreeNodeDoubleClick = (node: TreeNode) => {
+    if (node.ref?.entity === 'bank') {
+      void loadBankById(node.ref.key);
+    } else if (node.ref?.entity === 'dem') {
+      setShowTiffBounds(true);
+    }
+  };
+
+  const handleOpenBankParams = (bankId: string) => {
+    const features = perpendicularData?.features || [];
+    const section = features.find((f: any) => f.properties?.bank_id === bankId);
+    if (!section) {
+      message.warning('该岸段暂无断面数据，请先生成断面');
+      return;
+    }
+    const lineProps: any = section.properties || {};
+    const bankName = lineProps.bank_name || lineProps.bankName || bankId;
+    const currentConfig = {
+      param_name: lineProps.paramName || lineProps.param_name || '',
+      segment: lineProps.segment || '',
+      current_timepoint: lineProps.currentTimepoint || lineProps.current_timepoint || '',
+      set_name: lineProps.setName || lineProps.set_name || '',
+      water_qs: lineProps.waterQs || lineProps.water_qs || '',
+      tidal_level: lineProps.tidalLevel || lineProps.tidal_level || '',
+      bench_id: lineProps.benchId || lineProps.bench_id || '',
+      ref_id: lineProps.refId || lineProps.ref_id || '',
+      hs: lineProps.hs,
+      hc: lineProps.hc,
+      protection_level: lineProps.protectionLevel || lineProps.protection_level || '',
+      control_level: lineProps.controlLevel || lineProps.control_level || '',
+      comparison_timepoint: lineProps.comparisonTimepoint || lineProps.comparison_timepoint || '',
+      risk_thresholds: lineProps.riskThresholds || lineProps.risk_thresholds || {},
+      weights: lineProps.weights || {},
+      other_params: lineProps.otherParams || lineProps.other_params || {},
+    } as any;
+    setEditingBankParams({ bankId, bankName, config: currentConfig });
+  };
+
+  const handleNewTask = () => {
+    if (!uploadedData || selectedLines.size === 0) {
+      message.warning('请先在地图上选中岸段（底部「选中岸段」点选），再创建任务');
+      return;
+    }
+    setCreateTaskModalOpen(true);
+  };
+
+  const handleCreateTaskConfirm = async (form: CreateTaskForm) => {
+    setCreateTaskModalOpen(false);
+    if (!uploadedData || selectedLines.size === 0) {
+      message.warning('没有已选中的岸段，无法生成断面');
+      return;
+    }
+    setGlobalInterval(form.interval);
+    setGlobalLength(form.length);
+    let sectionParams = globalProperties;
+    if (form.templateId) {
+      try {
+        const { numericId, sectionParams: sp } = await fetchBasicParamDetailAsSectionParams(form.templateId);
+        sectionParams = sp;
+        setGlobalProperties(sp);
+        setSelectedBasicParamIdState(form.templateId);
+        setCurrentBasicParamId(numericId);
+      } catch (err) {
+        console.warn('加载参数模板失败:', err);
+      }
+    }
+    const genFn = form.sectionType === 'display'
+      ? generateSectionsAndCreateTask
+      : generateComputeSectionsAndCreateTask;
+    await genFn({
+      uploadedData,
+      selectedLines,
+      globalInterval: form.interval,
+      globalLength: form.length,
+      globalProperties: sectionParams,
+      setPerpendicularData,
+      setShowCrossLines,
+      setGlobalProperties,
+      requestTaskName: () => Promise.resolve(form.name),
+      skipUploadBanks: true,
+      existingTaskId: null,
+    });
+    const tid = getCurrentTaskId();
+    if (tid) {
+      useResourceTreeStore.getState().setCurrentTask(tid);
+      useResourceTreeStore.getState().invalidateSections(tid);
+    }
+    bumpTreeData();
+    fetchBankGroups();
+  };
+
+  const handleTreeNodeAction = async (node: TreeNode, actionKey: string) => {
+    const key = node.ref?.key || '';
+    switch (actionKey) {
+      case 'bank.upload': bankUploadInputRef.current?.click(); break;
+      case 'bank.colorToggle': setColorBanks(!colorBanks); break;
+      case 'bank.loadMap':
+      case 'bank.locate': await loadBankById(key); break;
+      case 'bank.removeMap': removeBankFromMap(key); break;
+      case 'bank.props': handleOpenBankParams(key); break;
+      case 'bank.smooth': smoothSelectedShoreLines(); break;
+      case 'bank.clip': toggleStartEndSelection(); break;
+      case 'bank.confirmClip': await clipSelectedBank(); break;
+      case 'bank.selectByTiff': selectBanksByTiffRange(); break;
+      case 'bank.fixReversed': setIsFixingShoreLineReversed((v) => !v); break;
+      case 'bank.uploadSelected': await sendSelectedShoreLinesGeoJson(); break;
+      case 'bank.delete': await deleteBankById(key); bumpTreeData(); break;
+      case 'bank.clearLoaded': deleteLoadedBanks(); break;
+
+      case 'section.upload': sectionsUploadInputRef.current?.click(); break;
+      case 'section.toggleVisible': setShowCrossLines(!showCrossLines); break;
+      case 'section.generateDisplay': await handleGenerateSections(); bumpTreeData(); break;
+      case 'section.generateCompute': await handleGenerateComputeSections(); bumpTreeData(); break;
+      case 'section.validate': await validateAllPendingSections(); break;
+      case 'section.deleteInvalid': await deleteAllInvalidSections(); break;
+      case 'section.export': handleExportSections(); break;
+      case 'section.reverse': await reverseSelectedCrossLine(); break;
+      case 'section.fineTune': toggleCrossLineSelection(); break;
+      case 'section.batchParams': {
+        const features = perpendicularData?.features || [];
+        const ids = features
+          .map((f: any) => f.properties?.sectionId ?? f.properties?.section_id)
+          .filter(Boolean) as string[];
+        if (ids.length === 0) { message.warning('当前无断面可批量设置'); break; }
+        if (!globalProperties) { message.warning('请先选择参数模板'); break; }
+        const ok = await requestConfirm({ title: '断面批量参数', content: `将当前参数模板应用到 ${ids.length} 个断面？` });
+        if (ok) {
+          await fetch('/v0/bank/sections/batch-params', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify({ section_ids: ids, params: globalProperties }),
+          });
+          message.success(`已应用参数到 ${ids.length} 个断面`);
+        }
+        break;
+      }
+      case 'section.props': await configureSelectedCrossLineProperties(); break;
+      case 'section.delete': await deleteSelectedCrossLine(); break;
+
+      case 'param.select': await handleSelectBasicParam(key); break;
+      case 'param.props': await openGlobalPropertiesModal(); break;
+      case 'param.editSectionParams': await configureSelectedCrossLineProperties(); break;
+
+      case 'dem.select':
+      case 'dem.upload': setDemPickerOpen(true); break;
+      case 'dem.toggleBounds': setShowTiffBounds(!showTiffBounds); break;
+      case 'dem.selectBanks': selectBanksByTiffRange(key); break;
+      case 'dem.delete': {
+        const svc = await import('../services/tiffService');
+        await svc.deleteTiffResource(key);
+        svc.invalidateTiffResourceCache();
+        bumpTreeData();
+        break;
+      }
+
+      case 'task.create': await handleNewTask(); break;
+      case 'task.run': useResourceTreeStore.getState().setCurrentTask(key); await handleStartAnalysis(); break;
+      case 'task.generateCompute': useResourceTreeStore.getState().setCurrentTask(key); await handleGenerateComputeSections(); bumpTreeData(); break;
+      case 'task.setParam': useResourceTreeStore.getState().setCurrentTask(key); await openGlobalPropertiesModal(); break;
+      case 'task.viewResult': setPage?.('result', key); break;
+      case 'task.delete': {
+        const ok = await requestConfirm({ title: '删除任务', content: `确认删除任务「${node.label}」？`, danger: true });
+        if (ok) {
+          await fetch(`/v0/bank/tasks/${encodeURIComponent(key)}`, { method: 'DELETE', headers: { ...authHeaders() } });
+          useResourceTreeStore.getState().removeTask(key);
+          bumpTreeData();
+        }
+        break;
+      }
+
+      case 'global.clear': onClear(); break;
+      case 'global.satellite': setSatellite(!satellite); break;
+      case 'global.uploadBank': bankUploadInputRef.current?.click(); break;
+      case 'global.uploadSections': sectionsUploadInputRef.current?.click(); break;
+      default: console.warn('未绑定资源树操作:', actionKey);
+    }
+  };
+
   const totalCrossLinesCount = perpendicularData?.features.length || 0;
   const totalSelectedSegments = groups.filter(g => g.end !== null).length;
   const clippedBanks = (bankList || []).filter((b: any) => String(b.bank_id || '').includes('_clip_'));
 
   return (
     <div className="editor-layout">
-      <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth }}>
+      <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
+          <input ref={bankUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleFileUpload} />
+          <input ref={sectionsUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleSectionsFileUpload} />
+          {sidebarMode === 'tree' && (
+            <ResourceSidebar
+              handlers={{
+                onAction: handleTreeNodeAction,
+                onNodeSelect: handleTreeNodeSelect,
+                onNodeDoubleClick: handleTreeNodeDoubleClick,
+                onRun: handleStartAnalysis,
+              }}
+            />
+          )}
+          {sidebarMode === 'classic' && (
         <EditorSidebar
           uploadedData={uploadedData}
           bankGroups={bankGroups}
@@ -2275,6 +2563,8 @@ function EditorPage(props: EditorPageProps) {
           handleSelectBasicParam={handleSelectBasicParam}
           clippedBanks={clippedBanks}
         />
+          )}
+        </div>
       </div>
       <ResizeHandle onResize={(delta) => setLeftPanelWidth(w => Math.max(200, Math.min(600, w + delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
       <div className="editor-map-panel">
@@ -2304,7 +2594,7 @@ function EditorPage(props: EditorPageProps) {
           applyCrossLineGeometriesLocal={applyCrossLineGeometriesLocal}
           persistCrossLineGeometry={persistCrossLineGeometry}
           createCrossLineByEndpoints={createCrossLineByEndpoints}
-          tiffBoundsData={filteredTiffBoundsData}
+          tiffBoundsData={tiffBoundsData}
           showTiffBounds={showTiffBounds}
           resizeTrigger={resizeTrigger}
           satellite={satellite}
@@ -2345,6 +2635,30 @@ function EditorPage(props: EditorPageProps) {
           <MessageCircle size={14} />
           {chatCollapsed ? 'AI' : '收起'}
         </button>
+
+        {/* 地图底部居中操作条 */}
+        <div className="editor-map-toolbar">
+          <button type="button" className="emt-btn" onClick={() => bankUploadInputRef.current?.click()} title="上传岸段">
+            <Upload size={15} /> 上传岸段
+          </button>
+          <button type="button" className="emt-btn" onClick={() => sectionsUploadInputRef.current?.click()} title="上传断面">
+            <Ruler size={15} /> 上传断面
+          </button>
+          <button type="button" className="emt-create" onClick={handleNewTask} title="新建任务">
+            <Plus size={26} strokeWidth={3} />
+          </button>
+          <button
+            type="button"
+            className={`emt-btn ${isSelectingShoreLines ? 'emt-active' : ''}`}
+            onClick={toggleShoreLineSelection}
+            title="在地图上点选岸段"
+          >
+            <MousePointer2 size={15} /> 选中岸段
+          </button>
+          <button type="button" className="emt-btn" onClick={onClear} title="清除断面">
+            <Eraser size={15} /> 清除断面
+          </button>
+        </div>
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <div data-tour="chat-panel" style={{ height: '100%', position: 'relative' }}>
@@ -2361,6 +2675,23 @@ function EditorPage(props: EditorPageProps) {
         />
       )}
 
+      {/* 创建任务（含断面属性/参数模板）弹窗 */}
+      {createTaskModalOpen && (
+        <CreateTaskModal
+          defaultName="岸线分析任务"
+          interval={globalInterval}
+          length={globalLength}
+          templates={basicParamsList.map((p: any) => ({
+            id: p.param_id ?? p.id ?? '',
+            label: p.param_name || p.paramName || String(p.param_id ?? p.id),
+          }))}
+          selectedTemplateId={selectedBasicParamIdState === null ? null : String(selectedBasicParamIdState)}
+          bankCount={selectedLines.size}
+          onConfirm={handleCreateTaskConfirm}
+          onCancel={() => setCreateTaskModalOpen(false)}
+        />
+      )}
+
       {/* 通用确认弹窗 */}
       {confirmDialog && (
         <ConfirmModal
@@ -2371,6 +2702,31 @@ function EditorPage(props: EditorPageProps) {
           onConfirm={() => closeConfirmDialog(true)}
           onCancel={() => closeConfirmDialog(false)}
         />
+      )}
+
+      {/* DEM 选择 / 上传弹窗 */}
+      {demPickerOpen && (
+        <div className={modalStyles.overlay} onClick={() => setDemPickerOpen(false)}>
+          <div
+            className={`${modalStyles.container} ${modalStyles.containerCompact}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className={modalStyles.title}>选择 / 上传 DEM</h3>
+            <TiffResourcePicker
+              label="DEM 资源"
+              value=""
+              onConfirm={(key) => {
+                if (key) setShowTiffBounds(true);
+                setDemPickerOpen(false);
+              }}
+            />
+            <div className={modalStyles.actions}>
+              <button type="button" className={modalStyles.cancelButton} onClick={() => setDemPickerOpen(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 全局属性配置弹窗 */}

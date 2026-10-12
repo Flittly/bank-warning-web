@@ -12,6 +12,7 @@ import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
 import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download } from 'lucide-react';
 import { ConfigProvider, Modal } from 'antd';
+import { useSearchParams } from 'react-router-dom';
 
 // —— Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -224,6 +225,14 @@ function ResultPage(props: ResultPageProps) {
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [reportList, setReportList] = useState<any[]>([]);
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'progress' | 'skills'>('tasks');
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const panel = searchParams.get('panel');
+    if (panel === 'tasks' || panel === 'reports' || panel === 'progress' || panel === 'skills') {
+      setActiveSidebarPanel(panel);
+    }
+  }, [searchParams]);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [skillList, setSkillList] = useState<any[]>([]);
   const [chatTaskId, setChatTaskId] = useState<string | null>(null);
@@ -1624,16 +1633,6 @@ function ResultPage(props: ResultPageProps) {
     if (willExpand && progress?.taskId && sectionId) loadErrorDetail(progress.taskId, sectionId);
   };
 
-  // — 活动栏图标按钮通用样式
-  const activityBarBtnStyle = (active: boolean): React.CSSProperties => ({
-    width: 38, height: 38, display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center',
-    border: 'none', borderRadius: 6, cursor: 'pointer',
-    background: active ? '#e0e7ff' : 'transparent',
-    color: active ? '#2563eb' : '#94a3b8',
-    gap: 1,
-  });
-
   // — 地图覆盖按钮通用样式（卫星/聊天切换）
   const MAP_OVERLAY_BTN_STYLE: React.CSSProperties = {
     position: 'absolute', right: 12, zIndex: 10,
@@ -1654,42 +1653,6 @@ function ResultPage(props: ResultPageProps) {
   return (
     <div className="editor-layout">
       <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex' }}>
-        {/* Activity Bar - narrow icon column */}
-        <div style={{
-          width: 44, minWidth: 44,
-          background: 'rgba(255,255,255,0.3)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          borderRight: '1px solid rgba(255,255,255,0.3)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          paddingTop: 12, gap: 2,
-        }}>
-          <button
-            onClick={() => setActiveSidebarPanel('tasks')}
-            title="任务列表"
-            style={activityBarBtnStyle(activeSidebarPanel === 'tasks')}
-            data-tour="result-tasks"
-          ><List size={16} /></button>
-          <button
-            onClick={() => setActiveSidebarPanel('reports')}
-            title="报告查看"
-            style={activityBarBtnStyle(activeSidebarPanel === 'reports')}
-            data-tour="result-reports"
-          ><FileText size={16} /></button>
-          <button
-            onClick={() => setActiveSidebarPanel('skills')}
-            title="Skills"
-            style={activityBarBtnStyle(activeSidebarPanel === 'skills')}
-            data-tour="result-skills"
-          ><Box size={16} /></button>
-          <button
-            onClick={() => setActiveSidebarPanel('progress')}
-            title="计算进度"
-            style={activityBarBtnStyle(activeSidebarPanel === 'progress')}
-            data-tour="result-progress"
-          ><BarChart3 size={16} /></button>
-        </div>
-
         {/* Content panel - shows the active section only */}
         <div className="upload-control result-sidebar" style={{ position: 'static', flex: 1, height: '100%', top: 0, left: 0, background: 'transparent' }}>
           {/* === TASKS PANEL === */}

@@ -122,6 +122,8 @@ async function generateSectionsAndCreateTaskCore(params: {
   requestTaskName: () => Promise<string | null>;
   // 若为 true，则在生成断面前不将本地岸段同步上传到后端
   skipUploadBanks?: boolean;
+  // 任务优先：若提供已有 task_id，则复用该任务，跳过命名与建任务步骤
+  existingTaskId?: string | null;
   // 若为 true，则对每条断面沿起点->终点方向延长，直到与遇到的第一个岸线相交
   extendToFirstShorelineIntersection?: boolean;
 }) {
@@ -194,14 +196,22 @@ async function generateSectionsAndCreateTaskCore(params: {
       return;
     }
 
-    const taskName = (await params.requestTaskName())?.trim();
-    if (!taskName) {
-      // 用户取消创建任务
-      return;
+    const existingTaskId = params.existingTaskId?.trim() || null;
+    let taskName: string | undefined;
+    let taskId: string;
+    if (existingTaskId) {
+      // 任务优先：复用用户选中的任务，不再命名/新建
+      taskId = existingTaskId;
+      setCurrentTaskId(taskId);
+    } else {
+      taskName = (await params.requestTaskName())?.trim() || undefined;
+      if (!taskName) {
+        // 用户取消创建任务
+        return;
+      }
+      taskId = `task-${Date.now()}`;
+      setCurrentTaskId(taskId);
     }
-
-    const taskId = `task-${Date.now()}`;
-    setCurrentTaskId(taskId);
 
     const taskBankIdSet = new Set<string>();
     const localBanksToSend: any[] = [];
@@ -266,27 +276,31 @@ async function generateSectionsAndCreateTaskCore(params: {
 
     const selectedBankIds: string[] = Array.from(taskBankIdSet);
 
-    const taskPayload = {
-      tasks: [
-        {
-          task_id: taskId,
-          task_name: taskName,
-          bank_ids: selectedBankIds,
-          description: `通过前端创建的任务: ${taskName}`,
-        },
-      ],
-      overwrite: false,
-    };
+    if (!existingTaskId) {
+      const taskPayload = {
+        tasks: [
+          {
+            task_id: taskId,
+            task_name: taskName,
+            bank_ids: selectedBankIds,
+            description: `通过前端创建的任务: ${taskName}`,
+          },
+        ],
+        overwrite: false,
+      };
 
-    console.log('创建任务:', taskPayload);
-    const taskResponse = await fetch('/v0/bank/tasks', {
-      method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(taskPayload),
-    });
+      console.log('创建任务:', taskPayload);
+      const taskResponse = await fetch('/v0/bank/tasks', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskPayload),
+      });
 
-    if (!taskResponse.ok) {
-      throw new Error(`创建任务失败: ${taskResponse.statusText}`);
+      if (!taskResponse.ok) {
+        throw new Error(`创建任务失败: ${taskResponse.statusText}`);
+      }
+    } else {
+      console.info('任务优先：复用已有任务，跳过创建任务:', taskId);
     }
 
     const allPerpendicularLines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
@@ -417,6 +431,17 @@ async function generateSectionsAndCreateTaskCore(params: {
       };
     });
 
+    if (existingTaskId) {
+      // 任务优先：重算前先清空该任务既有断面与结果，避免 section_id 唯一约束冲突
+      const clearRes = await fetch(`/v0/bank/tasks/${encodeURIComponent(existingTaskId)}/clear`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
+      });
+      if (!clearRes.ok) {
+        console.warn('清空任务既有断面失败:', clearRes.status, clearRes.statusText);
+      }
+    }
+
     const sectionsPayload = {
       task_id: taskId,
       sections: sectionsToCreate,
@@ -492,6 +517,8 @@ export async function generateSectionsAndCreateTask(params: {
   requestTaskName: () => Promise<string | null>;
   // 若为 true，则在生成断面前不将本地岸段同步上传到后端
   skipUploadBanks?: boolean;
+  // 任务优先：若提供已有 task_id，则复用该任务
+  existingTaskId?: string | null;
 }) {
   await generateSectionsAndCreateTaskCore({
     ...params,
@@ -511,6 +538,8 @@ export async function generateComputeSectionsAndCreateTask(params: {
   // 弹窗获取任务名称（返回 null 表示用户取消）
   requestTaskName: () => Promise<string | null>;
   skipUploadBanks?: boolean;
+  // 任务优先：若提供已有 task_id，则复用该任务
+  existingTaskId?: string | null;
 }) {
   await generateSectionsAndCreateTaskCore({
     ...params,
