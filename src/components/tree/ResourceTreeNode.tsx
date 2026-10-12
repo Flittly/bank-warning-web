@@ -37,7 +37,9 @@ const HOVER_ACTIONS: Record<string, string[]> = {
   bank: ['bank.loadMap', 'bank.removeMap', 'bank.delete'],
   task: ['task.run'],
   dem: ['dem.toggleBounds', 'dem.selectBanks'],
-  section: ['section.props'],
+  // 断面尾部露出「加载到地图」：岸段被「移出地图」会连带摘掉其断面，
+  // 这里是把断面找回来的最快入口，必须显眼。
+  section: ['section.loadMap', 'section.props'],
   param: ['param.props'],
 };
 

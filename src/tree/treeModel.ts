@@ -105,7 +105,7 @@ export function buildSectionsFolder(sections: any[], tasks?: any[]): TreeNode {
       meta: s?.bank_id ? String(s.bank_id) : undefined,
       ref: { entity: 'section', key: secId },
       selectable: true,
-      actions: ['section.reverse', 'section.props', 'section.info', 'section.delete'],
+      actions: ['section.loadMap', 'section.reverse', 'section.props', 'section.info', 'section.delete'],
     });
   }
   const children: TreeNode[] = [...byTask.entries()].map(([taskId, g]) => ({
@@ -173,7 +173,7 @@ export function buildTasksGroup(
               meta: status && status !== 'valid' ? status : undefined,
               ref: { entity: 'section' as const, key: String(s.section_id ?? sid) },
               selectable: true,
-              actions: ['section.props', 'section.info', 'section.delete'],
+              actions: ['section.loadMap', 'section.props', 'section.info', 'section.delete'],
               invalid: Boolean(status && status !== 'valid'),
             };
           }),

@@ -27,6 +27,9 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
 
   'section.upload': { key: 'section.upload', label: '上传断面', icon: 'upload' },
   'section.toggleVisible': { key: 'section.toggleVisible', label: '显示/隐藏设计', icon: 'eye' },
+  // 把（已被移出地图的）断面重新拉回地图。岸段「移出地图」会连带摘掉其断面，
+  // 这是唯一能把断面找回来的入口，故与 bank.loadMap 同名同义。
+  'section.loadMap': { key: 'section.loadMap', label: '加载到地图', icon: 'eye' },
   'section.generateDisplay': { key: 'section.generateDisplay', label: '生成展示断面', icon: 'ruler' },
   'section.generateCompute': { key: 'section.generateCompute', label: '生成计算断面', icon: 'ruler' },
   'section.validate': { key: 'section.validate', label: '断面检查', icon: 'checkCircle' },

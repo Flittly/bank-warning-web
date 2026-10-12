@@ -16,6 +16,7 @@ import TiffResourcePicker from '../components/TiffResourcePicker';
 import type { TreeNode } from '../tree/types';
 import { useResourceTreeStore } from '../store/useResourceTreeStore';
 import { authHeaders } from '../utils/apiClient';
+import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
 import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser } from 'lucide-react';
@@ -759,6 +760,135 @@ function EditorPage(props: EditorPageProps) {
     }
   };
 
+  // ============================================================
+  //  断面「移出地图后可恢复」
+  //
+  //  问题：岸段「移出地图」会把该岸段的断面一并从 perpendicularData 摘掉
+  //  （本意是避免岸段没了、断面还留在地图上飘着），但这个摘除是破坏性的；
+  //  而 perpendicularData 又会被 persist 写进 localStorage，于是移出之后
+  //  没有任何入口能把断面找回来 —— 树里的断面节点当时也没有"加载到地图"动作。
+  //
+  //  修法：移出时记下"哪些岸段的断面被摘走了"（纯前端标记，不落库），
+  //  重新加载该岸段时按 bank_id 从后端拉回；同时给断面节点补上
+  //  「加载到地图」动作，即便跨会话/刷新（标记丢失）也能手动恢复。
+  // ============================================================
+
+  // 被「移出地图」摘掉过断面的岸段 → 重新「加载到地图」时自动恢复
+  const removedBankSectionsRef = useRef<Set<string>>(new Set());
+
+  // 后端断面记录 → 地图 feature。
+  // 注意 crossLineId 必须等于它在数组里的真实下标：EditorMap 用 features 下标关联选中态。
+  const sectionRecordToFeature = (s: any, index: number): any | null => {
+    const geom = s?.section_geometry ?? s?.sectionGeometry ?? s?.geometry;
+    if (!geom || (geom.type !== 'LineString' && geom.type !== 'MultiLineString')) return null;
+    const sid = String(s?.section_id ?? s?.sectionId ?? '');
+    if (!sid) return null;
+    const bankId = s?.bank_id ?? s?.bankId;
+    const vf = getVerticalFootPointFromAny(s) ?? undefined;
+    return {
+      type: 'Feature',
+      geometry: geom,
+      properties: {
+        sectionId: sid,
+        section_id: sid,
+        section_name: s?.section_name,
+        crossLineId: index,
+        index,
+        distance: s?.distance,
+        bank_id: bankId,
+        shoreLineId: bankId,
+        validation_status: s?.validation_status,
+        is_valid: s?.is_valid,
+        ...(vf ? { vertical_foot_point: vf } : {}),
+      },
+    };
+  };
+
+  // 追加到数组末尾（不能插队），按 sectionId 去重，返回真正新增的条数。
+  // zustand 的 set 是同步执行的，所以函数返回时 added 已是最终值。
+  const appendSectionsToMap = (records: any[]): number => {
+    let added = 0;
+    setPerpendicularData((prev) => {
+      const existing = ((prev?.features || []) as any[]);
+      const have = new Set(
+        existing
+          .map((f) => String(f?.properties?.sectionId ?? f?.properties?.section_id ?? ''))
+          .filter(Boolean),
+      );
+      const base = existing.length;
+      const fresh: any[] = [];
+      for (const r of records) {
+        const f = sectionRecordToFeature(r, base + fresh.length);
+        if (!f) continue;
+        const sid = String(f.properties.sectionId);
+        if (have.has(sid)) continue;
+        have.add(sid);
+        fresh.push(f);
+      }
+      if (fresh.length === 0) return prev;
+      added = fresh.length;
+      return { ...(prev || { type: 'FeatureCollection', features: [] }), features: [...existing, ...fresh] } as any;
+    });
+    return added;
+  };
+
+  // 按岸段从后端把断面拉回来（「移出地图」→「加载到地图」的恢复路径）
+  const restoreSectionsForBank = async (bankId: string): Promise<number> => {
+    const bid = String(bankId);
+    if (!bid) return 0;
+    try {
+      const res = await fetch(`/v0/bank/sections?bank_id=${encodeURIComponent(bid)}`, { headers: { ...authHeaders() } });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const data = await res.json();
+      const list = data?.sections ?? data?.data ?? [];
+      if (!Array.isArray(list) || list.length === 0) return 0;
+      const n = appendSectionsToMap(list);
+      if (n > 0) setShowCrossLines(true);
+      return n;
+    } catch (e) {
+      console.error('恢复断面失败:', e);
+      return 0;
+    }
+  };
+
+  // 按单个断面恢复（树里单击断面节点 / 右键「加载到地图」）
+  const restoreSectionById = async (sectionId: string): Promise<boolean> => {
+    const sid = String(sectionId);
+    if (!sid) return false;
+
+    // 已经在地图上：直接选中定位。数据从 store 现取，避免闭包里的陈旧副本。
+    const locate = () => {
+      const list = ((useEditorStore.getState().perpendicularData?.features || []) as any[]);
+      const i = list.findIndex(
+        (f) => String(f?.properties?.sectionId ?? f?.properties?.section_id ?? '') === sid,
+      );
+      if (i < 0) return false;
+      setSelectedCrossLineIndex(i);
+      setShowCrossLines(true);
+      return true;
+    };
+
+    if (locate()) return true;
+
+    try {
+      const res = await fetch(`/v0/bank/sections/${encodeURIComponent(sid)}`, { headers: { ...authHeaders() } });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const data = await res.json();
+      const rec = data?.section ?? data?.data ?? data;
+      const n = appendSectionsToMap(rec && (rec.section_id || rec.sectionId) ? [rec] : []);
+      if (n > 0) {
+        locate();
+        return true;
+      }
+      message.warning(`断面 ${sid} 没有可加载的几何数据`);
+      return false;
+    } catch (e) {
+      console.error('加载断面失败:', e);
+      message.error(`断面 ${sid} 加载失败`);
+      return false;
+    }
+  };
+
   const loadBankById = async (bankId: string) => {
     console.log('[loadBankById] 加载岸段:', bankId);
     if (!bankId) return;
@@ -827,6 +957,12 @@ function EditorPage(props: EditorPageProps) {
       setIsSelectingCrossLines(false);
       setIsFixingShoreLineReversed(false);
       setCrossLineEditMode('none');
+
+      // 岸段回到地图后，把它之前随「移出地图」被一并摘走的断面也拉回来
+      if (removedBankSectionsRef.current.has(String(b.bank_id))) {
+        removedBankSectionsRef.current.delete(String(b.bank_id));
+        await restoreSectionsForBank(String(b.bank_id));
+      }
     } catch (err: any) {
       console.error('加载岸段失败:', err);
       alert(`加载岸段失败: ${err?.message || String(err)}`);
@@ -844,7 +980,16 @@ function EditorPage(props: EditorPageProps) {
       return { ...prev, features } as any;
     });
     setLoadedBanks((prev) => prev.filter((b) => String(b.bank_id) !== bid));
-    // 同时清除关联断面
+
+    // 同时清除关联断面。
+    // 这一步只是"从地图上摘掉"，必须记下哪个岸段的断面被摘走了：
+    // 否则重新「加载到地图」时无从得知要把它们找回来（原来的 bug 就出在这里）。
+    const hadSections = ((perpendicularData?.features || []) as any[]).some((f: any) => {
+      const p = f?.properties || {};
+      return String(p.bank_id || '') === bid || String(p.shoreLineId || '') === bid;
+    });
+    if (hadSections) removedBankSectionsRef.current.add(bid);
+
     setPerpendicularData((prev) => {
       if (!prev) return prev;
       const features = (prev.features || []).filter((f: any) => {
@@ -2248,7 +2393,13 @@ function EditorPage(props: EditorPageProps) {
         const p = f.properties || {};
         return String(p.sectionId ?? p.section_id ?? '') === key;
       });
-      if (idx >= 0) setSelectedCrossLineIndex(idx);
+      if (idx >= 0) {
+        setSelectedCrossLineIndex(idx);
+      } else {
+        // 该断面当前不在图上（典型情形：随岸段「移出地图」被摘掉了）
+        // → 从后端拉回来并选中，等于"单击即恢复"
+        void restoreSectionById(key);
+      }
       return;
     }
     if (node.ref?.entity === 'dem') {
@@ -2440,6 +2591,7 @@ function EditorPage(props: EditorPageProps) {
 
       case 'section.upload': sectionsUploadInputRef.current?.click(); break;
       case 'section.toggleVisible': setShowCrossLines(!showCrossLines); break;
+      case 'section.loadMap': await restoreSectionById(key); break;
       case 'section.generateDisplay': await handleGenerateSections(); bumpTreeData(); break;
       case 'section.generateCompute': await handleGenerateComputeSections(); bumpTreeData(); break;
       case 'section.validate': await validateAllPendingSections(); break;
