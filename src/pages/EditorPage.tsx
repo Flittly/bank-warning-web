@@ -1001,6 +1001,110 @@ function EditorPage(props: EditorPageProps) {
     });
   };
 
+  // === 文件夹级批量动作：全部加载到地图 / 全部移出地图 ===
+
+  // 收集某个文件夹节点下（含嵌套）所有断面的 section_id。
+  // 断面节点是叶子，直接遍历 children 即可覆盖"断面 → 任务 → 岸段分组"各层级。
+  const collectSectionIds = (node: TreeNode): string[] => {
+    const out = new Set<string>();
+    const walk = (n: TreeNode) => {
+      if (n.ref?.entity === 'section' && n.ref.key) out.add(String(n.ref.key));
+      for (const c of n.children || []) walk(c);
+    };
+    walk(node);
+    // 计算任务树里的「断面」文件夹是懒加载的：子节点可能还没展开。
+    // 此时退回 store 里该任务的断面清单，保证按钮不会因为"没展开"而失效。
+    if (node.id.startsWith('task-sections:')) {
+      const tid = node.id.slice('task-sections:'.length);
+      for (const s of (useResourceTreeStore.getState().sectionsByTask[tid] || []) as any[]) {
+        const sid = String(s?.section_id ?? s?.id ?? '');
+        if (sid) out.add(sid);
+      }
+    }
+    return [...out];
+  };
+
+  const sectionIdOfFeature = (f: any) =>
+    String(f?.properties?.sectionId ?? f?.properties?.section_id ?? '');
+
+  // 把文件夹下所有断面拉回地图。已在图上的跳过，只补缺的那些。
+  const loadAllSectionsUnder = async (node: TreeNode) => {
+    const ids = collectSectionIds(node);
+    if (ids.length === 0) { message.warning('该文件夹下没有断面'); return; }
+
+    const onMap = new Set(
+      (((useEditorStore.getState().perpendicularData?.features || []) as any[]).map(sectionIdOfFeature)).filter(Boolean),
+    );
+    const todo = ids.filter((id) => !onMap.has(id));
+    if (todo.length === 0) { message.info(`这 ${ids.length} 条断面已经全部在地图上了`); return; }
+
+    const hide = message.loading(`正在加载 ${todo.length} 条断面…`, 0);
+    let ok = 0;
+    let fail = 0;
+    let cursor = 0;
+    // 并发 4：断面数量通常不大，限流只是为了避免一次性打满后端
+    const worker = async () => {
+      while (cursor < todo.length) {
+        const id = todo[cursor++];
+        try {
+          const res = await fetch(`/v0/bank/sections/${encodeURIComponent(id)}`, { headers: { ...authHeaders() } });
+          if (!res.ok) throw new Error(`${res.status}`);
+          const data = await res.json();
+          const rec = data?.section ?? data?.data ?? data;
+          if (rec && (rec.section_id || rec.sectionId) && appendSectionsToMap([rec]) > 0) ok++;
+          else fail++;
+        } catch {
+          fail++;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker));
+    hide();
+
+    if (ok > 0) setShowCrossLines(true);
+    if (fail > 0) message.warning(`已加载 ${ok} 条断面，${fail} 条未能加载（可能缺少几何数据）`);
+    else message.success(`已加载 ${ok} 条断面`);
+  };
+
+  // 把文件夹下所有断面从地图上摘掉。
+  // 注意：这与岸段的「移出地图」不同 —— 它不写 removedBankSectionsRef，
+  // 因为"再点一次全部加载"就能回来，不需要岸段落图来触发恢复。
+  const removeAllSectionsUnder = (node: TreeNode) => {
+    const ids = collectSectionIds(node);
+    if (ids.length === 0) { message.warning('该文件夹下没有断面'); return; }
+    const want = new Set(ids);
+
+    // 选中态是按 features 下标存的 → 删完必须按"断面身份"重新映射，
+    // 否则下标会整体前移、选中态悄悄指向另一个断面。
+    const before = ((useEditorStore.getState().perpendicularData?.features || []) as any[]);
+    const keepId = selectedCrossLineIndex != null && before[selectedCrossLineIndex]
+      ? sectionIdOfFeature(before[selectedCrossLineIndex])
+      : '';
+    const multiIds = [...selectedCrossLineIndices].map((i) => sectionIdOfFeature(before[i])).filter(Boolean);
+
+    let removed = 0;
+    setPerpendicularData((prev) => {
+      if (!prev) return prev;
+      const b = (prev.features || []) as any[];
+      const features = b.filter((f) => !want.has(sectionIdOfFeature(f)));
+      if (features.length === b.length) return prev;
+      removed = b.length - features.length;
+      return { ...prev, features } as any;
+    });
+    if (removed === 0) { message.info('这些断面本来就不在地图上'); return; }
+
+    const after = ((useEditorStore.getState().perpendicularData?.features || []) as any[]);
+    const idxOf = (sid: string) => (sid ? after.findIndex((f) => sectionIdOfFeature(f) === sid) : -1);
+    const nextSingle = idxOf(keepId);
+    setSelectedCrossLineIndex(nextSingle >= 0 ? nextSingle : null);
+    if (multiIds.length > 0) {
+      const next = new Set<number>();
+      for (const sid of multiIds) { const j = idxOf(sid); if (j >= 0) next.add(j); }
+      setSelectedCrossLineIndices(next);
+    }
+    message.success(`已从地图移出 ${removed} 条断面`);
+  };
+
   const deleteBankById = async (bankId: string) => {
     if (!bankId) return;
     const ok = window.confirm(`确认删除岸段 bank_id=${bankId} ?`);
@@ -2592,6 +2696,8 @@ function EditorPage(props: EditorPageProps) {
       case 'section.upload': sectionsUploadInputRef.current?.click(); break;
       case 'section.toggleVisible': setShowCrossLines(!showCrossLines); break;
       case 'section.loadMap': await restoreSectionById(key); break;
+      case 'section.loadAll': await loadAllSectionsUnder(node); break;
+      case 'section.removeAll': removeAllSectionsUnder(node); break;
       case 'section.generateDisplay': await handleGenerateSections(); bumpTreeData(); break;
       case 'section.generateCompute': await handleGenerateComputeSections(); bumpTreeData(); break;
       case 'section.validate': await validateAllPendingSections(); break;

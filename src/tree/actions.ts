@@ -30,6 +30,10 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
   // 把（已被移出地图的）断面重新拉回地图。岸段「移出地图」会连带摘掉其断面，
   // 这是唯一能把断面找回来的入口，故与 bank.loadMap 同名同义。
   'section.loadMap': { key: 'section.loadMap', label: '加载到地图', icon: 'eye' },
+  // 文件夹级「开关」：一次把该文件夹下（含嵌套）的所有断面拉回 / 摘出地图。
+  // 单个断面的动作只能一条条点，断面多时很烦，故在"装着断面的文件夹"上补一对批量动作。
+  'section.loadAll': { key: 'section.loadAll', label: '全部加载到地图', icon: 'eye' },
+  'section.removeAll': { key: 'section.removeAll', label: '全部移出地图', icon: 'eyeOff' },
   'section.generateDisplay': { key: 'section.generateDisplay', label: '生成展示断面', icon: 'ruler' },
   'section.generateCompute': { key: 'section.generateCompute', label: '生成计算断面', icon: 'ruler' },
   'section.validate': { key: 'section.validate', label: '断面检查', icon: 'checkCircle' },

@@ -43,6 +43,10 @@ const HOVER_ACTIONS: Record<string, string[]> = {
   param: ['param.props'],
 };
 
+// 文件夹行尾只露这一对批量动作（且只有真正装着断面的文件夹才带着它们，
+// 见 treeModel 里各断面文件夹的 actions）——避免参数模板/DEM 等文件夹也跟着长出无用图标。
+const FOLDER_HOVER_KEYS = ['section.loadAll', 'section.removeAll'];
+
 const ROW_H = 28;
 const ROW_TALL = 42;
 
@@ -51,7 +55,9 @@ export default function ResourceTreeNode({
 }: Props) {
   const hasChildren = Boolean(node.children && node.children.length > 0);
   const Icon = ICONS[node.icon || node.kind] || FileText;
-  const hoverKeys = (HOVER_ACTIONS[node.kind] || []).slice(0, 3);
+  const hoverKeys = node.kind === 'folder'
+    ? (node.actions || []).filter((k) => FOLDER_HOVER_KEYS.includes(k)).slice(0, 3)
+    : (HOVER_ACTIONS[node.kind] || []).slice(0, 3);
   const tall = Boolean(node.subtitle);
 
   const handleClick = (e: MouseEvent) => {

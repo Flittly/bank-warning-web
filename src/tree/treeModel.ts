@@ -115,10 +115,10 @@ export function buildSectionsFolder(sections: any[], tasks?: any[]): TreeNode {
     selectable: false,
     meta: String(g.nodes.length),
     children: g.nodes,
-    actions: ['section.validate', 'section.deleteInvalid', 'section.export', 'section.reverse', 'section.batchParams', 'section.fineTune'],
+    actions: ['section.validate', 'section.deleteInvalid', 'section.export', 'section.reverse', 'section.batchParams', 'section.fineTune', 'section.loadAll', 'section.removeAll'],
   }));
   const total = children.reduce((n, g) => n + (g.children?.length || 0), 0);
-  return { id: 'folder:sections', kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(total), children, actions: ['section.upload', 'section.generateDisplay', 'section.toggleVisible'] };
+  return { id: 'folder:sections', kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(total), children, actions: ['section.upload', 'section.generateDisplay', 'section.toggleVisible', 'section.loadAll', 'section.removeAll'] };
 }
 
 export function buildTasksGroup(
@@ -162,6 +162,7 @@ export function buildTasksGroup(
           selectable: false,
           meta: String(list.length),
           ref: { entity: 'bank' as const, key: bid },
+          actions: ['section.loadAll', 'section.removeAll'],
           children: list.map((s: any) => {
             const sid = String(s.section_id ?? s.id);
             const status = String(s.validation_status || '');
@@ -199,7 +200,7 @@ export function buildTasksGroup(
           }));
         kids = [
           { id: `task-banks:${tid}`, kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(bankNodes.length), children: bankNodes },
-          { id: `task-sections:${tid}`, kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(secs.length), children: sectionBankFolders },
+          { id: `task-sections:${tid}`, kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(secs.length), children: sectionBankFolders, actions: ['section.loadAll', 'section.removeAll'] },
           { id: `task-param:${tid}`, kind: 'task-ref', label: `参数模板: ${paramName || '未设置'}`, selectable: false, meta: '引用', ref: paramKey != null ? { entity: 'param' as const, key: String(paramKey) } : undefined },
           { id: `task-dems:${tid}`, kind: 'task-ref', label: 'DEM', icon: 'dem', selectable: false, children: demChildren },
         ];
