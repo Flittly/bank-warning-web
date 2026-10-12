@@ -130,18 +130,20 @@
 ## legacy / 备用文件（已确认不可达，暂按"参考件"保留）
 
 这些文件**从入口 `main.tsx` 出发不可达**（静态引用 + 测试引用 + 构建配置三重核对），
-且被 `tsconfig.app.json` 的 `exclude` 或注释掉的 `<Route>` 排除在生效范围外：
+且被 `tsconfig.app.json` 的 `exclude` 排除在生效范围外：
 
 - [src/App_old.tsx](src/App_old.tsx)
   - 旧版 App/编辑逻辑聚合文件（1545 行）。`tsconfig.app.json` 显式 exclude。
 - [src/pages/EditorPage%20copy.tsx](src/pages/EditorPage%20copy.tsx)
   - 旧版 EditorPage 备份文件（1783 行）。`tsconfig.app.json` 显式 exclude。
-- [src/pages/SmartWorkbenchPage.tsx](src/pages/SmartWorkbenchPage.tsx)
-  - 智能工作台（2765 行）。`App.tsx` 里 `import` 与两条 `<Route>` 都被注释掉（"暂时隐藏"）。
-  - 它是 `tsc -b` 报错的主要来源之一（约 40 条"已声明但未读取"）—— 清理它内部未使用变量前，
-    建议先确认这个页面是"废弃"还是"待恢复"，两种结论对应完全不同的处理方式。
 
-> 这三个文件当前**不影响构建产物**（vite 不打包不可达模块），也不影响运行；留着只是让 `tsc -b` / `eslint` 噪音偏大。
+> 这两个文件当前**不影响构建产物**（vite 不打包不可达模块），也不影响运行；留着只是让 `eslint` 噪音偏大。
+> ⚠️ `tsconfig.app.json` 的 `exclude` 只列了这两个。因为 `include` 是 `["src"]`（整个目录），
+> **将来任何新增的不可达文件都必须同步补进 `exclude`**，否则 `tsc -b` 照样编译它、
+> 照样因"已声明但未读取"失败 —— `SmartWorkbenchPage.tsx` 当初就是这么卡住构建的。
+>
+> 原第三项 `src/pages/SmartWorkbenchPage.tsx`（智能工作台，2764 行）已于 2026-10-12
+> 经确认废弃后**整文件删除**，详见下节。
 
 ---
 
@@ -166,17 +168,40 @@
 
 合计：**18 个文件、-907 行**，CSS 产物 `113.70 kB → 104.20 kB`。
 
+### 追加清理（同日第二轮：删工作台 + 修 5 条活代码类型错误）
+
+用户确认"智能工作台"功能**废弃**后执行：
+
+| 删除对象 | 规模 | 依据 |
+|---|---|---|
+| `src/pages/SmartWorkbenchPage.tsx` | 2764 行 | 唯一的 `import` 与两条 `<Route>` 全在 `App.tsx` 的注释里；删除前核对其全部依赖（`ChatPanel` / `WorkspacePanel` / `ResizeHandle` / `VerticalResizeHandle` / `map/basemapStyle` / `utils/verticalFootPoint`）**都另有活引用者**，因此不产生新的死模块 |
+| `App.css` 的 `.workbench-orchestra-panel` + `@keyframes breatheGlow` | 19 行 | 全仓库仅此一处定义、零使用（`breatheGlow` 也只被这条规则引用；该块上方原有注释即写着"智能工作台编排面板"） |
+
+同时修掉 5 条**活代码**的类型错误 —— 这些**不是冗余，是真错误**，不能删只能修：
+
+| 文件 | 问题 | 处理 |
+|---|---|---|
+| `src/pages/ResultPage.tsx` | Modal `styles.content` 在 antd **v6** 中不存在 → 整块毛玻璃背景 `radial-gradient` + `blur(16px)` **静默失效**（编译期报错、运行时无提示） | 改名为 `container`。依据：`@rc-component/dialog/es/Dialog/Content/Panel.js` 第 104 行是 `clsx(prefixCls + '-container', modalClassNames?.container)`，只认新键 |
+| `src/components/WorkspacePanel.tsx` | `activeTab.filename` 是 `string \| undefined`，JSX 层的 `&&` 守卫**不会**把窄化带进 `async` 回调 | 回调开头重新取局部常量 `const filename = ...` + `if (!filename) return;` |
+| `src/utils/apiClient.ts` | 包装 `window.fetch` 时参数写成 `RequestInfo`（= `string \| Request`），丢掉原生允许的 `URL` | 改为 `RequestInfo \| URL`。一处改动同时消掉 TS2322（赋值不兼容）与 TS2339（第三分支收窄成 `never`） |
+
+结果：`tsc -b` **46 → 0 条**，`npm run build`（= `tsc -b && vite build`）恢复可跑；
+`eslint` 663 → 532；CSS 产物 104.20 → 103.91 kB。
+
+真机回归（Electron 离屏，5 条路由）**29/29 通过、0 控制台报错**：
+`/login` `/register` `/admin/users` `/editor` `/result`。
+
 ---
 
 ## 后续整理建议（非必须，但能持续保持结构清爽）
 
-- `tsc -b` 目前**不是干净通过**（清理后仍有 46 条）。其中 41 条（"已声明但未读取"）
-  **全部**集中在 `SmartWorkbenchPage.tsx` —— 即那个被注释掉的"暂时隐藏"页面。
-  确认它要恢复还是废弃，再决定是清理它内部还是整文件删除，这一步能一次拿掉 41 条。
-- 另 5 条是**既有真实类型错误**，与本轮清理无关，但 `package.json` 的 `build` 脚本是
-  `tsc -b && vite build`，所以 `npm run build` 会因为它们失败（`npm run dev` 不受影响）：
-  `WorkspacePanel.tsx` 的 `filename`/`activeTab.filename` 可能为 `undefined`；
-  `ResultPage.tsx` 的 Modal `styles.content` 不是合法键；`utils/apiClient.ts` 的 fetch 包装类型不兼容。
+- ✅ `tsc -b` 现已**干净通过（0 条）**，`npm run build` 可用。
+- 新发现的导出级冗余（在 `src/utils/verticalFootPoint.ts`；与本次删除**无关**，属上一轮漏网）：
+  - `normalizeVerticalFootPoint` —— 只在本文件第 46 行被内部调用，**不是死代码**，只是 `export` 多余；
+  - `setVerticalFootPointOnProps`、`isValidVerticalFootPoint` —— 本文件内外**均无引用**，是真死代码。
+- ⚠️ 删掉 `SmartWorkbenchPage.tsx` 后，`/workbench` 路由已彻底消失。若将来要恢复该功能，
+  取回命令：`git show 6a9cd3e:src/pages/SmartWorkbenchPage.tsx > src/pages/SmartWorkbenchPage.tsx`，
+  并同时恢复 `App.tsx` 里的 import 与两条 `<Route>`。
 - `EditorSidebar` 那 12 个自定义组 prop 现已只从解构里摘掉（接口与传参保持原样）。
   若确认"自定义断面组"功能不再恢复，可连同 `EditorPage` 里对应的 6 个 handler 与
   `pages/editor/customSegments.ts` 整条链一起删除 —— 这是"删功能"而非"删冗余"，需单独拍板。

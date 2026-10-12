@@ -2149,7 +2149,12 @@ function ResultPage(props: ResultPageProps) {
               backdropFilter: 'blur(4px)',
               WebkitBackdropFilter: 'blur(4px)',
             },
-            content: {
+            // ⚠ 键名必须是 container 而不是 v5 时代的 content。
+            // antd v6 把面板语义键改名了：@rc-component/dialog 的 Panel.js 第 104 行是
+            //   className: clsx(prefixCls + '-container', modalClassNames?.container)
+            // 即它只认 container 这个新键，旧的 content 会被静默忽略 ——
+            // 后果是下面这块毛玻璃背景一直没生效，且运行时没有任何提示。
+            container: {
               background: 'radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.4) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(254,243,199,0.15) 0%, transparent 50%), rgba(255,255,255,0.82)',
               backdropFilter: 'blur(16px) saturate(1.5)',
               WebkitBackdropFilter: 'blur(16px) saturate(1.5)',

@@ -6,7 +6,6 @@ import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCer
 import EditorPage from './pages/EditorPage';
 import ResultPage from './pages/ResultPage';
 import KnowledgePage from './pages/KnowledgePage';
-// import SmartWorkbenchPage from './pages/SmartWorkbenchPage'; // 智能工作台页面暂时隐藏
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminUserPage from './pages/AdminUserPage';
@@ -34,12 +33,6 @@ function ResultPageWrapper() {
   const { taskId } = useParams<{ taskId?: string }>();
   return <ResultPage initialTaskId={taskId} />;
 }
-
-// 智能工作台页面暂时隐藏
-// function SmartWorkbenchPageWrapper() {
-//   const { taskId } = useParams<{ taskId?: string }>();
-//   return <SmartWorkbenchPage initialTaskId={taskId} />;
-// }
 
 // 活动栏图标（内联 SVG path，避免依赖图标库）
 // ⚠ key 必须与下面 items 里的 key 一一对应：任何一个对不上，d 就是 undefined，
@@ -276,10 +269,6 @@ function App() {
           <Route path="/editor" element={<EditorPageWrapper />} />
           <Route path="/result" element={<ResultPageWrapper />} />
           <Route path="/result/:taskId" element={<ResultPageWrapper />} />
-          {/* 智能工作台页面暂时隐藏
-          <Route path="/workbench" element={<SmartWorkbenchPage />} />
-          <Route path="/workbench/:taskId" element={<SmartWorkbenchPageWrapper />} />
-          */}
           <Route path="/knowledge" element={<KnowledgePage />} />
         </Route>
         <Route element={<AuthGuard requireAdmin />}>

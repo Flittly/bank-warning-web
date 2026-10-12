@@ -103,14 +103,19 @@ function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdat
             {activeTab.filename && (
               <button
                   onClick={async () => {
+                    // 第 103 行的 activeTab.filename 守卫只在同步作用域内有效：
+                    // TS 不会把类型窄化带进 async 回调（回调可能在 activeTab 变化后才执行），
+                    // 所以在回调开头重新取一次局部常量，让类型收窄与运行时守卫落在同一处。
+                    const filename = activeTab.filename;
+                    if (!filename) return;
                     try {
-                      const res = await fetch(`/v0/bank/ai/reports/${encodeURIComponent(activeTab.filename)}/export`)
+                      const res = await fetch(`/v0/bank/ai/reports/${encodeURIComponent(filename)}/export`)
                       if (!res.ok) throw new Error(`HTTP ${res.status}`)
                       const blob = await res.blob()
                       const url = URL.createObjectURL(blob)
                       const a = document.createElement('a')
                       a.href = url
-                      a.download = activeTab.filename.replace('.md', '.docx')
+                      a.download = filename.replace('.md', '.docx')
                       a.click()
                       URL.revokeObjectURL(url)
                     } catch (e) {
