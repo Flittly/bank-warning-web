@@ -393,11 +393,20 @@
   align-items: center;
   justify-content: center;
   border: none;
+  /* ⚠ 必须清零内边距：index.css 里有一条全局 `button { padding: .6em 1.2em }`（Vite 模板遗留），
+     而 button 在浏览器 UA 样式表里是 box-sizing: border-box —— 32px 的宽度会被 38.4px 的
+     横向内边距整个吃掉，内容宽度归 0，里面的内联 SVG 作为 flex 子项被压成 0 宽，
+     于是所有图标都"看不见"。这一行就是活动栏图标不显示的根因。 */
+  padding: 0;
   border-radius: 9px;
   background: transparent;
   color: #475569;
   cursor: pointer;
   transition: all 0.15s;
+}
+/* 图标不参与伸缩：宽度不够时宁可溢出也不要被挤成 0 宽而静默消失 */
+.activity-btn svg {
+  flex: 0 0 auto;
 }
 .activity-btn:hover {
   background: rgba(255, 255, 255, 0.75);
