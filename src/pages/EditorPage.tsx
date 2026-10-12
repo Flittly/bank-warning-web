@@ -6,7 +6,7 @@ import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import TaskNameModal from '../components/TaskNameModal';
 import CreateTaskModal, { type CreateTaskForm } from '../components/CreateTaskModal';
-import TaskPropertiesModal from '../components/tree/TaskPropertiesModal';
+import InfoModal, { type InfoGroup } from '../components/tree/InfoModal';
 import ConfirmModal from '../components/ConfirmModal';
 import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
@@ -127,7 +127,7 @@ function EditorPage(props: EditorPageProps) {
   const sidebarMode = useEditorStore((s) => s.sidebarMode);
   const [demPickerOpen, setDemPickerOpen] = useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
-  const [taskPropsTask, setTaskPropsTask] = useState<any | null>(null);
+  const [infoModal, setInfoModal] = useState<{ title: string; groups: InfoGroup[] } | null>(null);
   const bankUploadInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsUploadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2350,6 +2350,78 @@ function EditorPage(props: EditorPageProps) {
 
   const handleTreeNodeAction = async (node: TreeNode, actionKey: string) => {
     const key = node.ref?.key || '';
+
+    const fmtTime = (v: any) => {
+      if (!v) return '-';
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString('zh-CN', { hour12: false });
+    };
+    const openInfo = (title: string, rows: Array<[string, string]>, storage: string) =>
+      setInfoModal({ title, groups: [{ heading: '基本信息', rows }, { heading: '存储位置', rows: [['存储', storage]] }] });
+    const openResourceInfo = (kind: string, k: string, label: string) => {
+      const store = useResourceTreeStore.getState();
+      if (kind === 'bank') {
+        const b: any = (store.banks || []).find((x: any) => String(x.bank_id) === k) || {};
+        const pts = b?.bank_geometry?.coordinates?.length;
+        openInfo(`岸段属性：${b.bank_name || label}`, [
+          ['岸段 ID', String(b.bank_id || k)],
+          ['岸段名称', b.bank_name || '-'],
+          ['区域代码', b.region_code || '-'],
+          ['是否反向', b.reversed != null ? String(b.reversed) : '-'],
+          ['描述', b.description || '-'],
+          ['几何点数', pts != null ? String(pts) : '-'],
+          ['创建时间', fmtTime(b.created_at)],
+          ['更新时间', fmtTime(b.updated_at)],
+        ], 'PostgreSQL `bank_risk_db` · `banks` 表（几何字段 bank_geometry / geom）');
+      } else if (kind === 'section') {
+        const all = Object.values(store.sectionsByTask || {}).flat() as any[];
+        const s: any = all.find((x: any) => String(x.section_id ?? x.id) === k) || {};
+        openInfo(`断面属性：${s.section_name || k}`, [
+          ['断面 ID', String(s.section_id || k)],
+          ['断面名称', s.section_name || '-'],
+          ['所属任务', s.task_id || '-'],
+          ['所属岸段', s.bank_id || '-'],
+          ['区域代码', s.region_code || '-'],
+          ['校验状态', s.validation_status || '-'],
+          ['距离', s.distance != null ? String(s.distance) : '-'],
+          ['参数模板', s.param_name || (s.basic_param_id != null ? String(s.basic_param_id) : '-')],
+          ['基准 DEM', s.bench_id || '-'],
+          ['对照 DEM', s.ref_id || '-'],
+          ['创建时间', fmtTime(s.created_at)],
+          ['更新时间', fmtTime(s.updated_at)],
+        ], 'PostgreSQL `bank_risk_db` · `cross_sections` 表（几何 section_geometry / geom）');
+      } else if (kind === 'param') {
+        const p: any = (store.params || []).find((x: any) => String(x.param_id ?? x.id) === k) || {};
+        openInfo(`参数模板属性：${p.param_name || k}`, [
+          ['param_id', String(p.param_id || k)],
+          ['数据库 id', p.id != null ? String(p.id) : '-'],
+          ['名称', p.param_name || '-'],
+          ['河段', p.segment || '-'],
+          ['流量 (water_qs)', p.water_qs || '-'],
+          ['潮型 (tidal_level)', p.tidal_level || '-'],
+          ['基准 DEM', p.bench_id || '-'],
+          ['对照 DEM', p.ref_id || '-'],
+          ['当前时间点', p.current_timepoint || '-'],
+          ['对比时间点', p.comparison_timepoint || '-'],
+          ['创建时间', fmtTime(p.created_at)],
+          ['更新时间', fmtTime(p.updated_at)],
+        ], 'PostgreSQL `bank_risk_db` · `basic_params` 表');
+      } else if (kind === 'dem') {
+        const d: any = (store.tiffs || []).find((x: any) => String(x.tiff_key ?? x.key ?? x.file_name) === k) || {};
+        openInfo(`DEM 属性：${d.file_name || k}`, [
+          ['TIFF Key (路径)', String(d.tiff_key || k)],
+          ['河段', d.segment || d.region_code || '-'],
+          ['年份', d.year || '-'],
+          ['时间点', d.timepoint || '-'],
+          ['文件名', d.file_name || '-'],
+          ['X 范围', d.min_x != null ? `${d.min_x} ~ ${d.max_x}` : '-'],
+          ['Y 范围', d.min_y != null ? `${d.min_y} ~ ${d.max_y}` : '-'],
+          ['创建时间', fmtTime(d.created_at)],
+          ['更新时间', fmtTime(d.updated_at)],
+        ], '本体 .tif 文件在模型服务端文件系统 `resource/tiff/...`；元数据在 PostgreSQL `tiff_bounds` 表');
+      }
+    };
+
     switch (actionKey) {
       case 'bank.upload': bankUploadInputRef.current?.click(); break;
       case 'bank.colorToggle': setColorBanks(!colorBanks); break;
@@ -2412,11 +2484,26 @@ function EditorPage(props: EditorPageProps) {
         break;
       }
 
+      case 'bank.info': openResourceInfo('bank', key, node.label); break;
+      case 'section.info': openResourceInfo('section', key, node.label); break;
+      case 'param.info': openResourceInfo('param', key, node.label); break;
+      case 'dem.info': openResourceInfo('dem', key, node.label); break;
       case 'task.create': await handleNewTask(); break;
       case 'task.props': {
         const tasks = useResourceTreeStore.getState().tasks;
-        const t = tasks.find((x: any) => String(x.task_id ?? x.id) === key);
-        setTaskPropsTask(t || { task_id: key, task_name: node.label });
+        const t: any = tasks.find((x: any) => String(x.task_id ?? x.id) === key) || { task_id: key, task_name: node.label };
+        const bankCount = Array.isArray(t.bank_ids) ? t.bank_ids.length : 0;
+        openInfo('任务属性', [
+          ['任务名称', t.task_name || '-'],
+          ['任务 ID', String(t.task_id || key)],
+          ['状态', t.status || '-'],
+          ['岸段数量', `${bankCount} 条`],
+          ['描述', t.description || '-'],
+          ['创建时间', fmtTime(t.created_at)],
+          ['更新时间', fmtTime(t.updated_at)],
+          ['开始运行', fmtTime(t.run_started_at)],
+          ['完成运行', fmtTime(t.run_completed_at)],
+        ], 'PostgreSQL `bank_risk_db` · `tasks` 表');
         break;
       }
       case 'task.run': useResourceTreeStore.getState().setCurrentTask(key); await handleStartAnalysis(); break;
@@ -2645,7 +2732,7 @@ function EditorPage(props: EditorPageProps) {
         </button>
 
         {/* 地图底部居中操作条 */}
-        <div className="editor-map-toolbar">
+        <div className="editor-map-toolbar" data-tour="map-toolbar">
           <button type="button" className="emt-btn" onClick={() => bankUploadInputRef.current?.click()} title="上传岸段">
             <Upload size={15} /> 上传岸段
           </button>
@@ -2700,9 +2787,9 @@ function EditorPage(props: EditorPageProps) {
         />
       )}
 
-      {/* 任务属性弹窗 */}
-      {taskPropsTask && (
-        <TaskPropertiesModal task={taskPropsTask} onClose={() => setTaskPropsTask(null)} />
+      {/* 属性弹窗（任务/岸段/断面/参数/DEM） */}
+      {infoModal && (
+        <InfoModal title={infoModal.title} groups={infoModal.groups} onClose={() => setInfoModal(null)} />
       )}
 
       {/* 通用确认弹窗 */}

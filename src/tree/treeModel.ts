@@ -18,7 +18,7 @@ export function buildBanksFolder(banks: any[]): TreeNode {
         ref: { entity: 'bank' as const, key: bankId },
         selectable: true,
         actions: [
-          'bank.loadMap', 'bank.locate', 'bank.props', 'bank.smooth',
+          'bank.loadMap', 'bank.locate', 'bank.props', 'bank.info', 'bank.smooth',
           'bank.clip', 'bank.selectByTiff', 'section.toggleVisible', 'bank.delete',
         ],
       };
@@ -39,7 +39,7 @@ export function buildParamsFolder(params: any[]): TreeNode {
       meta: isDefault ? '默认' : undefined,
       ref: { entity: 'param' as const, key: String(pid) },
       selectable: true,
-      actions: ['param.select', 'param.props', 'param.editSectionParams'],
+      actions: ['param.select', 'param.props', 'param.info', 'param.editSectionParams'],
     };
   });
   return { id: 'folder:params', kind: 'folder', label: '参数模板', icon: 'param', selectable: false, meta: String(children.length), children };
@@ -63,7 +63,7 @@ export function buildDemFolder(tiffs: any[]): TreeNode {
       meta: t?.timepoint ? String(t.timepoint) : undefined,
       ref: { entity: 'dem', key },
       selectable: true,
-      actions: ['dem.toggleBounds', 'dem.selectBanks', 'dem.delete'],
+      actions: ['dem.toggleBounds', 'dem.selectBanks', 'dem.info', 'dem.delete'],
     });
   }
   const children: TreeNode[] = [];
@@ -105,7 +105,7 @@ export function buildSectionsFolder(sections: any[], tasks?: any[]): TreeNode {
       meta: s?.bank_id ? String(s.bank_id) : undefined,
       ref: { entity: 'section', key: secId },
       selectable: true,
-      actions: ['section.reverse', 'section.props', 'section.delete'],
+      actions: ['section.reverse', 'section.props', 'section.info', 'section.delete'],
     });
   }
   const children: TreeNode[] = [...byTask.entries()].map(([taskId, g]) => ({
@@ -173,7 +173,7 @@ export function buildTasksGroup(
               meta: status && status !== 'valid' ? status : undefined,
               ref: { entity: 'section' as const, key: String(s.section_id ?? sid) },
               selectable: true,
-              actions: ['section.props', 'section.delete'],
+              actions: ['section.props', 'section.info', 'section.delete'],
               invalid: Boolean(status && status !== 'valid'),
             };
           }),
@@ -195,7 +195,7 @@ export function buildTasksGroup(
             meta: d.label,
             ref: { entity: 'dem' as const, key: String(d.key) },
             selectable: true,
-            actions: ['dem.toggleBounds', 'dem.selectBanks'],
+            actions: ['dem.toggleBounds', 'dem.selectBanks', 'dem.info'],
           }));
         kids = [
           { id: `task-banks:${tid}`, kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(bankNodes.length), children: bankNodes },
