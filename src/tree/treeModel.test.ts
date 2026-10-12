@@ -112,7 +112,6 @@ describe('buildTasksGroup task children', () => {
     const banksById = { b1: { bank_id: 'b1', bank_name: '岸段一' } };
     const group = buildTasksGroup(tasks, { sectionsByTask, banksById });
     const task = group.children![0];
-    expect(task.subtitle).toBe('t1');
     expect((task.children || []).map((c) => c.id)).toEqual(['task-banks:t1', 'task-sections:t1', 'task-param:t1', 'task-dems:t1']);
     const banksFolder = task.children!.find((c) => c.id === 'task-banks:t1')!;
     expect(banksFolder.children?.[0].label).toBe('岸段一');

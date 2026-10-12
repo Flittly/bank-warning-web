@@ -6,6 +6,7 @@ import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import TaskNameModal from '../components/TaskNameModal';
 import CreateTaskModal, { type CreateTaskForm } from '../components/CreateTaskModal';
+import TaskPropertiesModal from '../components/tree/TaskPropertiesModal';
 import ConfirmModal from '../components/ConfirmModal';
 import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
@@ -126,6 +127,7 @@ function EditorPage(props: EditorPageProps) {
   const sidebarMode = useEditorStore((s) => s.sidebarMode);
   const [demPickerOpen, setDemPickerOpen] = useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
+  const [taskPropsTask, setTaskPropsTask] = useState<any | null>(null);
   const bankUploadInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsUploadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2411,6 +2413,12 @@ function EditorPage(props: EditorPageProps) {
       }
 
       case 'task.create': await handleNewTask(); break;
+      case 'task.props': {
+        const tasks = useResourceTreeStore.getState().tasks;
+        const t = tasks.find((x: any) => String(x.task_id ?? x.id) === key);
+        setTaskPropsTask(t || { task_id: key, task_name: node.label });
+        break;
+      }
       case 'task.run': useResourceTreeStore.getState().setCurrentTask(key); await handleStartAnalysis(); break;
       case 'task.generateCompute': useResourceTreeStore.getState().setCurrentTask(key); await handleGenerateComputeSections(); bumpTreeData(); break;
       case 'task.setParam': useResourceTreeStore.getState().setCurrentTask(key); await openGlobalPropertiesModal(); break;
@@ -2690,6 +2698,11 @@ function EditorPage(props: EditorPageProps) {
           onConfirm={handleCreateTaskConfirm}
           onCancel={() => setCreateTaskModalOpen(false)}
         />
+      )}
+
+      {/* 任务属性弹窗 */}
+      {taskPropsTask && (
+        <TaskPropertiesModal task={taskPropsTask} onClose={() => setTaskPropsTask(null)} />
       )}
 
       {/* 通用确认弹窗 */}

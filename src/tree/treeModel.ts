@@ -212,10 +212,9 @@ export function buildTasksGroup(
         label: String(t.task_name || tid),
         icon: 'task',
         meta: t?.status ? String(t.status) : undefined,
-        subtitle: tid,
         ref: { entity: 'task' as const, key: tid },
         selectable: true,
-        actions: ['task.run', 'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete'],
+        actions: ['task.props', 'task.run', 'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete'],
         children: kids,
       };
     });

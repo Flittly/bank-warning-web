@@ -10,9 +10,9 @@ describe('actions', () => {
     const list = getActions(['bank.smooth', 'bank.delete']);
     expect(list.map((a) => a.key)).toEqual(['bank.smooth', 'bank.delete']);
   });
-  it('registers 44 keys with matching key fields', () => {
+  it('registers 45 keys with matching key fields', () => {
     const entries = Object.entries(ACTION_META);
-    expect(entries.length).toBe(44);
+    expect(entries.length).toBe(45);
     for (const [k, v] of entries) expect(v.key).toBe(k);
   });
   it('getActions drops unknown keys', () => {

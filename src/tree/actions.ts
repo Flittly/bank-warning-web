@@ -48,6 +48,7 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
   'dem.delete': { key: 'dem.delete', label: '删除 DEM', icon: 'trash', danger: true, separatorBefore: true },
 
   'task.create': { key: 'task.create', label: '新建任务', icon: 'plus' },
+  'task.props': { key: 'task.props', label: '任务属性', icon: 'settings' },
   'task.run': { key: 'task.run', label: '执行风险分析', icon: 'play' },
   'task.generateCompute': { key: 'task.generateCompute', label: '生成计算断面…', icon: 'ruler' },
   'task.setParam': { key: 'task.setParam', label: '更换参数模板 / DEM', icon: 'settings' },
