@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   Upload, Palette, Eye, EyeOff, Target, Settings, Zap, Scissors, Check,
   Layers, RotateCw, Eraser, Ruler, CircleCheck, Download, Move, Plus,
@@ -25,16 +25,27 @@ interface Props {
 }
 
 export default function TreeContextMenu({ node, x, y, onAction, onClose }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const close = () => onClose();
-    window.addEventListener('click', close);
-    window.addEventListener('resize', close);
-    return () => { window.removeEventListener('click', close); window.removeEventListener('resize', close); };
+    // 捕获阶段监听 mousedown：避免被树行 onClick 的 stopPropagation 吞掉
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (ref.current && e.target instanceof Node && ref.current.contains(e.target)) return;
+      onClose();
+    };
+    document.addEventListener('mousedown', onDocMouseDown, true);
+    window.addEventListener('resize', onClose);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown, true);
+      window.removeEventListener('resize', onClose);
+    };
   }, [onClose]);
 
   const items = getActions(node.actions || []);
+  if (items.length === 0) return null;
+
   return (
-    <div className={styles.ctx} style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>
+    <div ref={ref} className={styles.ctx} style={{ left: x, top: y }}>
       {items.map((a) => {
         const AIcon = ACTION_ICONS[a.icon] || Settings;
         return (

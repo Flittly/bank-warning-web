@@ -42,7 +42,7 @@ const HOVER_ACTIONS: Record<string, string[]> = {
 };
 
 const ROW_H = 28;
-const ROW_TALL = 46;
+const ROW_TALL = 42;
 
 export default function ResourceTreeNode({
   node, depth, expanded, selected, onToggle, onSelect, onDoubleClick, onAction, onContextMenu,
@@ -93,8 +93,8 @@ export default function ResourceTreeNode({
         )}
       </div>
       {tall && (
-        <div className={styles.subtitle} style={{ paddingLeft: depth * 20 + 40 }}>
-          {node.subtitle}
+        <div className={styles.subtitleRow} style={{ paddingLeft: depth * 20 + 34 }}>
+          <span className={styles.subtitle}>{node.subtitle}</span>
         </div>
       )}
     </div>

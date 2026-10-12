@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { TreeNode } from '../../tree/types';
 import { flattenTree } from '../../tree/treeModel';
+import { getActions } from '../../tree/actions';
 import { useResourceTreeStore } from '../../store/useResourceTreeStore';
 import ResourceTreeNode from './ResourceTreeNode';
 import TreeContextMenu from './TreeContextMenu';
 import styles from './ResourceSidebar.module.css';
 
 const ROW_H = 28;
-const ROW_TALL = 46;
+const ROW_TALL = 42;
 const OVERSCAN = 8;
 
 interface Props {
@@ -69,7 +70,10 @@ export default function ResourceTree({ root, onNodeSelect, onNodeDoubleClick, on
     },
     [selectNode, onNodeSelect],
   );
-  const handleContextMenu = useCallback((node: TreeNode, x: number, y: number) => setCtx({ node, x, y }), []);
+  const handleContextMenu = useCallback((node: TreeNode, x: number, y: number) => {
+    if (getActions(node.actions || []).length === 0) return;
+    setCtx({ node, x, y });
+  }, []);
 
   return (
     <div className={styles.treeWrap}>

@@ -140,10 +140,21 @@
   border-radius: 8px;
   flex: 0 0 auto;
 }
+.subtitleRow {
+  height: 14px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
 .subtitle {
-  color: #9aa3af;
-  font-size: 11px;
-  line-height: 16px;
+  display: inline-block;
+  background: #9ca3af;
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 13px;
+  padding: 0 6px;
+  border-radius: 3px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
