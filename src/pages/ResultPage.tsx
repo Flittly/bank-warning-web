@@ -1297,44 +1297,9 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
-  // 删除当前选中的任务
-  const handleDeleteTask = async () => {
-    if (!selectedTask) return;
-
-    const confirmDelete = window.confirm('确定要删除当前选中的任务吗？此操作不可恢复。');
-    if (!confirmDelete) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch(`/v0/bank/tasks/${selectedTask}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('删除任务失败');
-
-      const data = await res.json().catch(() => ({}));
-      if (data && data.success === false) {
-        throw new Error(data.message || '删除任务失败');
-      }
-
-      // 从任务列表中移除已删除任务
-      setTaskList(prev => prev.filter(task => task.task_id !== selectedTask));
-
-      // 清空当前选择
-      stopPolling();
-      setSelectedTask(null);
-      setProgressOpen(false);
-      setProgress(null);
-
-      // 清理地图上的图层和数据源
-      const map = mapRef.current;
-      if (map) clearMapLayers(map);
-    } catch (e: any) {
-      console.error('删除任务出错:', e);
-      setError(e.message || '删除任务失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // 注：原先这里还有一个 handleDeleteTask（删除"当前选中"的任务，约 40 行），
+  // 但全仓库已无调用方 —— 实际在用的是列表行上的 handleDeleteTaskById。
+  // 已于 2026-10-12 冗余清理中删除（git 历史可查）。
 
   const handleDeleteTaskById = async (taskId: string) => {
     try {

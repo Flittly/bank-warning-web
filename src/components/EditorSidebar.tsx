@@ -141,15 +141,13 @@ function EditorSidebar(props: EditorSidebarProps) {
     openGlobalPropertiesModal,
     isSelectingStartEnd,
     toggleStartEndSelection,
-    groups,
-    editingGroupId,
-    handleEditGroup,
-    deleteGroup,
-    updateGroupConfig,
-    reverseCrossLinesInGroup,
-    deleteCrossLinesInGroup,
-    setEditingPropertiesGroupId,
-    handleApplyCustomSegments,
+    // ↓ 一组"已传入但侧边栏不再消费"的自定义组 props：自定义组的 UI 已从本组件移除。
+    //   这里只摘掉解构，Props 接口与 EditorPage 的传参保持原样 —— 该功能的去向
+    //   （恢复 / 彻底移除）还没定，所以不连坐删 customSegments.ts 那条业务链，
+    //   只把"已声明但未读取"的噪音消掉。
+    // groups, editingGroupId, handleEditGroup, deleteGroup, updateGroupConfig,
+    // reverseCrossLinesInGroup, deleteCrossLinesInGroup, setEditingPropertiesGroupId,
+    // handleApplyCustomSegments,
     isSelectingCrossLines,
     toggleCrossLineSelection,
     validateAllPendingSections,
@@ -158,7 +156,7 @@ function EditorSidebar(props: EditorSidebarProps) {
     setCrossLineControlMode,
     crossLineEditMode,
     setCrossLineEditMode,
-    clearSelectedCrossLineSelection,
+    // clearSelectedCrossLineSelection, (unused)
     selectedCrossLineIndex,
     translateSelectedCrossLine,
     rotateSelectedCrossLine,
@@ -170,8 +168,7 @@ function EditorSidebar(props: EditorSidebarProps) {
     setShowCrossLines,
     showTiffBounds,
     setShowTiffBounds,
-    satellite,
-    setSatellite,
+    // satellite, setSatellite, (unused)
     handleStartAnalysis,
     onClear,
     onSelectBanksByTiff,
