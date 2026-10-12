@@ -119,10 +119,11 @@
 ## public
 
 - [public/bank.geojson](public/bank.geojson)
-  - 示例/测试数据。
-- [public/fonts/黄令东齐伋复刻.ttf](public/fonts/)
-  - ⚠️ 39.5 MB，全仓库无任何 `@font-face` / `url()` / JS 引用；仍会被 `vite build` 原样拷进 `dist/fonts/`，
-    即每次部署都多带 39.5 MB。属于"待决策"项：若确认不用（或改为按需放入对象存储），删除它既减仓库体积也减部署包。
+  - 示例/测试数据（源码里无引用，但可能被"手动上传 GeoJSON"的验证流程用到，保留）。
+- ~~`public/fonts/黄令东齐伋复刻.ttf`~~ —— **已于 2026-10-12 删除**。
+  39.5 MB、全仓库零引用（无 `@font-face` / `url()` / JS 引用），却每次 `vite build`
+  都被拷进 `dist/fonts/`；删除后 `dist/` 总体积 47.5 MB → 8.0 MB。
+  若将来要用，`git checkout d7f67e6~1 -- public/fonts/` 可取回。
 
 ---
 
@@ -169,14 +170,16 @@
 
 ## 后续整理建议（非必须，但能持续保持结构清爽）
 
-- `tsc -b` 目前**不是干净通过**（清理后仍有 59 条）。其中 12 条来自 `EditorSidebar` 上一组
-  「已传入但侧边栏不再渲染」的自定义组 props（`groups` / `handleEditGroup` / `deleteGroup` /
-  `updateGroupConfig` / `reverseCrossLinesInGroup` / `deleteCrossLinesInGroup` /
-  `setEditingPropertiesGroupId` / `handleApplyCustomSegments` / `satellite` / `setSatellite` /
-  `clearSelectedCrossLineSelection` / `editingGroupId`）—— 要把它们摘干净会连带
-  `pages/editor/customSegments.ts` 整条链路，属于"删功能"而非"删冗余"，需先确认该功能去向。
-- `ResultPage.tsx` 的 `handleDeleteTask`（约 40 行，删除"当前选中任务"）已无调用方，
-  实际在用的是列表行上的 `handleDeleteTaskById`。
+- `tsc -b` 目前**不是干净通过**（清理后仍有 46 条）。其中 41 条（"已声明但未读取"）
+  **全部**集中在 `SmartWorkbenchPage.tsx` —— 即那个被注释掉的"暂时隐藏"页面。
+  确认它要恢复还是废弃，再决定是清理它内部还是整文件删除，这一步能一次拿掉 41 条。
+- 另 5 条是**既有真实类型错误**，与本轮清理无关，但 `package.json` 的 `build` 脚本是
+  `tsc -b && vite build`，所以 `npm run build` 会因为它们失败（`npm run dev` 不受影响）：
+  `WorkspacePanel.tsx` 的 `filename`/`activeTab.filename` 可能为 `undefined`；
+  `ResultPage.tsx` 的 Modal `styles.content` 不是合法键；`utils/apiClient.ts` 的 fetch 包装类型不兼容。
+- `EditorSidebar` 那 12 个自定义组 prop 现已只从解构里摘掉（接口与传参保持原样）。
+  若确认"自定义断面组"功能不再恢复，可连同 `EditorPage` 里对应的 6 个 handler 与
+  `pages/editor/customSegments.ts` 整条链一起删除 —— 这是"删功能"而非"删冗余"，需单独拍板。
 - 若要进一步降低 `EditorPage` 体积：可将"侧边栏 UI 触发的模式切换"整理成 `useEditorModes()` hook。
 - 若要减少 lint 噪音：将 `EditorSidebar.tsx` 中零散的 inline style 迁移到
   [src/components/EditorSidebar.module.css](src/components/EditorSidebar.module.css)
