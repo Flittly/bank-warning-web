@@ -375,7 +375,7 @@
 .activity-bar {
   width: 42px;
   min-width: 42px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(241, 245, 249, 0.72);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-right: 1px solid rgba(255, 255, 255, 0.5);
@@ -412,7 +412,9 @@
   background: rgba(255, 255, 255, 0.75);
   color: #334155;
 }
+/* 选中态为纯矩形色块：去掉圆角，与其它按钮的 9px 圆角形成明确区分 */
 .activity-btn.active {
+  border-radius: 0;
   background: rgba(37, 99, 235, 0.12);
   color: #2563eb;
 }
