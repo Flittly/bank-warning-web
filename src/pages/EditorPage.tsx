@@ -1027,6 +1027,36 @@ function EditorPage(props: EditorPageProps) {
   const sectionIdOfFeature = (f: any) =>
     String(f?.properties?.sectionId ?? f?.properties?.section_id ?? '');
 
+  // 在资源树里点到「某一个断面节点」时，把"目标断面"锚定到这个节点上。
+  // 为什么需要这一步：断面的各项操作（参数 / 删除 / 反切…）最终都要落到
+  // perpendicularData.features 的**下标**上，而树下发展开前，这些断面
+  // 往往根本不在图上（甚至整张图是空的）。旧写法直接读"地图上当前选中的断面"，
+  // 于是出现两类错：
+  //   ① 地图上什么都没选 → 误报「请先选择要配置的断面」；
+  //   ② 之前在地图上选过别的断面 → 静默作用到**另一个断面**上（删除/反切尤其危险）。
+  // 这里返回该断面在 features 里的下标（必要时先从后端把它拉回地图并选中）；失败返回 null。
+  const focusSectionOfTreeNode = async (sectionId: string): Promise<number | null> => {
+    const sid = String(sectionId || '');
+    if (!sid) return null;
+    // restoreSectionById 内部：已在图上 → 直接选中定位；不在 → 按 id 拉回图后再定位
+    if (!(await restoreSectionById(sid))) return null;
+    const list = ((useEditorStore.getState().perpendicularData?.features || []) as any[]);
+    const index = list.findIndex((f) => sectionIdOfFeature(f) === sid);
+    if (index < 0) return null;
+    setSelectedCrossLineIndex(index);
+    setSelectedCrossLineIndices(new Set());   // 收回单选，避免多选残留把批量动作带偏
+    return index;
+  };
+
+  // 某个断面属于哪个任务（删掉之后要让资源树重新拉一次该任务的断面清单，否则节点会残留）
+  const taskIdOfSection = (sectionId: string): string => {
+    const byTask = useResourceTreeStore.getState().sectionsByTask || {};
+    for (const [tid, list] of Object.entries(byTask)) {
+      if ((list as any[]).some((s) => String(s?.section_id ?? s?.id ?? '') === sectionId)) return tid;
+    }
+    return '';
+  };
+
   // 把文件夹下所有断面拉回地图。已在图上的跳过，只补缺的那些。
   const loadAllSectionsUnder = async (node: TreeNode) => {
     const ids = collectSectionIds(node);
@@ -1685,20 +1715,26 @@ function EditorPage(props: EditorPageProps) {
   };
 
   // 反转选中的断面（交换端点并同步到后端如果存在）
-  const reverseSelectedCrossLine = async () => {
-    if (!perpendicularData || perpendicularData.features.length === 0) {
+  const reverseSelectedCrossLine = async (indicesOverride?: number[]) => {
+    // 数据从 store 现取，而不是用闭包里的 perpendicularData：
+    // 树里右键「反切」时，断面可能是刚刚才被拉回地图的，闭包副本里还没有它。
+    const data = useEditorStore.getState().perpendicularData;
+    if (!data || data.features.length === 0) {
       message.warning('当前没有断面可反切');
       return;
     }
 
-    const indices = getSelectedCrossLineIndices();
+    // 树节点是权威目标，直接传入它的下标；否则退回"当前选中的断面"。
+    // 用 Array.isArray 而不是 ?? —— 这个函数也会被 <button onClick={...}> 直接调用，
+    // 那样第一个实参是 MouseEvent，会把下标覆盖掉。
+    const indices = Array.isArray(indicesOverride) ? indicesOverride : getSelectedCrossLineIndices();
     if (indices.length === 0) {
       message.warning('请先选择要反切的断面');
       return;
     }
 
     const unique = Array.from(new Set(indices)).filter(
-      (i) => Number.isFinite(i) && i >= 0 && i < perpendicularData.features.length,
+      (i) => Number.isFinite(i) && i >= 0 && i < data.features.length,
     );
     if (unique.length === 0) {
       message.warning('请选择有效的断面');
@@ -1706,7 +1742,7 @@ function EditorPage(props: EditorPageProps) {
     }
 
     // 先本地批量反切
-    const updatedFeatures = [...(perpendicularData.features as any[])];
+    const updatedFeatures = [...(data.features as any[])];
     const sectionIdsToSync: string[] = [];
 
     unique.forEach((idx) => {
@@ -2703,7 +2739,18 @@ function EditorPage(props: EditorPageProps) {
       case 'section.validate': await validateAllPendingSections(); break;
       case 'section.deleteInvalid': await deleteAllInvalidSections(); break;
       case 'section.export': handleExportSections(); break;
-      case 'section.reverse': await reverseSelectedCrossLine(); break;
+      case 'section.reverse': {
+        // 断面节点上点「反切」：目标是这个断面本身（不在图上就先拉回来），
+        // 不能拿"地图上碰巧选中的那个"去反切。文件夹上的「反切」仍按当前多选处理。
+        if (node.ref?.entity === 'section') {
+          const idx = await focusSectionOfTreeNode(key);
+          if (idx == null) { message.warning(`未能定位断面 ${node.label}，请先把它「加载到地图」`); break; }
+          await reverseSelectedCrossLine([idx]);
+          break;
+        }
+        await reverseSelectedCrossLine();
+        break;
+      }
       case 'section.fineTune': toggleCrossLineSelection(); break;
       case 'section.batchParams': {
         const features = perpendicularData?.features || [];
@@ -2723,8 +2770,49 @@ function EditorPage(props: EditorPageProps) {
         }
         break;
       }
-      case 'section.props': await configureSelectedCrossLineProperties(); break;
-      case 'section.delete': await deleteSelectedCrossLine(); break;
+      case 'section.props': {
+        // 「断面参数」的目标 = 被点的那一行断面节点，而不是"地图上当前选中的断面"。
+        // 旧实现在这里直接复用选中项，所以只要没先在地图上点过断面就会报错。
+        if (node.ref?.entity === 'section') {
+          const idx = await focusSectionOfTreeNode(key);
+          if (idx == null) { message.warning(`未能定位断面 ${node.label}，请先把它「加载到地图」`); break; }
+          await configureSelectedCrossLinePropertiesAction({
+            selectedCrossLineIndex: idx,
+            perpendicularData: useEditorStore.getState().perpendicularData as any,
+            setEditingPropertiesGroupId,
+          });
+          break;
+        }
+        await configureSelectedCrossLineProperties();
+        break;
+      }
+      case 'section.delete': {
+        if (node.ref?.entity === 'section') {
+          const idx = await focusSectionOfTreeNode(key);
+          if (idx == null) { message.warning(`未能定位断面 ${node.label}，请先把它「加载到地图」`); break; }
+          const ok = await requestConfirm({
+            title: '删除断面',
+            content: `确认删除断面 ${node.label}？后端记录会一并删除，且无法撤销。`,
+          });
+          if (!ok) break;
+          await deleteSelectedCrossLineAction({
+            selectedCrossLineIndex: idx,
+            perpendicularData: useEditorStore.getState().perpendicularData as any,
+            setPerpendicularData,
+            setSelectedCrossLineIndex: (v) => {
+              setSelectedCrossLineIndex(v);
+              if (v === null) setSelectedCrossLineIndices(new Set());
+            },
+          });
+          // 后端已删，但树里还缓存着这条断面 → 让该任务的断面清单失效，否则节点会残留在树上
+          const tid = taskIdOfSection(String(key));
+          if (tid) useResourceTreeStore.getState().invalidateSections(tid);
+          bumpTreeData();
+          break;
+        }
+        await deleteSelectedCrossLine();
+        break;
+      }
 
       case 'param.select': await handleSelectBasicParam(key); break;
       case 'param.props': await openGlobalPropertiesModal(); break;
