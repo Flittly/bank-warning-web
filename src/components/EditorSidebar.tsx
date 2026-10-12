@@ -8,15 +8,12 @@ import {
   Activity, 
   Plus, 
   Trash2, 
-  ChevronRight, 
-  ChevronDown, 
   RotateCw,
   Eye,
   EyeOff,
   Eraser,
   Check,
   Zap,
-  Globe,
   Layout,
   Download,
   MoveHorizontal,
@@ -36,7 +33,6 @@ interface EditorSidebarProps {
   smoothSelectedShoreLines: () => void;
   selectedBankGroup: string[];
   setSelectedBankGroup: (v: string[]) => void;
-  onBankSelect?: (bankIds: string[]) => void;
   loadBankById?: (bankId: string) => Promise<void>;
   removeBankFromMap?: (bankId: string) => void;
   onBankParamsView?: (bankId: string) => void;
@@ -116,7 +112,6 @@ function EditorSidebar(props: EditorSidebarProps) {
     bankGroups,
     selectedBankGroup,
     setSelectedBankGroup,
-    onBankSelect,
     loadBankById,
     removeBankFromMap,
     onBankParamsView,

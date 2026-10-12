@@ -1,29 +1,4 @@
 /* ==================== 全局毛玻璃风格 ==================== */
-.glass-card {
-  background:
-    radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.35) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 100%, rgba(254, 243, 199, 0.15) 0%, transparent 50%),
-    rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(16px) saturate(1.4) brightness(1.05);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4) brightness(1.05);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 18px;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.12),
-    0 4px 20px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45);
-}
-
-.glass-panel {
-  background: rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(12px) saturate(1.3);
-  -webkit-backdrop-filter: blur(12px) saturate(1.3);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 16px;
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
-}
 
 .glass-btn {
   background: linear-gradient(135deg,
@@ -98,130 +73,13 @@
   margin-top: 1px;
 }
 
-.nav-tabs {
-  display: flex;
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(10px) saturate(1.3);
-  -webkit-backdrop-filter: blur(10px) saturate(1.3);
-  padding: 4px;
-  border-radius: 14px;
-  gap: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.nav-tab {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border: 1.5px solid transparent;
-  background: transparent;
-  border-radius: 11px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s;
-  outline: none;
-  box-shadow: none;
-  position: relative;
-  overflow: hidden;
-}
-
-.nav-tab:focus,
-.nav-tab:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-
-.nav-tab.active::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -150%;
-  width: 60%;
-  height: 100%;
-  background: linear-gradient(90deg,
-    transparent,
-    rgba(255, 255, 255, 0.5),
-    transparent);
-  transform: skewX(-25deg);
-  animation: tabShine 2s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes tabShine {
-  0% { left: -150%; }
-  50% { left: 120%; }
-  100% { left: 120%; }
-}
-
-.nav-tab:hover {
-  color: #334155;
-  background: rgba(255, 255, 255, 0.3);
-}
-
 /* 断面编辑器 — 金黄 */
-.nav-tab:nth-child(1).active {
-  background: linear-gradient(135deg,
-    rgba(255, 255, 255, 0.35) 0%,
-    rgba(251, 191, 36, 0.28) 100%);
-  border-color: rgba(251, 191, 36, 0.5);
-  color: #92400E;
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
-  box-shadow: 0 0 12px rgba(251, 191, 36, 0.12), inset 0 1px 0 rgba(255,255,255,0.5);
-}
 
 /* 结果查看器 — 蓝 */
-.nav-tab:nth-child(2).active {
-  background: linear-gradient(135deg,
-    rgba(255, 255, 255, 0.35) 0%,
-    rgba(59, 130, 246, 0.25) 100%);
-  border-color: rgba(59, 130, 246, 0.45);
-  color: #1E40AF;
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.12), inset 0 1px 0 rgba(255,255,255,0.5);
-}
 
 /* 智能工作台 — 橙 */
-.nav-tab:nth-child(3).active {
-  background: linear-gradient(135deg,
-    rgba(255, 255, 255, 0.35) 0%,
-    rgba(249, 115, 22, 0.25) 100%);
-  border-color: rgba(249, 115, 22, 0.45);
-  color: #9A3412;
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
-  box-shadow: 0 0 12px rgba(249, 115, 22, 0.12), inset 0 1px 0 rgba(255,255,255,0.5);
-}
 
 /* 知识库 — 绿 */
-.nav-tab:nth-child(4).active {
-  background: linear-gradient(135deg,
-    rgba(255, 255, 255, 0.35) 0%,
-    rgba(16, 185, 129, 0.25) 100%);
-  border-color: rgba(16, 185, 129, 0.45);
-  color: #065F46;
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.12), inset 0 1px 0 rgba(255,255,255,0.5);
-}
-
-.nav-home {
-  background: rgba(248, 250, 252, 0.6);
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  border-radius: 10px;
-  padding: 8px;
-  color: #94a3b8;
-  cursor: pointer;
-  transition: color 0.2s;
-}
-
-.nav-home:hover {
-  color: #64748b;
-}
 
 .nav-right {
   display: flex;
@@ -534,23 +392,6 @@
   to { transform: rotate(360deg); }
 }
 
-.editor-chat-panel {
-  width: 350px;
-  min-width: 0;
-  height: 100%;
-  overflow: hidden;
-  background: #ffffff;
-  border-left: 1px solid #e2e8f0;
-  transition: width 0.3s, min-width 0.3s;
-}
-
-.editor-chat-panel.collapsed {
-  width: 0;
-  min-width: 0;
-  border-left: none;
-  overflow: hidden;
-}
-
 .map-full {
   width: 100%;
   height: 100%;
@@ -676,31 +517,6 @@
   align-items: center;
 }
 
-.delete-group {
-  background: #fee2e2;
-  color: #ef4444;
-  border: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-}
-
-.group-status {
-  margin-top: 4px;
-  color: #6b7280;
-  font-style: italic;
-}
-
-.risk-done {
-  color: #10b981;
-  font-weight: bold;
-}
-
 .clear-button {
   margin-top: 4px;
   background: #6b7280;
@@ -709,16 +525,7 @@
   padding: 6px;
   border-radius: 4px;
   cursor: pointer;
-}
-
-.button-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.analysis-button, .status-button, .result-button {
+}.analysis-button{
   padding: 8px;
   color: white;
   border: none;
@@ -729,9 +536,6 @@
 }
 
 .analysis-button { background: #3b82f6; }
-.status-button { background: #6366f1; }
-.result-button { background: #8b5cf6; }
-
 
 .toggle-button:hover {
   background: #e2e8f0;
@@ -766,83 +570,6 @@
   cursor: not-allowed;
 }
 
-.button-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.result-button {
-  background: #10b981;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background 0.2s;
-}
-
-.result-button:hover:not(:disabled) {
-  background: #059669;
-}
-
-.result-button:disabled {
-  background: #a7f3d0;
-  cursor: not-allowed;
-}
-
-.status-button {
-  background: #f59e0b;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background 0.2s;
-}
-
-.status-button:hover:not(:disabled) {
-  background: #d97706;
-}
-
-.status-button:disabled {
-  background: #fcd34d;
-  cursor: not-allowed;
-}
-
-.action-button.primary {
-  background: #f59e0b;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-weight: bold;
-}
-
-.action-button.primary:hover {
-  background: #d97706;
-}
-
-.groups-panel {
-  position: absolute;
-  top: 20px;
-  right: 50px;
-  background: white;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  max-height: 400px;
-  overflow: auto;
-  width: 200px;
-  z-index: 10;
-}
-
 .group-item {
   display: flex;
   justify-content: space-between;
@@ -859,24 +586,6 @@
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
-}
-
-.status-tip {
-  background: #fef9c3;
-  border: 1px solid #fde047;
-  color: #854d0e;
-  padding: 8px;
-  border-radius: 4px;
-  font-size: 13px;
-  text-align: center;
-  margin-top: 8px;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% { opacity: 1; }
-  50% { opacity: 0.7; }
-  100% { opacity: 1; }
 }
 
 .group-item {
@@ -1350,187 +1059,6 @@
 /* 结果页：任务计算进度弹窗 */
 
 /* 底部抽屉式进度窗口（不遮挡地图视图） */
-.progress-drawer {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 12px;
-  z-index: 10050;
-  width: min(720px, 90vw);
-  pointer-events: auto;
-}
-
-.progress-modal {
-  width: 100%;
-  max-height: 34vh;
-  overflow: auto;
-  background: rgba(255,255,255,0.98);
-  border-radius: 8px;
-  padding: 8px;
-  box-shadow: 0 6px 18px rgba(2,6,23,0.25);
-}
-
-.progress-modal-drawer {
-  display: flex;
-  flex-direction: column;
-}
-
-.progress-modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.progress-modal-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.progress-modal-subtitle {
-  font-size: 11px;
-  color: #64748b;
-  margin-top: 3px;
-}
-
-.progress-modal-close {
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  border-radius: 6px;
-  padding: 4px 8px;
-  cursor: pointer;
-  color: #334155;
-  font-size: 12px;
-}
-
-.progress-bar-native {
-  margin-top: 10px;
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.progress-bar-native::-webkit-progress-bar {
-  background-color: #e2e8f0;
-  border-radius: 999px;
-}
-
-.progress-bar-native::-webkit-progress-value {
-  background-color: #3b82f6;
-  border-radius: 999px;
-}
-
-.progress-bar-native::-moz-progress-bar {
-  background-color: #3b82f6;
-  border-radius: 999px;
-}
-
-.progress-stats {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: #334155;
-}
-
-.progress-updated {
-  color: #64748b;
-}
-
-.progress-errors {
-  margin-top: 14px;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 12px;
-}
-
-.progress-errors-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 8px;
-}
-
-.progress-errors-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.progress-error-item {
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 8px;
-  background: #f8fafc;
-}
-
-.progress-error-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.progress-error-main {
-  min-width: 0;
-}
-
-.progress-error-id {
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.progress-error-msg {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #ef4444;
-  word-break: break-word;
-}
-
-.progress-error-toggle {
-  border: none;
-  background: #3b82f6;
-  color: white;
-  border-radius: 6px;
-  padding: 4px 8px;
-  cursor: pointer;
-  flex-shrink: 0;
-  font-size: 12px;
-}
-
-.progress-error-detail {
-  margin-top: 10px;
-}
-
-.progress-error-detail-error {
-  background: #fef2f2;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
-  border-radius: 6px;
-  padding: 8px;
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-
-.progress-error-pre {
-  margin: 0;
-  padding: 8px;
-  background: #0b1220;
-  color: #e2e8f0;
-  border-radius: 6px;
-  font-size: 11px;
-  max-height: 160px;
-  overflow: auto;
-}
-
-.progress-no-errors {
-  margin-top: 12px;
-  font-size: 12px;
-  color: #64748b;
-}
 
 /* 结果页：断面矩阵详情弹窗 */
 

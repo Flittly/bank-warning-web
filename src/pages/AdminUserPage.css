@@ -306,35 +306,8 @@
 }
 
 /* 禁用行样式 */
-.admin-table-wrap .ant-table-tbody > tr.admin-row-disabled > td {
-  opacity: 0.45;
-  pointer-events: none;
-}
 
 /* ==================== 加载骨架 ==================== */
-.admin-skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 4px;
-}
-
-.admin-skeleton-row {
-  height: 48px;
-  border-radius: 14px;
-  background:
-    radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.3) 0%, transparent 50%),
-    rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  animation: adminShimmer 1.6s ease-in-out infinite;
-}
-
-@keyframes adminShimmer {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 0.85; }
-}
 
 /* ==================== 无权限页 ==================== */
 .admin-denied {

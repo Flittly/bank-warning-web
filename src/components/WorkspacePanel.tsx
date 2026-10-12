@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { X, Edit3, Check, X as XIcon, Save } from 'lucide-react';
+import { X, Edit3, X as XIcon, Save } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 export interface ReportTab {

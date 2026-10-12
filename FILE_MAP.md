@@ -26,8 +26,6 @@
 
 ## 页面（pages）
 
-- [src/pages/HomePage.tsx](src/pages/HomePage.tsx)
-  - 首页。
 - [src/pages/ResultPage.tsx](src/pages/ResultPage.tsx)
   - 结果查看页。
 - [src/pages/EditorPage.tsx](src/pages/EditorPage.tsx)
@@ -91,8 +89,6 @@
   - 侧边栏样式（CSS Modules）。
 - [src/components/SectionPropertiesModal.tsx](src/components/SectionPropertiesModal.tsx)
   - 断面/组的 `SectionParams` 编辑弹窗，并可选同步到后端 `PUT /v0/bank/sections/{id}`。
-- [src/components/PropertiesModal.tsx](src/components/PropertiesModal.tsx)
-  - 旧版/简化版属性弹窗（基于 [src/constants.ts](src/constants.ts) 的 `AnalysisConfig`），目前主要用于展示并编辑 `year`。
 
 ---
 
@@ -117,16 +113,6 @@
 
 - [src/utils/geometry.ts](src/utils/geometry.ts)
   - 几何工具：`generatePerpendicularLines()` 负责沿母线按间距生成断面线。
-- [src/utils.ts](src/utils.ts)
-  - 目前仅保留 `sendCrossLinesToBackend()`（旧流程）以及从 [src/utils/geometry.ts](src/utils/geometry.ts) re-export 的 `generatePerpendicularLines`。
-  - 备注：该文件当前在主流程中未被引用，更多是 legacy/备用。
-
----
-
-## 常量
-
-- [src/constants.ts](src/constants.ts)
-  - `ANALYSIS_CONFIG_DEFAULT` 与 `AnalysisConfig` 类型（旧版风险分析配置结构）。
 
 ---
 
@@ -134,21 +120,64 @@
 
 - [public/bank.geojson](public/bank.geojson)
   - 示例/测试数据。
+- [public/fonts/黄令东齐伋复刻.ttf](public/fonts/)
+  - ⚠️ 39.5 MB，全仓库无任何 `@font-face` / `url()` / JS 引用；仍会被 `vite build` 原样拷进 `dist/fonts/`，
+    即每次部署都多带 39.5 MB。属于"待决策"项：若确认不用（或改为按需放入对象存储），删除它既减仓库体积也减部署包。
 
 ---
 
-## legacy / 备用文件（建议仅作参考）
+## legacy / 备用文件（已确认不可达，暂按"参考件"保留）
 
-这些文件包含历史实现（重复的 `generatePerpendicularLines` / `SelectionGroup` / `sendCrossLinesToBackend` 等），容易造成“同一系统多处实现”的错觉：
+这些文件**从入口 `main.tsx` 出发不可达**（静态引用 + 测试引用 + 构建配置三重核对），
+且被 `tsconfig.app.json` 的 `exclude` 或注释掉的 `<Route>` 排除在生效范围外：
 
 - [src/App_old.tsx](src/App_old.tsx)
-  - 旧版 App/编辑逻辑聚合文件（体量大，含重复实现）。
-- [src/pages/EditorPage copy.tsx](src/pages/EditorPage%20copy.tsx)
-  - 旧版 EditorPage 备份文件（体量大，含重复实现）。
+  - 旧版 App/编辑逻辑聚合文件（1545 行）。`tsconfig.app.json` 显式 exclude。
+- [src/pages/EditorPage%20copy.tsx](src/pages/EditorPage%20copy.tsx)
+  - 旧版 EditorPage 备份文件（1783 行）。`tsconfig.app.json` 显式 exclude。
+- [src/pages/SmartWorkbenchPage.tsx](src/pages/SmartWorkbenchPage.tsx)
+  - 智能工作台（2765 行）。`App.tsx` 里 `import` 与两条 `<Route>` 都被注释掉（"暂时隐藏"）。
+  - 它是 `tsc -b` 报错的主要来源之一（约 40 条"已声明但未读取"）—— 清理它内部未使用变量前，
+    建议先确认这个页面是"废弃"还是"待恢复"，两种结论对应完全不同的处理方式。
+
+> 这三个文件当前**不影响构建产物**（vite 不打包不可达模块），也不影响运行；留着只是让 `tsc -b` / `eslint` 噪音偏大。
+
+---
+
+## 已删除（2026-10-12 前端冗余清理）
+
+删除前对每个文件做了三重取证：**① 从 `main.tsx` 出发的模块可达性遍历；② 测试文件引用；③ vite/tsconfig 引用。**
+三条全部为空才删。
+
+| 删除对象 | 体积 | 依据 |
+|---|---|---|
+| `src/pages/EditorPageCopy.tsx` | 0 B | 空文件，无任何引用 |
+| `src/components/tree/TreeToolbar.tsx` | 35 行 | 构建资源树的计划组件；实际 `ResourceSidebar.tsx` 自己渲染 header/footer，从未 import 它 |
+| `src/components/PropertiesModal.tsx` | 139 行 | 被 `SectionPropertiesModal` 取代，无引用；本文件原已标注为"旧版/简化版" |
+| `src/constants.ts` | 34 行 | 唯一引用者是被删的 `PropertiesModal` 与 `utils.ts` |
+| `src/utils.ts` | 54 行 | legacy shim，只 re-export `geometry.ts`（真实调用方都直接 import `utils/geometry`） |
+| `public/vite.svg` | 1.5 KB | Vite 脚手架默认图标，`index.html` 用的是 `/logo.png` |
+
+同时清掉的"连带死代码"：只被 `TreeToolbar` 使用的 4 组 CSS 规则、早已无人使用的 `.legend` /
+`--tree-amber` / `.muted`、`EditorSidebar.module.css` 里 8 组自定义组 UI 的残留样式、
+`App.css` 里 58 条"选择器含已确认从不出现的 class"的规则（含整块进度弹窗、顶栏旧 tab 组）、
+`AdminUserPage.css` 里 3 条骨架屏残留，以及一批未使用的 import / 局部变量 / catch 绑定。
+
+合计：**18 个文件、-907 行**，CSS 产物 `113.70 kB → 104.20 kB`。
 
 ---
 
 ## 后续整理建议（非必须，但能持续保持结构清爽）
 
-- 若要进一步降低 `EditorPage` 体积：可将“侧边栏 UI 触发的模式切换”整理成 `useEditorModes()` hook。
-- 若要减少 lint 噪音：将 `EditorSidebar.tsx` 中零散的 inline style 迁移到 [src/components/EditorSidebar.module.css](src/components/EditorSidebar.module.css)（仓库内已有规则提示不鼓励 inline style）。
+- `tsc -b` 目前**不是干净通过**（清理后仍有 59 条）。其中 12 条来自 `EditorSidebar` 上一组
+  「已传入但侧边栏不再渲染」的自定义组 props（`groups` / `handleEditGroup` / `deleteGroup` /
+  `updateGroupConfig` / `reverseCrossLinesInGroup` / `deleteCrossLinesInGroup` /
+  `setEditingPropertiesGroupId` / `handleApplyCustomSegments` / `satellite` / `setSatellite` /
+  `clearSelectedCrossLineSelection` / `editingGroupId`）—— 要把它们摘干净会连带
+  `pages/editor/customSegments.ts` 整条链路，属于"删功能"而非"删冗余"，需先确认该功能去向。
+- `ResultPage.tsx` 的 `handleDeleteTask`（约 40 行，删除"当前选中任务"）已无调用方，
+  实际在用的是列表行上的 `handleDeleteTaskById`。
+- 若要进一步降低 `EditorPage` 体积：可将"侧边栏 UI 触发的模式切换"整理成 `useEditorModes()` hook。
+- 若要减少 lint 噪音：将 `EditorSidebar.tsx` 中零散的 inline style 迁移到
+  [src/components/EditorSidebar.module.css](src/components/EditorSidebar.module.css)
+  （仓库内已有规则提示不鼓励 inline style）。

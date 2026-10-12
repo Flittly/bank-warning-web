@@ -17,7 +17,6 @@ interface ChatSession {
 
 interface ChatPanelProps {
   collapsed: boolean;
-  onToggleCollapse: () => void;
   width: number;
   selectedSkills?: string[];
   setSelectedSkills?: (skills: string[]) => void;
@@ -28,7 +27,7 @@ interface ChatPanelProps {
   onReportsUpdated?: () => void; // 报告文件被 AI 修改后通知父组件刷新
 }
 
-function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSelectedSkills, chatTasks, setChatTasks, chatReports, setChatReports, onReportsUpdated }: ChatPanelProps) {
+function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTasks, setChatTasks, chatReports, setChatReports, onReportsUpdated }: ChatPanelProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -61,7 +60,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
           if (next !== stored) setStoredAiModel(next);
         }
       }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   };
 
   useEffect(() => {
@@ -94,7 +93,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
       if (data.success && data.messages) {
         setMessages(data.messages);
       }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   };
 
   const saveChatMessage = async (sessionId: string, role: string, content: string, contextText?: string) => {
@@ -104,7 +103,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role, content, contextText: contextText || '' }),
       });
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   };
 
   const createSession = async () => {
@@ -155,7 +154,7 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
       } else {
         alert('保存失败: ' + (data.error || '未知错误'));
       }
-    } catch (e) {
+    } catch {
       alert('保存失败');
     }
   };
@@ -215,14 +214,12 @@ function ChatPanel({ collapsed, onToggleCollapse, width, selectedSkills, setSele
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: '请求失败，请重试。' }]);
       }
-    } catch (e) {
+    } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: '网络错误，请检查后端服务。' }]);
     } finally {
       setLoading(false);
     }
   };
-
-  const activeSession = sessions.find(s => s.session_id === activeSessionId);
 
   return (
     <div style={{

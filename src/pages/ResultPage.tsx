@@ -239,8 +239,6 @@ function ResultPage(props: ResultPageProps) {
   }, [searchParams]);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [skillList, setSkillList] = useState<any[]>([]);
-  const [chatTaskId, setChatTaskId] = useState<string | null>(null);
-  const [chatTaskName, setChatTaskName] = useState<string>('');
   const [chatTasks, setChatTasks] = useState<{ taskId: string; taskName: string }[]>([]);
   const [chatReports, setChatReports] = useState<{ filename: string; taskId: string }[]>([]);
 
@@ -389,7 +387,7 @@ function ResultPage(props: ResultPageProps) {
       const res = await fetch('/v0/bank/ai/reports');
       const data = await res.json();
       if (data.success) setReportList(data.reports || []);
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   };
 
   const fetchSkills = async () => {
@@ -397,7 +395,7 @@ function ResultPage(props: ResultPageProps) {
       const res = await fetch('/v0/bank/ai/skill/list');
       const data = await res.json();
       if (data.success) setSkillList(data.skills || []);
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   };
 
   const openReport = async (filename: string) => {
@@ -422,7 +420,7 @@ function ResultPage(props: ResultPageProps) {
           return [...prev, tab];
         });
       }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   };
 
   const translateError = (msg: string) => {
@@ -1008,7 +1006,7 @@ function ResultPage(props: ResultPageProps) {
         const jt = await taskRes.json().catch(() => null);
         taskInfo = jt?.task ?? jt?.data ?? jt;
       }
-    } catch (err) {
+    } catch {
       // 忽略：任务状态接口可能不可用，但轮询结果仍可继续
     }
 
@@ -1032,7 +1030,7 @@ function ResultPage(props: ResultPageProps) {
         const jr = await resultsRes.json().catch(() => null);
         resultsList = parseResultsList(jr);
       }
-    } catch (err) {
+    } catch {
       // 忽略：临时网络错误不应中断轮询
     }
 
@@ -1205,7 +1203,7 @@ function ResultPage(props: ResultPageProps) {
       // 打印处理后的断面列表 JSON，便于调试（也可在控制台查看）
       try {
         console.log('ResultPage: parsed sectionResults:', JSON.stringify(sectionResults, null, 2));
-      } catch (e) {
+      } catch {
         console.log('ResultPage: parsed sectionResults (non-serializable):', sectionResults);
       }
 
@@ -1976,7 +1974,7 @@ function ResultPage(props: ResultPageProps) {
                           const d = await res.json();
                           if (d.success) { alert('上传成功，已提交审批'); fetchSkills(); }
                           else alert('上传失败: ' + (d.error || '未知错误'));
-                        } catch (err: any) { alert('网络错误'); }
+                        } catch { alert('网络错误'); }
                       }}
                       style={{
                         marginLeft: 4, fontSize: '0.6rem', padding: '1px 6px',
@@ -2144,7 +2142,7 @@ function ResultPage(props: ResultPageProps) {
         )}
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
-      <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} chatReports={chatReports} setChatReports={setChatReports} onReportsUpdated={() => { fetchReportList(); }} />
+      <ChatPanel collapsed={chatCollapsed} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} chatReports={chatReports} setChatReports={setChatReports} onReportsUpdated={() => { fetchReportList(); }} />
       {regenerateTarget && (
         <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
         <Modal

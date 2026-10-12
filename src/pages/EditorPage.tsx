@@ -91,7 +91,6 @@ function EditorPage(props: EditorPageProps) {
   const setCrossLineControlMode = useEditorStore((s) => s.setCrossLineControlMode);
   const selectedBasicParamIdState = useEditorStore((s) => s.selectedBasicParamIdState);
   const setSelectedBasicParamIdState = useEditorStore((s) => s.setSelectedBasicParamIdState);
-  const clearEditorData = useEditorStore((s) => s.clearEditorData);
 
   const prevSelectedBankGroupRef = useRef<string[]>([]);
 
@@ -2049,7 +2048,7 @@ function EditorPage(props: EditorPageProps) {
         const payload = { banks: [bank], overwrite: true };
         try {
           console.log('POST /v0/bank/banks payload for', bank.bank_id, JSON.stringify(payload, null, 2));
-        } catch (e) {
+        } catch {
           console.log('POST /v0/bank/banks payload for', bank.bank_id, payload);
         }
         const res = await fetch('/v0/bank/banks', {
@@ -3103,7 +3102,7 @@ function EditorPage(props: EditorPageProps) {
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <div data-tour="chat-panel" style={{ height: '100%', position: 'relative' }}>
-        <ChatPanel collapsed={chatCollapsed} onToggleCollapse={() => setChatCollapsed(!chatCollapsed)} width={rightPanelWidth} />
+        <ChatPanel collapsed={chatCollapsed} width={rightPanelWidth} />
       </div>
 
       {/* 创建任务弹窗 */}

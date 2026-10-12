@@ -49,8 +49,6 @@ interface EditorActions {
   setSelectedBasicParamIdState: (v: string | number | null) => void;
   setSidebarMode: (v: 'tree' | 'classic') => void;
   setMapView: (lng: number, lat: number, zoom: number) => void;
-  /** 清除所有编辑器数据（切换任务/重置时调用） */
-  clearEditorData: () => void;
 }
 
 type EditorState = EditorData & EditorActions;
@@ -106,7 +104,6 @@ export const useEditorStore = create<EditorState>()(
       setSelectedBasicParamIdState: setter(set, 'selectedBasicParamIdState'),
       setSidebarMode: setter(set, 'sidebarMode'),
       setMapView: (lng: number, lat: number, zoom: number) => set({ mapLng: lng, mapLat: lat, mapZoom: zoom }),
-      clearEditorData: () => set({ ...initialData }),
     }),
     {
       name: 'editor-storage',
