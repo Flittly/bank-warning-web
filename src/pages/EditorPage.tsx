@@ -10,6 +10,7 @@ import InfoModal, { type InfoGroup } from '../components/tree/InfoModal';
 import ConfirmModal from '../components/ConfirmModal';
 import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
+import CrossLineFineTuneBar from '../components/CrossLineFineTuneBar';
 import ResourceSidebar from '../components/tree/ResourceSidebar';
 import EditorMap from '../components/EditorMap';
 import TiffResourcePicker from '../components/TiffResourcePicker';
@@ -3099,6 +3100,26 @@ function EditorPage(props: EditorPageProps) {
             <Eraser size={15} /> 清除断面
           </button>
         </div>
+
+        {/* 断面精细调整浮栏（地图左下角）。
+            资源树模式（默认）不渲染 EditorSidebar，那批精调操作原本无处可点；
+            这里搬到地图上。经典模式下同名区块仍在侧栏里，故此处只在 tree 模式渲染，避免重复。 */}
+        {sidebarMode === 'tree' && isSelectingCrossLines && (
+          <CrossLineFineTuneBar
+            crossLineControlMode={crossLineControlMode}
+            setCrossLineControlMode={setCrossLineControlMode}
+            crossLineEditMode={crossLineEditMode}
+            setCrossLineEditMode={setCrossLineEditMode}
+            selectedCrossLineIndex={selectedCrossLineIndex}
+            onExit={toggleCrossLineSelection}
+            translateSelectedCrossLine={translateSelectedCrossLine}
+            rotateSelectedCrossLine={rotateSelectedCrossLine}
+            scaleSelectedCrossLine={scaleSelectedCrossLine}
+            configureSelectedCrossLineProperties={configureSelectedCrossLineProperties}
+            deleteSelectedCrossLine={deleteSelectedCrossLine}
+            reverseSelectedCrossLine={reverseSelectedCrossLine}
+          />
+        )}
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <div data-tour="chat-panel" style={{ height: '100%', position: 'relative' }}>
