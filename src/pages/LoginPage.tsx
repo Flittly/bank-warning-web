@@ -57,16 +57,28 @@ function LoginPage() {
         <img className="login-corner-logo" src="/logo.png" alt="" draggable={false} />
       </div>
 
+      {/* 左上角标题锁版：平台名 + 英文名，紧贴徽标右侧。
+          口径复刻登录后平台头部（App.css .nav-logo）：logo 48px、中文名 1.05rem。
+          两行文案都必须与 App.tsx 的 .nav-titles **逐字一致**（登录前后同一套名称）：
+            中文 = 长江崩岸重点险工段智能风险评估应用平台
+            英文 = Yangtze River Bank Collapse Key Hazard Section
+                   Intelligent Risk Assessment Platform
+          不加底板 —— 直接用深色字写在视频上：这块背景是日落亮天空，
+          逐帧实测均值亮度 139.9–140.0（整段视频几乎不变），
+          浅色字对比度只有 1.0–3.3，深色 #0F172A 为 5.35，故取深色。 */}
+      <div className="login-titlebar">
+        <p className="login-title-zh">长江崩岸重点险工段智能风险评估应用平台</p>
+        <p className="login-title-en">
+          Yangtze River Bank Collapse Key Hazard Section Intelligent Risk Assessment Platform
+        </p>
+      </div>
+
       <div className="login-right">
         <div className="login-container">
           <div className="login-inner">
             <div className="login-header">
               <p className="login-welcome-en">Welcome!</p>
               <p className="login-welcome-zh">欢迎！</p>
-              <p className="login-brand">长江崩岸重点险工段智能风险评估应用平台</p>
-              <p className="login-brand-en">
-                Intelligent Risk Assessment Platform for Yangtze River Bank Collapse
-              </p>
             </div>
 
             <Form
@@ -99,7 +111,7 @@ function LoginPage() {
 
               <Form.Item className="login-submit-item">
                 {/* autoInsertSpace=false：antd 默认会在两个汉字之间插一个空格（渲染成「登 录」），
-                    挤在 88px 的圆里会显得散，关掉让它紧凑居中 */}
+                    挤在 104px 的圆里会显得散，关掉让它紧凑居中 */}
                 <ConfigProvider button={{ autoInsertSpace: false }}>
                   <Button
                     className="login-submit"

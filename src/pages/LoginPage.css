@@ -1,5 +1,14 @@
 /* ====== 页面：视频铺满全屏，登录栏靠右 ====== */
 .login-page {
+  /* 徽标（四分之一圆）的半径 = 边长。提到页面根是因为除了徽标本身，
+     右侧的标题锁版也要用它来"贴着徽标右边"定位，两边必须共用同一个值。
+     ── 尺寸口径：**以登录后平台左上角的 logo 为准**（App.tsx: width=48 height=40）。
+        徽标里 logo 宽 = 76%·D（76% 是实测过的"仍收在弧内"上限），
+        要 logo 显形 48px → D = 48 / 0.76 ≈ 63px。
+     ── 为什么是固定 63px 而不是 clamp(…,7vh,…)：登录后头部那个 logo 是写死的 48px，
+        不随窗口大小变。这里如果挂 vh，768 高的屏上会缩到 40.8px，
+        就跟"参照登录后大小"这条要求对不上了（实测踩过）。 */
+  --badge-size: 63px;
   position: relative;
   width: 100%;
   height: 100vh;
@@ -46,11 +55,17 @@
 /* ====== 左上角四分之一圆徽标 ======
    以视口左上角为圆心的 1/4 圆：靠 border-radius 把正方形的右下角打成满半径，
    剩下的形状正好是以左上角为圆心的扇形 —— 半径恰好等于正方形边长 D。
-   尺寸：上一版 clamp(190px,30vh,330px)（1440×900 下实测 270px）视觉过重，整体缩小一半。
-   底色用近白磨砂 —— logo 原图是白底（无 alpha 通道），
-   白底与白圆同色，配合 logo 上的 mix-blend-mode: multiply 可以无缝融进去。 */
+   尺寸沿革：190px→330px（视觉过重）→ clamp(80px,13vh,142px)（仍偏大）
+   → 本版 clamp(50px, 7vh, 63px)，1440×900 下 63px、内嵌 logo 显形 48px，
+   与登录后平台头部左上角 logo 等大（见 --badge-size 注释）。
+   —— 底色必须与 logo 的白底同色，否则圆和 logo 会"分层"
+   实测 public/logo.png（2048×1653，无 alpha）：最外 30px 边框的像素均值 = 中位值 =
+   **#FEFDFC (254,253,252)**，是暖白而非纯白；单通道范围 244–255（图像自带轻微噪声）。
+   所以这里不能写 #FFFFFF，也不能带 alpha ——
+   · 早前用 rgba(255,255,255,0.95)：5% 透明度让深色视频透进来（实测被压到 ≈244），
+     圆比 logo 白底暗一档，且整体像"蒙了一层膜"，视觉上就是明显的分层；
+   · 改成不透明的 #FEFDFC 后，圆与 logo 底色逐像素同色（0 差），接缝消失。 */
 .login-corner-badge {
-  --badge-size: clamp(95px, 15vh, 165px);
   position: absolute;
   top: 0;
   left: 0;
@@ -58,8 +73,9 @@
   width: var(--badge-size);
   height: var(--badge-size);
   border-radius: 0 0 100% 0;
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 10px 26px rgba(4, 10, 22, 0.26);
+  background: #fefdfc; /* = logo 白底实测值，必须不透明 */
+  /* 投影随徽标缩小同步收一档（原 0 8px 22px 是按 117px 徽标配的） */
+  box-shadow: 0 5px 14px rgba(4, 10, 22, 0.22);
   /* 隔离混合上下文：让 logo 的 multiply 只跟这块白底作用，不混到视频上 */
   isolation: isolate;
   pointer-events: none;
@@ -90,31 +106,100 @@
   user-select: none;
 }
 
-/* ====== 右侧登录区 ====== */
+/* ====== 左上角标题锁版：平台名 + 英文名（徽标右侧）======
+   ── 口径：**复刻登录后平台头部的锁版**（App.css .nav-logo / .nav-title / .nav-title-en）
+      logo 尺寸、与文字间距、中文名字号与字距都对齐，登录前后视觉连贯。
+   ── 为什么不用底板、改成深色字（这是本版和上一版最大的区别）
+      这块背景是日落的亮天空。去掉底板后，文字颜色必须直接用**背景亮度**来定，
+      所以先做了逐帧探测（seek 12 个时间点覆盖整段 5.17s 视频）：
+        · 该区域均值亮度 **139.9 – 140.0**（12 帧几乎完全不变，不存在"换帧翻车"）
+        · 候选色的逐帧最坏对比度：
+            纯白 #FFFFFF 1.00–3.33 ✗ / 暖白 #FEFDFC 1.02–3.28 ✗
+            #1E293B 4.38 △擦线 / #0F172A 5.35 ✓ / #000000 6.29 ✓
+      结论：**浅色字在这块背景上根本不可能达标，必须换深色字**。
+      于是取 #0F172A（近黑蓝）—— 它比登录后头部用的 #1E293B 更沉一档，
+      正是为了在这块亮底上把 4.38 抬到 5.35，同时仍属同一色系。
+   ── 定位：left = 徽标边长 + 16px，恒在圆弧右侧；
+      top 贴到 4px —— 上一版为了跟徽标重心对齐放在了 0.17D（1440 下 19.9px），
+      用户反馈"离顶部太远"，本版直接压到顶部（对齐 logo 上沿）。 */
+.login-titlebar {
+  position: absolute;
+  top: 4px;
+  left: calc(var(--badge-size) + 16px);
+  z-index: 3;
+  /* 宽度上限双重收口：
+     ① 走"徽标右边到视口中线"这段可用宽度 —— 保证标题锁版不越中线，
+        也就天然不会跟右侧登录卡抢位置；
+     ② 兜底 560px，避免超宽屏上标题被拉得过长；英文名允许折行，
+        免得在窄屏上顶出容器。 */
+  max-width: min(560px, calc(50vw - var(--badge-size) - 30px));
+  pointer-events: none;
+  /* 亮底上的深色小字，给一层极淡的白色光晕：
+     在亮天空上等于看不见（无害），一旦扫过画面里的深色楼房/山脊能兜住笔画边缘 */
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.5);
+}
+
+/* 平台名（中文）：华文中宋。字号/字距与登录后头部 .nav-title 完全一致（1.05rem / 0.05em）。 */
+.login-title-zh {
+  font-family: "STZhongsong", "华文中宋", "Songti SC", "SimSun", serif;
+  font-size: 1.05rem;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.35;
+  letter-spacing: 0.05em;
+}
+
+/* 平台名（英文）：次级。
+   登录后头部这里用的是 8px + #94A3B8 —— 8px 在亮底上做副标题偏小，
+   这里放到 0.6rem(9.6px)、并用 #1E293B 而不是浅灰（浅灰在亮底上只有约 2:1）。
+   保留头部那档 1px 的上边距。 */
+.login-title-en {
+  font-size: 0.6rem;
+  line-height: 1.35;
+  letter-spacing: 0;
+  color: #1e293b;
+  margin: 1px 0 0;
+}
+
+/* ====== 右侧登录区 ======
+   宽度从 52% 收到 50%：卡片直径又往上加了一档，需要把横向余量让出来。
+   1440 视口下的横向预算（设视口宽 V、本块宽 w·V、左内边距 24、右内边距 pr）：
+     · 卡片外径 = 内容径 D + 2px 边框
+     · 卡片圆心 x = (V(2−w) + 24 − pr) / 2
+     · 左边缘 = 圆心 − (D+2)/2 ，要求 ≥ V/2（卡片不进左半屏，别压到左边插画）
+     · 右边缘 = 圆心 + (D+2)/2 ，要求 ≤ V（.login-page 是 overflow:hidden，越界会被裁）
+   两条一减就能看出：**"左余量 + 右留白 = V/2 − (D+2)"是个定值**。
+   D=675 时只有 43px 可分，所以不能再靠缩右内边距硬顶，
+   只能同步把 w 从 0.52 收到 0.50，把整块往右挪，腾出空间。
+   实取 pr = clamp(28px, 4vw, 60px) → 1440 下 57.6，得
+     左边缘 724.7（中线 720，留 4.7）/ 右留白 38.3。 */
 .login-right {
   position: relative;
   z-index: 2;
   flex: 0 0 auto;
-  width: 52%;
+  width: 50%;
   min-width: 420px;
   max-width: 800px;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 右侧留白（clamp 上限 110px）把卡片从右边"推"回中间。
-     上限压到 110 是为了让 582px 的圆左边缘仍留在视口中线右侧。 */
-  padding: 24px clamp(40px, 8vw, 110px) 24px 24px;
+  padding: 24px clamp(28px, 4vw, 60px) 24px 24px;
   box-sizing: border-box;
 }
 
 /* ====== 圆形登录栏 ======
    正圆：宽高相等 + border-radius:50%。
    内容必须落在内接正方形里（边长 = 直径 / √2），所以内容交给 .login-inner 限宽，
-   自身只负责"把内容摆在圆心"。 */
+   自身只负责"把内容摆在圆心"。
+   尺寸：内容径 648 → 675（+4.2%；外径含 1px 边框 = 677），
+         这是 1440×900 下"左边缘仍在中线右侧"能取到的上限（见上方横向预算）。
+   中间档 min(47vw,75vh)：1440 下 = 675（vh 项生效），
+         1920×1080 下 47vw=902、75vh=810 → 取上限 678；
+         窄屏靠 min 档收，避免被 .login-page 的 overflow:hidden 裁掉右边。 */
 .login-container {
-  width: 580px;
-  height: 580px;
+  width: clamp(510px, min(47vw, 75vh), 678px);
+  height: clamp(510px, min(47vw, 75vh), 678px);
   flex: 0 0 auto;
   padding: 0;
   border-radius: 50%;
@@ -130,21 +215,26 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-/* 内容列：宽 338px，落在 580px 圆的内接正方形（410px）内，四角不会被圆弧裁掉 */
+/* 内容列：比例 58% → 62%，上限 378 → 420。
+   比例恒小于内接正方形比例 1/√2 ≈ 70.7%，所以无论圆的 clamp 取 510 还是 678，
+   四角都不会被圆弧裁到（677 圆 + 418.5 宽 + 约 395 高时，角点离圆心 288 < 半径 337.5）。
+   用 min(420px, 62%) 而不是固定值，是为了跟随圆的缩放（窄屏下圆会收）。 */
 .login-inner {
-  width: 338px;
+  width: min(420px, 62%);
   display: flex;
   flex-direction: column;
 }
 
-/* ====== 头部欢迎语 ====== */
+/* ====== 头部欢迎语 ======
+   平台名搬去左上角标题锁版后，卡片头部只剩"Welcome! / 欢迎！"两行，
+   于是把这两行的字号再放大一档、下边距也放宽，避免卡内上半部分显得空。 */
 .login-header {
   text-align: center;
-  margin-bottom: 22px;
+  margin-bottom: 28px;
 }
 
 .login-welcome-en {
-  font-size: 1.6rem;
+  font-size: 1.9rem;
   font-weight: 300;
   color: #ffffff;
   margin: 0 0 0;
@@ -153,38 +243,16 @@
 }
 
 .login-welcome-zh {
-  font-size: 1rem;
+  font-size: 1.18rem;
   font-weight: 400;
   color: rgba(147, 197, 253, 0.62);
-  margin: 2px 0 10px;
+  margin: 2px 0 0;
   letter-spacing: 2px;
-}
-
-/* 平台名（中文）：华文中宋。
-   字体走系统字体族名，本机已在用户字体目录安装（C:\Users\...\Fonts\华文中宋.ttf）。
-   后面几档是各平台的衬线宋体兜底，避免未装该字体的机器掉到黑体。 */
-.login-brand {
-  font-family: "STZhongsong", "华文中宋", "Songti SC", "SimSun", serif;
-  font-size: 0.78rem;
-  /* 0.5 的透明度实测只有 3.62:1，小字够不到 WCAG AA(4.5) → 提到 0.72 后为 4.97:1 */
-  color: rgba(191, 214, 240, 0.72);
-  margin: 0;
-  line-height: 1.7;
-  letter-spacing: 1px;
-}
-
-/* 平台名（英文）：与中文形成"主—辅"两级，字号更小、字距更开 */
-.login-brand-en {
-  font-size: 0.625rem;
-  line-height: 1.55;
-  letter-spacing: 0.06em;
-  color: rgba(191, 214, 240, 0.7);
-  margin: 5px 0 0;
 }
 
 /* ====== 表单 ====== */
 .login-form .ant-form-item {
-  margin-bottom: 18px;
+  margin-bottom: 22px;
 }
 
 /* 圆按钮那一行：去掉行距、让圆居中 */
@@ -196,9 +264,9 @@
 .login-form .ant-input-affix-wrapper {
   background: rgba(255, 255, 255, 0.07) !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  border-radius: 12px !important;
-  padding: 4px 12px !important;
-  height: 44px !important;
+  border-radius: 14px !important;
+  padding: 5px 14px !important;
+  height: 52px !important;
   transition: all 0.25s !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
 }
@@ -219,7 +287,7 @@
 .login-form .ant-input-affix-wrapper .ant-input {
   background: transparent !important;
   color: #e8edf2 !important;
-  font-size: 0.9rem !important;
+  font-size: 1rem !important;
 }
 
 .login-form .ant-input-affix-wrapper input::placeholder,
@@ -238,7 +306,7 @@
 
 .login-form .ant-input-prefix {
   color: rgba(147, 197, 253, 0.55) !important;
-  margin-right: 8px !important;
+  margin-right: 10px !important;
 }
 
 .login-form .ant-input-suffix .anticon-close-circle {
@@ -246,18 +314,19 @@
 }
 
 /* ====== 登录按钮：黑色圆形 ======
-   正圆需要 width === height，所以不能再用 block 撑满宽度，改为固定直径 + 容器居中。 */
+   正圆需要 width === height，所以不能再用 block 撑满宽度，改为固定直径 + 容器居中。
+   直径随卡片放大同步 98 → 104。 */
 .login-form .login-submit.ant-btn,
 .login-form .login-submit {
-  width: 88px !important;
-  height: 88px !important;
-  min-width: 88px !important;
+  width: 104px !important;
+  height: 104px !important;
+  min-width: 104px !important;
   padding: 0 !important;
   border-radius: 50% !important;
   border: 1px solid rgba(255, 255, 255, 0.16) !important;
   background: #0a0f1a !important;
   color: #ffffff !important;
-  font-size: 0.95rem !important;
+  font-size: 1.04rem !important;
   font-weight: 500 !important;
   letter-spacing: 1px !important;
   box-shadow:
@@ -292,9 +361,9 @@
 
 .login-footer {
   text-align: center;
-  margin-top: 14px;
+  margin-top: 20px;
   color: rgba(191, 214, 240, 0.6);
-  font-size: 0.85rem;
+  font-size: 0.96rem;
 }
 
 .login-footer a {
@@ -315,30 +384,63 @@
   color: #e8edf2 !important;
 }
 
-/* 窄屏：登录栏居中，覆盖层改为整幅压暗（右侧渐变在窄屏没有空间铺开） */
-@media (max-width: 900px) {
+/* ====== 窄屏：登录栏居中，覆盖层改为整幅压暗（右侧渐变在窄屏没有空间铺开）======
+   断点从 900 提到 1080：宽屏布局靠"卡片左边缘 ≥ 视口中线"来保证标题锁版（它的
+   右边缘恒 ≤ 视口中线 − 14px）与卡片在横向绝不相遇；可这个约束只在中线右侧够宽时成立。
+   1080 以下卡片被迫左移甚至越过中线，横向保证失效，所以提前切到居中布局。
+   ── 居中布局下怎么避免和标题锁版打架：不靠"猜一个 vh"，而是
+      **先把标题锁版那一条带子在竖向上留出来**（padding-top = 徽标边长 + 30px，
+      徽标 63px 高 + 标题两行 ~40px 正好落在这条带子里），
+      圆再用剩下的高度做尺寸上限。这样只要标题不折行折到离谱，就永远不会重叠。
+   ── 徽标缩小到 63px 后这条带子也从 147px 收到 93px，
+      等于把空间还给了圆：1024×768 下卡片从 598 涨到 644。 */
+@media (max-width: 1080px) {
   .login-page {
     justify-content: center;
   }
 
+  /* 整幅压暗在窄屏是必要的（右侧渐变没空间铺开），但**必须避开顶部的标题锁版带**：
+     标题锁版没有底板，靠的是"亮天空 + 深色字"这组反差；整幅 0.5 的顶部压暗会把
+     亮底压到 rgb(123,98,80)，深色字对比度直接掉到 3.72 —— 切入深色字后才暴露的冲突。
+     所以这里把渐变的前两档留空（0 → 徽标边长+44px 区间不透光），
+     让标题带保持原视频色（实测恢复后该区亮度 ≈192，与宽屏一致）。 */
   .login-scrim {
-    background: linear-gradient(180deg, rgba(6, 12, 24, 0.5) 0%, rgba(6, 12, 24, 0.78) 100%);
+    background: linear-gradient(
+      180deg,
+      rgba(6, 12, 24, 0) 0,
+      rgba(6, 12, 24, 0) calc(var(--badge-size) + 44px),
+      rgba(6, 12, 24, 0.62) calc(var(--badge-size) + 150px),
+      rgba(6, 12, 24, 0.8) 100%
+    );
   }
 
   .login-right {
     width: 100%;
     min-width: 0;
     max-width: none;
-    padding: 24px;
+    padding: calc(var(--badge-size) + 30px) 24px 24px;
   }
 
-  /* 圆随视口收，但不小于内容能撑住的下限（内接正方形 ≈ 直径/1.414，内容宽 338 → 直径 ≥ 478） */
+  /* 高度上限 = 视口高 − 徽标带（边长 + 54px 上下留白）− 16px 余量；
+     内接正方形 ≈ 直径/1.414，内容宽 min(420,62%) → 恒安全。 */
   .login-container {
-    width: min(580px, 88vw, 86vh);
-    height: min(580px, 88vw, 86vh);
+    width: min(678px, 88vw, calc(100vh - var(--badge-size) - 70px));
+    height: min(678px, 88vw, calc(100vh - var(--badge-size) - 70px));
+  }
+}
+
+/* 极窄屏：标题锁版只跟徽标抢这点横向空间，字号再收一档。 */
+@media (max-width: 700px) {
+  .login-titlebar {
+    max-width: min(420px, calc(50vw - var(--badge-size) - 20px));
   }
 
-  .login-inner {
-    width: min(338px, 72%);
+  .login-title-zh {
+    font-size: 0.92rem;
+    letter-spacing: 0.02em;
+  }
+
+  .login-title-en {
+    font-size: 0.56rem;
   }
 }

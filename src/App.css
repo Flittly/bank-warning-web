@@ -38,7 +38,12 @@
   border-bottom: 2px solid #1e2a52;
   display: flex;
   align-items: center;
-  padding: 0 24px;
+  /* 左侧收紧到 14px（原为左右共用的 24px）。
+     注意 logo.png 自带白边：2048px 宽里有 121px 左侧留白（5.9%），
+     contain 到 48×40 后 ≈ 2.84px 视觉留白 —— 所以改前的"看着左边还有距离"
+     其实是 24 + 2.84 ≈ 26.8px。收到 14px 后视觉 ≈ 16.8px。
+     右侧仍是 24px：.nav-right 由 space-between 推到右侧，与左内边距无关。 */
+  padding: 0 24px 0 14px;
   justify-content: space-between;
   z-index: 100;
   box-shadow: 0 1px 12px rgba(0, 0, 0, 0.04), 0 0 40px rgba(148, 163, 184, 0.06);
