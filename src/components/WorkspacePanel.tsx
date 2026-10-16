@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { X, Edit3, X as XIcon, Save } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { resolveExportName, sectionCsvCount, partitionCsvInfoFromReport } from '../utils/downloadName';
 
 export interface ReportTab {
   taskId: string;
@@ -20,18 +21,28 @@ interface WorkspacePanelProps {
 }
 
 function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdateTab, height }: WorkspacePanelProps) {
-  if (tabs.length === 0) return null;
-
-  const activeTab = tabs[activeTabIndex];
+  // hooks 必须在任何提前 return 之前调用：本组件在 reportTabs 为空时是被父级
+  // 整体卸载的，一旦将来改成常驻渲染，先 return 再 useState 会直接抛
+  // 「Rendered more hooks than during the previous render」。
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [saving, setSaving] = useState(false);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
+  const activeTab = tabs[activeTabIndex];
+
   useEffect(() => {
     setEditing(false);
     setEditContent('');
   }, [activeTabIndex]);
+
+  if (!activeTab) return null;
+
+  // 这份报告是否带分区断面详情 CSV —— 直接读报告附录表格，
+  // 于是按钮文案在点之前就能说明「导出的是报告包（docx + N 个分区 CSV）」，
+  // 而不是等下载完看到 `..._导出包.zip` 才发现。
+  const csvInfo = partitionCsvInfoFromReport(activeTab.content);
+  const extraUnassigned = csvInfo.files - csvInfo.partitions;
 
   const startEdit = () => {
     setEditContent(activeTab.content);
@@ -115,9 +126,17 @@ function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdat
                       const url = URL.createObjectURL(blob)
                       const a = document.createElement('a')
                       a.href = url
-                      a.download = filename.replace('.md', '.docx')
+                      // 分幅报告导出的是 zip（报告.docx + 各分区断面详情.csv），
+                      // 未分幅仍是 docx —— 文件名以服务端 Content-Disposition 为准。
+                      a.download = resolveExportName(res.headers.get('Content-Disposition'), filename)
                       a.click()
                       URL.revokeObjectURL(url)
+                      const csvCount = sectionCsvCount(res.headers.get('X-Section-Csv-Count'))
+                      if (csvCount > 0) {
+                        window.dispatchEvent(new CustomEvent('report-exports-saved', {
+                          detail: { filename, csvCount },
+                        }))
+                      }
                     } catch (e) {
                       console.error('导出Word失败:', e)
                     }
@@ -134,9 +153,13 @@ function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdat
                   boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.4)',
                   transition: 'all 0.15s',
                 }}
-                title="导出Word"
+                title={csvInfo.files > 0
+                  ? `下载报告压缩包：报告.docx + ${csvInfo.files} 个断面详情 CSV`
+                  : '导出Word'}
               >
-                ⬇ 导出Word
+                {csvInfo.files > 0
+                  ? `⬇ 导出报告包（含 ${csvInfo.files} 个 CSV）`
+                  : '⬇ 导出Word'}
               </button>
             )}
             <button
@@ -186,6 +209,20 @@ function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdat
           </>
         )}
       </div>
+      {csvInfo.files > 0 && !editing && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '6px 14px', flexShrink: 0,
+          background: '#eff6ff', borderBottom: '1px solid #dbeafe',
+          fontSize: '0.72rem', color: '#1d4ed8',
+        }}>
+          <span>
+            本报告已按经纬度划分为 <b>{csvInfo.partitions}</b> 个分区
+            {extraUnassigned > 0 ? `（另有 ${extraUnassigned} 个未落入分区的断面文件）` : ''}
+            ，点右上角「导出报告包」可同时下载报告 Word 与各分区断面详情 CSV。
+          </span>
+        </div>
+      )}
       {editing ? (
         <textarea
           ref={editRef}
