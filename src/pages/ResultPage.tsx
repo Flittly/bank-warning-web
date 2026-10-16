@@ -15,6 +15,7 @@ import { ConfigProvider, Modal } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { cancelTask } from '../services/taskRunControl';
 import { FlowFieldLayer, FLOW_FIELD_LAYER_ID, type FlowFieldStatus } from '../map/flowFieldLayer';
+import { bankShadeWidthExpr } from '../map/bankShadeWidth';
 import {
   DEFAULT_FLOW_COLOR_SCHEME,
   FLOW_COLOR_SCHEMES,
@@ -1953,13 +1954,18 @@ function ResultPage(props: ResultPageProps) {
           type: 'line',
           source: sourceId,
           paint: {
-            'line-width': 20,
+            // 线宽必须随比例尺变化，不能写死像素值：Mapbox 的 line-width 单位是屏幕
+            // CSS 像素，定值 20 在小比例尺下折合地面几十公里、把整段岸线糊成一条粗带。
+            // 具体曲线与取值理由见 map/bankShadeWidth.ts。
+            'line-width': bankShadeWidthExpr(),
             'line-gradient': stops as any,
             'line-opacity': 0.7,
           },
         });
       } else {
         map.setPaintProperty(layerId, 'line-gradient', stops as any);
+        // 图层已存在时也把宽度表达式刷一遍：热更新之后旧图层上还留着上一版的定值宽度。
+        map.setPaintProperty(layerId, 'line-width', bankShadeWidthExpr());
       }
     });
   };
