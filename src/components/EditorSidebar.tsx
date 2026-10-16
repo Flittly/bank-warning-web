@@ -33,7 +33,9 @@ interface EditorSidebarProps {
   smoothSelectedShoreLines: () => void;
   selectedBankGroup: string[];
   setSelectedBankGroup: (v: string[]) => void;
-  loadBankById?: (bankId: string) => Promise<void>;
+  // 返回值 = 该岸段最终是否已在地图上（批量加载时调用方靠它统计成功条数）；
+  // opts.silent 用于批量场景，失败时不逐条弹窗，由调用方统一汇总。
+  loadBankById?: (bankId: string, opts?: { silent?: boolean }) => Promise<boolean>;
   removeBankFromMap?: (bankId: string) => void;
   onBankParamsView?: (bankId: string) => void;
   deleteBankGroup: () => void;

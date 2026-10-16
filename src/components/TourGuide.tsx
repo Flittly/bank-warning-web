@@ -62,6 +62,18 @@ const MAP_TOOLBAR_STEP: TourStep = {
   route: ROUTE.editor,
 };
 
+/** 「选中岸段」及它的批量下拉。
+ *  经典面板风格不在引导里单列这一步 —— 那边侧栏本来就有并排的「选中岸段 / 全选」两个按钮；
+ *  资源树风格（默认）没有侧栏，地图工具栏这里是唯一入口，所以必须专门讲一次。 */
+const MAP_SELECT_BANK_STEP: TourStep = {
+  title: '批量选中岸段',
+  description:
+    '点「选中岸段」进入地图点选模式，逐条点选（或按住 Shift 连选）。点它右侧的小箭头可「全选地图上的岸段」—— 几十条岸段一键选完，不用一条条点；旁边还有「清空选择」。选好后到左侧「断面」文件夹右键 →「生成展示断面」即可批量出断面。',
+  target: () => getEl('[data-tour="map-select-bank"]'),
+  placement: 'top',
+  route: ROUTE.editor,
+};
+
 const CHAT_STEP: TourStep = {
   title: 'AI 智能助手',
   description: '右侧 AI 助手可随时回答崩岸预警相关问题，支持知识库检索和报告生成。',
@@ -102,14 +114,23 @@ const TREE_EDITOR_STEPS: TourStep[] = [
     route: ROUTE.editor,
   },
   {
+    title: '已加载到屏幕',
+    description:
+      '下半区按类别列的是地图上"现在真正画着"的东西：岸段、断面、DEM 范围三组——资源树是台账，这里是屏幕现状。点组标题可折叠/展开，每类默认最多列 60 条，超出时点「显示全部」展开。行尾图标可直接定位或移出，组标题右侧可一键全部移出；任务在跑时这里会标明正在运行的是哪个任务及已运行时长，右侧的「终止」可直接结束它（已算完的断面结果保留）。上下两区各自独立滚动，中间的分隔条可以拖动调整比例。',
+    target: () => getEl('[data-tour="tree-loaded"]'),
+    placement: 'right',
+    route: ROUTE.editor,
+  },
+  {
     title: '当前任务与执行风险分析',
     description:
-      '树底部常驻「执行风险分析」按钮，右侧显示当前选中的任务名；没有选任务时会提示「未选择任务」。',
+      '面板底部常驻「执行风险分析」按钮，右侧显示当前选中的任务名；没有选任务时会提示「未选择任务」。',
     target: () => getEl('[data-tour="tree-footer"]'),
     placement: 'right',
     route: ROUTE.editor,
   },
   MAP_TOOLBAR_STEP,
+  MAP_SELECT_BANK_STEP,
   CHAT_STEP,
   PANEL_SWITCH_STEP,
 ];
@@ -186,7 +207,7 @@ const TAIL_STEPS: TourStep[] = [
   {
     title: '任务列表',
     description:
-      '所有预警任务都在这里。点任务加载它的计算结果与风险着色；每个任务还能「AI 出报告」或「导出断面详情」。',
+      '所有预警任务都在这里。点任务加载它的计算结果与风险着色；每个任务还能「AI 出报告」或「导出断面详情（整表 CSV）」。若报告按经纬度分了区，各分区的断面详情在报告面板右上角点「导出报告包」一并下载。',
     target: () => getEl('[data-tour="result-tasks"]'),
     placement: 'right',
     route: ROUTE.result('tasks'),

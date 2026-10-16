@@ -365,3 +365,21 @@
 .bankCheck:hover {
   background: rgba(59, 130, 246, 0.06);
 }
+
+/* param_id 这类"标识符"用等宽字体：下划线/短横线不会与字母糊在一起，方便逐字核对 */
+.monoInput {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+/* 弹窗里的单个勾选项（如「创建后立即打开属性配置」） */
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 14px;
+  font-size: 0.83rem;
+  color: #475569;
+  cursor: pointer;
+}

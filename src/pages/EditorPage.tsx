@@ -1,11 +1,15 @@
 ﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as turf from '@turf/turf';
-import { message } from 'antd';
+import { Dropdown, message } from 'antd';
 import '../App.css';
 import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import TaskNameModal from '../components/TaskNameModal';
 import CreateTaskModal, { type CreateTaskForm } from '../components/CreateTaskModal';
+import CreateParamTemplateModal, {
+  type CreateParamTemplateForm,
+  type ParamTemplateOption,
+} from '../components/CreateParamTemplateModal';
 import InfoModal, { type InfoGroup } from '../components/tree/InfoModal';
 import ConfirmModal from '../components/ConfirmModal';
 import modalStyles from '../components/Modal.module.css';
@@ -20,9 +24,11 @@ import { authHeaders } from '../utils/apiClient';
 import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
-import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser } from 'lucide-react';
+import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
+import { resolveVisibleTiffBounds, toggleDemBounds } from '../map/tiffBoundsView';
+import { cancelTask } from '../services/taskRunControl';
 import { stripZFromGeoJSON } from '../utils/geojson';
 import {
   configureSelectedCrossLinePropertiesAction,
@@ -54,6 +60,11 @@ import {
   updateBasicParamAsSectionParams,
 } from './editor/basicParamsApi';
 import { getCurrentTaskId, setCurrentTaskId } from './editor/taskState';
+import {
+  DEFAULT_REQUEST_CONCURRENCY,
+  isNetworkLevelError,
+  mapWithConcurrency,
+} from '../utils/concurrency';
 
 interface EditorPageProps {
   setPage?: (page: 'editor' | 'result', taskId?: string) => void;
@@ -104,6 +115,9 @@ function EditorPage(props: EditorPageProps) {
   const [resizeTrigger, setResizeTrigger] = useState(0);
   const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
   const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
+  // 「TIF 范围」当前聚焦的 DEM：null / 空数组 = 不限（显示全部，侧栏那个全局开关的语义）；
+  // 非空数组 = 只显示这几条（点资源树里某条 DEM、或它的「显示范围」图标时置入）。
+  const [focusedDemKeys, setFocusedDemKeys] = useState<string[] | null>(null);
   const [showGlobalPropertiesModal, setShowGlobalPropertiesModal] = useState<boolean>(false);
   const [editingPropertiesGroupId, setEditingPropertiesGroupId] = useState<string | null>(null);
   const [editingBankParams, setEditingBankParams] = useState<{bankId: string; bankName: string; config: any} | null>(null);
@@ -128,6 +142,8 @@ function EditorPage(props: EditorPageProps) {
   const sidebarMode = useEditorStore((s) => s.sidebarMode);
   const [demPickerOpen, setDemPickerOpen] = useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
+  // 「参数模板」文件夹右键 → 新建参数模板
+  const [createParamModalOpen, setCreateParamModalOpen] = useState(false);
   const [infoModal, setInfoModal] = useState<{ title: string; groups: InfoGroup[] } | null>(null);
   const bankUploadInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -304,6 +320,18 @@ function EditorPage(props: EditorPageProps) {
     return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
   }, [tiffBoundsData, selectedBasicParamIdState, basicParamsList]);
 
+  // 真正喂给地图的 TIF 范围数据（推导 + 单测见 map/tiffBoundsView.ts）。
+  //
+  // 两条约束合起来才安全：
+  //   ① 聚焦时只给聚焦的那几条 —— 否则地图的 source 拿着全库集合，点一条却画出全部；
+  //   ② **关闭时给空集合** —— 这条是后补的。图层可见性原本只在 `showTiffBounds` 变化时
+  //      靠 `isStyleLoaded()` 置位，那一步一旦被跳过，留在 source 里的旧数据就会照画不误
+  //      （症状：第二次点同一条 DEM，变成全库的框都显示出来）。
+  const visibleTiffBoundsData = useMemo(
+    () => resolveVisibleTiffBounds({ showTiffBounds, tiffBoundsData, focusedDemKeys }),
+    [showTiffBounds, tiffBoundsData, focusedDemKeys],
+  );
+
   const clipSelectedBank = async () => {
     const groupsList = groups || [];
     const g = groupsList[groupsList.length - 1];
@@ -403,6 +431,8 @@ function EditorPage(props: EditorPageProps) {
       }
       if (!bounds) { message.warning('未找到该 DEM 的范围数据'); return; }
       setShowTiffBounds(true);
+      // 与「显示范围」口径一致：只把这一个 DEM 的框画出来
+      setFocusedDemKeys([String(demKey)]);
       await applyTiffRangeSelection(bounds);
       return;
     }
@@ -412,66 +442,90 @@ function EditorPage(props: EditorPageProps) {
     await applyTiffRangeSelection(bounds);
   };
 
-  const validateSectionAsync = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
-    try {
-      const res = await fetch(`/v0/bank/sections/${sectionId}/validate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+  /**
+   * 单次断面校验请求（不做重试/限流，由 validateSectionAsync 包一层）。
+   * 成功返回映射后的状态；网络层失败或 HTTP 非 2xx 一律抛错，交给上层决定是否重试。
+   */
+  const validateSectionOnce = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
+    const res = await fetch(`/v0/bank/sections/${sectionId}/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-      if (!res.ok) {
-        throw new Error(`${res.status} ${res.statusText}`);
-      }
-
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        // 后端若没有返回 JSON，则保持 pending（黄色）
-        data = null;
-      }
-
-      const rawIsValid = data?.is_valid ?? data?.isValid;
-      const rawStatus = data?.validation_status ?? data?.validationStatus;
-      const validationMessage = data?.validation_message ?? data?.validationMessage;
-
-      const isValid: boolean | undefined =
-        rawIsValid === true ? true : rawIsValid === false ? false : undefined;
-
-      const normalizedStatus: string | undefined =
-        typeof rawStatus === 'string' ? String(rawStatus).toLowerCase() : undefined;
-
-      // 只有真正通过/不通过才变色：其它任何状态（含未知字符串）都视为 pending
-      let mappedStatus: 'valid' | 'invalid' | 'pending' = 'pending';
-      if (isValid === true) mappedStatus = 'valid';
-      else if (isValid === false) mappedStatus = 'invalid';
-      else if (normalizedStatus === 'valid') mappedStatus = 'valid';
-      else if (normalizedStatus === 'invalid' || (normalizedStatus && normalizedStatus.startsWith('invalid'))) {
-        mappedStatus = 'invalid';
-      }
-
-      patchSectionValidationProps(sectionId, {
-        is_valid: isValid,
-        validation_status: mappedStatus,
-        validation_status_raw: normalizedStatus,
-        validation_message: validationMessage,
-        validation_error: undefined,
-        validated_at: Date.now(),
-      });
-
-      return mappedStatus;
-    } catch (err: any) {
-      console.warn(`断面验证请求失败: ${sectionId}`, err);
-      // 请求失败不变红，保持黄色 pending；下次可手动刷新或重试
-      patchSectionValidationProps(sectionId, {
-        validation_status: 'pending',
-        is_valid: undefined,
-        validation_status_raw: undefined,
-        validation_error: err?.message || String(err),
-      });
-
-      return 'pending';
+    if (!res.ok) {
+      throw new Error(`${res.status} ${res.statusText}`);
     }
+
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      // 后端若没有返回 JSON，则保持 pending（黄色）
+      data = null;
+    }
+
+    const rawIsValid = data?.is_valid ?? data?.isValid;
+    const rawStatus = data?.validation_status ?? data?.validationStatus;
+    const validationMessage = data?.validation_message ?? data?.validationMessage;
+
+    const isValid: boolean | undefined =
+      rawIsValid === true ? true : rawIsValid === false ? false : undefined;
+
+    const normalizedStatus: string | undefined =
+      typeof rawStatus === 'string' ? String(rawStatus).toLowerCase() : undefined;
+
+    // 只有真正通过/不通过才变色：其它任何状态（含未知字符串）都视为 pending
+    let mappedStatus: 'valid' | 'invalid' | 'pending' = 'pending';
+    if (isValid === true) mappedStatus = 'valid';
+    else if (isValid === false) mappedStatus = 'invalid';
+    else if (normalizedStatus === 'valid') mappedStatus = 'valid';
+    else if (normalizedStatus === 'invalid' || (normalizedStatus && normalizedStatus.startsWith('invalid'))) {
+      mappedStatus = 'invalid';
+    }
+
+    patchSectionValidationProps(sectionId, {
+      is_valid: isValid,
+      validation_status: mappedStatus,
+      validation_status_raw: normalizedStatus,
+      validation_message: validationMessage,
+      validation_error: undefined,
+      validated_at: Date.now(),
+    });
+
+    return mappedStatus;
+  };
+
+  /**
+   * 断面校验（带网络层重试）。
+   *
+   * 重试存在的原因：批量校验时浏览器会并发下发成百上千个请求，一旦触及
+   * Chromium 每渲染进程「挂起请求」上限（kMaxOutstandingRequestsPerProcess），
+   * 超出部分会被直接以 net::ERR_INSUFFICIENT_RESOURCES 拒绝，JS 侧就是
+   * TypeError: Failed to fetch，断面会永久停在「未验证」。
+   * 配合下面的 mapWithConcurrency 限流后，这里再补一次短退避重试兜底瞬时抖动。
+   */
+  const validateSectionAsync = async (sectionId: string, retries = 1): Promise<'valid' | 'invalid' | 'pending'> => {
+    let lastErr: any = null;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await validateSectionOnce(sectionId);
+      } catch (err: any) {
+        lastErr = err;
+        if (!isNetworkLevelError(err) || attempt >= retries) break;
+        await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+      }
+    }
+
+    console.warn(`断面验证请求失败: ${sectionId}`, lastErr);
+    // 请求失败不变红，保持黄色 pending；下次可手动刷新或重试
+    patchSectionValidationProps(sectionId, {
+      validation_status: 'pending',
+      is_valid: undefined,
+      validation_status_raw: undefined,
+      validation_error: lastErr?.message || String(lastErr),
+    });
+
+    return 'pending';
   };
 
   // 手动触发断面校验：强制重跑一遍（即使已校验过），避免编辑移动后状态滞后
@@ -508,8 +562,22 @@ function EditorPage(props: EditorPageProps) {
       });
     });
 
-    // 强制重跑：不受 validationTriggeredRef 的影响
-    await Promise.allSettled(Array.from(sectionIds).map((sid) => validateSectionAsync(sid)));
+    // 强制重跑：不受 validationTriggeredRef 的影响。
+    // 必须限流——断面动辄上千条，全量并发会被浏览器以 ERR_INSUFFICIENT_RESOURCES
+    // 拒绝（表现为 Failed to fetch），断面会永久停在「未验证」。
+    const idList = Array.from(sectionIds);
+    const progressKey = 'section-validate-all';
+    if (idList.length > 20) {
+      message.open({ key: progressKey, type: 'loading', content: `正在校验断面 0/${idList.length} …`, duration: 0 });
+    }
+    await mapWithConcurrency(idList, DEFAULT_REQUEST_CONCURRENCY, (sid) => validateSectionAsync(sid), (done, total) => {
+      if (total > 20) {
+        message.open({ key: progressKey, type: 'loading', content: `正在校验断面 ${done}/${total} …`, duration: 0 });
+      }
+    });
+    if (idList.length > 20) {
+      message.destroy(progressKey);
+    }
 
     if (hasMissingSectionId) {
       console.warn('存在缺少 sectionId 的断面，无法参与后端校验');
@@ -552,8 +620,13 @@ function EditorPage(props: EditorPageProps) {
       });
     });
 
-    const results = await Promise.allSettled(Array.from(sectionIds).map((sid) => validateSectionAsync(sid)));
-    const mapped = results.map((r) => (r.status === 'fulfilled' ? r.value : 'pending'));
+    // 同上：分析前的批量校验也必须限流，否则尾部断面会因浏览器并发上限而 Failed to fetch，
+    // 被判定为「未完成校验」后分析会被一直挡住。
+    const mapped = await mapWithConcurrency(
+      Array.from(sectionIds),
+      DEFAULT_REQUEST_CONCURRENCY,
+      (sid) => validateSectionAsync(sid),
+    );
     const allValid = mapped.every((st) => st === 'valid');
     if (!allValid) {
       return { ok: false, reason: '存在未通过或未完成校验的断面，请先修正后再分析' };
@@ -645,29 +718,28 @@ function EditorPage(props: EditorPageProps) {
       return;
     }
 
-    const results = await Promise.allSettled(
-      uniqueSectionIds.map((sectionId) =>
-        fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}`, {
-          method: 'DELETE',
-        }).then((res) => {
+    // 同样限流：错误断面一次可能上千条，全量并发 DELETE 会被浏览器直接拒绝
+    // （Failed to fetch），断面对不上库、前端却以为删干净了。
+    const deleteResults = await mapWithConcurrency(
+      uniqueSectionIds,
+      DEFAULT_REQUEST_CONCURRENCY,
+      async (sectionId) => {
+        try {
+          const res = await fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}`, {
+            method: 'DELETE',
+          });
           if (!res.ok) throw new Error(res.statusText);
-          return true;
-        }),
-      ),
+          return { sectionId, ok: true as const, reason: undefined as string | undefined };
+        } catch (err: any) {
+          return { sectionId, ok: false as const, reason: err?.message || String(err) };
+        }
+      },
     );
 
-    const failCount = results.filter((r) => r.status === 'rejected').length;
+    const failures = deleteResults.filter((r) => !r.ok);
+    const failCount = failures.length;
     if (failCount > 0) {
-      console.error(
-        '一键删除错误断面：后端删除失败明细:',
-        results
-          .map((r, idx) => ({
-            sectionId: uniqueSectionIds[idx],
-            ok: r.status === 'fulfilled',
-            reason: r.status === 'rejected' ? (r.reason as any)?.message || String(r.reason) : undefined,
-          }))
-          .filter((x) => !x.ok),
-      );
+      console.error('一键删除错误断面：后端删除失败明细:', failures);
       message.warning(
         `已删除 ${removedCount} 条断面；后端同步成功 ${uniqueSectionIds.length - failCount}，失败 ${failCount}`,
       );
@@ -696,9 +768,9 @@ function EditorPage(props: EditorPageProps) {
     });
 
     if (sectionIdsToValidate.length === 0) return;
-    sectionIdsToValidate.forEach((sid) => {
-      validateSectionAsync(sid);
-    });
+    // 限流下发：放过岸段全选可能带来上千条断面，全量 forEach 并发会触发浏览器的
+    // 挂起请求上限，尾部请求直接 Failed to fetch，DOM 上就表现为「未验证」。
+    void mapWithConcurrency(sectionIdsToValidate, DEFAULT_REQUEST_CONCURRENCY, (sid) => validateSectionAsync(sid));
   }, [perpendicularData]);
 
   // 挂载时拉取可用的基础参数模板列表
@@ -889,9 +961,13 @@ function EditorPage(props: EditorPageProps) {
     }
   };
 
-  const loadBankById = async (bankId: string) => {
+  // opts.silent：批量加载时（「全部加载到地图」可能上百条）不弹 alert / message，
+  // 由调用方统一汇总成功/失败，避免逐条弹窗把页面刷屏。
+  // 返回值：该岸段最终是否已在地图上（原本就存在也算成功，便于调用方统计条数）。
+  const loadBankById = async (bankId: string, opts?: { silent?: boolean }): Promise<boolean> => {
+    const silent = opts?.silent === true;
     console.log('[loadBankById] 加载岸段:', bankId);
-    if (!bankId) return;
+    if (!bankId) return false;
     try {
       let res = await fetch(`/v0/bank/banks/${encodeURIComponent(bankId)}`, { headers: { ...authHeaders() } });
       if (!res.ok) {
@@ -900,8 +976,8 @@ function EditorPage(props: EditorPageProps) {
       }
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
-          message.error('登录已过期或无权限，请重新登录后再加载岸段');
-          return;
+          if (!silent) message.error('登录已过期或无权限，请重新登录后再加载岸段');
+          return false;
         }
         throw new Error(`${res.status} ${res.statusText}`);
       }
@@ -910,8 +986,8 @@ function EditorPage(props: EditorPageProps) {
       const b = Array.isArray(bank) ? bank[0] : bank;
       const geom = b?.bank_geometry || b?.geometry;
       if (!b || !geom) {
-        alert('未找到指定的岸段或该岸段无几何数据');
-        return;
+        if (!silent) alert('未找到指定的岸段或该岸段无几何数据');
+        return false;
       }
 
       const newFeature = {
@@ -935,7 +1011,7 @@ function EditorPage(props: EditorPageProps) {
       });
       if (exists) {
         // alert(`岸段 ${b.bank_id} 已在编辑器中，已跳过重复加载`);
-        return;
+        return true;   // 已在图上 → 对批量调用方等价于成功
       }
 
       setUploadedData((prev) => {
@@ -963,9 +1039,11 @@ function EditorPage(props: EditorPageProps) {
         removedBankSectionsRef.current.delete(String(b.bank_id));
         await restoreSectionsForBank(String(b.bank_id));
       }
+      return true;
     } catch (err: any) {
       console.error('加载岸段失败:', err);
-      alert(`加载岸段失败: ${err?.message || String(err)}`);
+      if (!silent) alert(`加载岸段失败: ${err?.message || String(err)}`);
+      return false;
     }
   };
 
@@ -1096,12 +1174,12 @@ function EditorPage(props: EditorPageProps) {
     else message.success(`已加载 ${ok} 条断面`);
   };
 
-  // 把文件夹下所有断面从地图上摘掉。
+  // 按 id 批量把断面从地图上摘掉。
   // 注意：这与岸段的「移出地图」不同 —— 它不写 removedBankSectionsRef，
   // 因为"再点一次全部加载"就能回来，不需要岸段落图来触发恢复。
-  const removeAllSectionsUnder = (node: TreeNode) => {
-    const ids = collectSectionIds(node);
-    if (ids.length === 0) { message.warning('该文件夹下没有断面'); return; }
+  // 侧栏下半区「已加载到屏幕」的行级/组级移出也复用这里（单条就是长度为 1 的 ids）。
+  const removeSectionsByIds = (ids: string[]) => {
+    if (ids.length === 0) { message.info('这些断面本来就不在地图上'); return; }
     const want = new Set(ids);
 
     // 选中态是按 features 下标存的 → 删完必须按"断面身份"重新映射，
@@ -1133,6 +1211,138 @@ function EditorPage(props: EditorPageProps) {
       setSelectedCrossLineIndices(next);
     }
     message.success(`已从地图移出 ${removed} 条断面`);
+  };
+
+  const removeAllSectionsUnder = (node: TreeNode) => {
+    const ids = collectSectionIds(node);
+    if (ids.length === 0) { message.warning('该文件夹下没有断面'); return; }
+    removeSectionsByIds(ids);
+  };
+
+  // —— 侧栏下半区「已加载到屏幕」的批量操作 ——
+  // 只处理"当前确实在图上"的那些，逐条走既有单条路径（removeBankFromMap 会顺带写
+  // removedBankSectionsRef，后续「加载到地图」时断面才找得回来）。
+
+  // 地图上当前所有岸段（几何已在 uploadedData.features 里）
+  const loadedBankIdsOnMap = (): string[] => [...bankIdsOnMap()];
+
+  const removeLoadedBanksFromMap = () => {
+    const ids = loadedBankIdsOnMap();
+    if (ids.length === 0) { message.info('地图上没有岸段'); return; }
+    if (!window.confirm(`将把地图上的 ${ids.length} 条岸段（及其断面）一起移出。确认继续？`)) return;
+    ids.forEach((id) => removeBankFromMap(id));
+    message.success(`已从地图移出 ${ids.length} 条岸段`);
+  };
+
+  const removeLoadedSectionsFromMap = () => {
+    const ids = ((useEditorStore.getState().perpendicularData?.features || []) as any[])
+      .map(sectionIdOfFeature)
+      .filter(Boolean) as string[];
+    if (ids.length === 0) { message.info('地图上没有断面'); return; }
+    if (!window.confirm(`将把地图上的 ${ids.length} 条断面一起移出。确认继续？`)) return;
+    removeSectionsByIds(ids);
+  };
+
+  // 下半区点「定位」：与资源树里点岸段节点完全同义（都是 loadBankById）。
+  // 注意不要顺手改 selectedLines —— 那是"选中用于生成断面"的语义，
+  // 在下半区点一下定位就悄悄改变生成范围属于越权。
+  const focusBankOnMap = async (bankId: string) => {
+    const id = String(bankId || '');
+    if (!id) return;
+    await loadBankById(id);
+  };
+
+  // —— 岸段的文件夹级批量动作（与断面那对完全对称）——
+  //
+  // 为什么需要：断面文件夹早有 section.loadAll / section.removeAll（见 actions.ts 里的注释：
+  // "单个断面的动作只能一条条点，断面多时很烦"），但「岸段」文件夹只有上传 + 着色开关。
+  // 面对库里上百条岸段（实际 113 条）要逐条点「加载到地图」，是同一类痛点漏了这一侧。
+
+  // 收集某个文件夹节点下（含嵌套）所有岸段的 bank_id。
+  // 岸段节点是叶子，遍历 children 即可；若该文件夹的子节点尚未构建，退回 store 里的岸段清单兜底。
+  // 口径与 treeModel.buildBanksFolder 一致：排除 _clip_ 系列（那是「截取岸段」的产物，不在文件夹里）。
+  const collectBankIds = (node: TreeNode): string[] => {
+    const out = new Set<string>();
+    const walk = (n: TreeNode) => {
+      if (n.ref?.entity === 'bank' && n.ref.key) out.add(String(n.ref.key));
+      for (const c of n.children || []) walk(c);
+    };
+    walk(node);
+    if (out.size === 0) {
+      for (const b of (bankList || []) as any[]) {
+        const id = String(b?.bank_id || '');
+        if (id && !id.includes('_clip_')) out.add(id);
+      }
+    }
+    return [...out];
+  };
+
+  // 当前已在地图上的岸段 bank_id 集合
+  const bankIdsOnMap = (): Set<string> =>
+    new Set(
+      (((useEditorStore.getState().uploadedData?.features || []) as any[])
+        .map((f: any) => String(f?.properties?.bank_id || f?.properties?.bankId || ''))
+        .filter(Boolean)),
+    );
+
+  // 把文件夹下所有岸段加载到地图。已在图上的跳过，只补缺的那些。
+  const loadAllBanksUnder = async (node: TreeNode) => {
+    const ids = collectBankIds(node);
+    if (ids.length === 0) { message.warning('该文件夹下没有岸段'); return; }
+
+    const onMap = bankIdsOnMap();
+    const todo = ids.filter((id) => !onMap.has(id));
+    if (todo.length === 0) { message.info(`这 ${ids.length} 条岸段已经全部在地图上了`); return; }
+
+    // 条数多时先确认：一次把上百条岸段画到地图上，渲染会明显变慢。
+    if (todo.length > 20) {
+      const go = window.confirm(
+        `将把 ${todo.length} 条岸段加载到地图（该文件夹共 ${ids.length} 条，已在图上 ${ids.length - todo.length} 条）。\n` +
+        `条数较多时地图渲染会变慢，确认继续？`,
+      );
+      if (!go) return;
+    }
+
+    const hide = message.loading(`正在加载 ${todo.length} 条岸段…`, 0);
+    let okCount = 0;
+    let fail = 0;
+    let cursor = 0;
+    // 并发 4：与 loadAllSectionsUnder 同一口径，只为避免一次性打满后端
+    const worker = async () => {
+      while (cursor < todo.length) {
+        const id = todo[cursor++];
+        try {
+          // silent：上百条逐条弹窗会刷屏，这里统一汇总
+          const done = await loadBankById(id, { silent: true });
+          if (done) okCount++; else fail++;
+        } catch {
+          fail++;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker));
+    hide();
+
+    if (fail > 0) message.warning(`已加载 ${okCount} 条岸段，${fail} 条未能加载（可能缺少几何数据）`);
+    else message.success(`已加载 ${okCount} 条岸段到地图`);
+  };
+
+  // 把文件夹下所有岸段从地图上摘掉（连同它们的断面）。
+  // 逐条走 removeBankFromMap，而不是自己批量 setState —— 那样才会照常写
+  // removedBankSectionsRef，将来再「加载到地图」时断面还能被找回来。
+  const removeAllBanksUnder = (node: TreeNode) => {
+    const ids = collectBankIds(node);
+    if (ids.length === 0) { message.warning('该文件夹下没有岸段'); return; }
+
+    const onMap = bankIdsOnMap();
+    const hit = ids.filter((id) => onMap.has(id));
+    if (hit.length === 0) { message.info('这些岸段本来就不在地图上'); return; }
+
+    const go = window.confirm(`将把地图上的 ${hit.length} 条岸段（及其断面）一起移出。确认继续？`);
+    if (!go) return;
+
+    hit.forEach((id) => removeBankFromMap(id));
+    message.success(`已从地图移出 ${hit.length} 条岸段`);
   };
 
   const deleteBankById = async (bankId: string) => {
@@ -1714,6 +1924,48 @@ function EditorPage(props: EditorPageProps) {
     setShowGlobalPropertiesModal(true);
   };
 
+  /**
+   * 新建参数模板（「参数模板」文件夹右键菜单的入口）。
+   *
+   * 后端 `POST /v0/bank/basic-params` 是「按数组批量写入」的接口：
+   *   · overwrite=false → 纯插入；
+   *   · param_id **由前端生成**（后端不代生成），且库里是全库唯一约束 `basic_params_param_id_key`；
+   *   · 成功回包结构 `{ success, inserted_count, params:[{ id, param_id, param_name }] }`。
+   * 所以这里生成的 id 自带时间戳，唯一性不依赖本地列表是否新鲜。
+   *
+   * 创建成功后做三件事：刷新模板列表 → 在树里选中新节点 → 把它设为当前引用的模板，
+   * 用户就不用再去「参数配置」下拉框里找一遍了。
+   */
+  const handleCreateParamTemplate = async (form: CreateParamTemplateForm, openAfter: boolean) => {
+    const res = await fetch('/v0/bank/basic-params', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ params: [form], overwrite: false }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      const detail = data?.message || data?.error || `${res.status} ${res.statusText}`;
+      throw new Error(detail);
+    }
+
+    const newParamId = String(data?.params?.[0]?.param_id ?? form.param_id);
+
+    const list = await fetchBasicParamsList().catch(() => null);
+    if (list) setBasicParamsList(list);
+
+    const store = useResourceTreeStore.getState();
+    store.selectNode(`param:${newParamId}`);
+    useResourceTreeStore.setState({ expanded: { ...store.expanded, 'folder:params': true } });
+    bumpTreeData();
+
+    await loadBasicParamAsGlobalProperties(newParamId);
+
+    message.success(`参数模板「${form.param_name}」已创建`);
+    setCreateParamModalOpen(false);
+
+    if (openAfter) setShowGlobalPropertiesModal(true);
+  };
+
   // 反转选中的断面（交换端点并同步到后端如果存在）
   const reverseSelectedCrossLine = async (indicesOverride?: number[]) => {
     // 数据从 store 现取，而不是用闭包里的 perpendicularData：
@@ -1801,25 +2053,57 @@ function EditorPage(props: EditorPageProps) {
     }
   };
 
-  // 全选或取消全选所有岸段
+  // === 岸段批量选择：口径 =「地图上已加载的全部岸段」===
+  //
+  // 候选集是 uploadedData 里已加载到地图的线要素，与「选中岸段」在地图上逐条点选的是同一批。
+  // 刻意不做"只选当前视野内"：视野外但已加载的岸段会莫名漏掉，用户缩放一下又会"多出来"，
+  // 反而更难理解；而没加载到地图的岸段，任何选择口径都选不到它。
+  //
+  // 抽成这几个函数的原因：默认（资源树）模式下 EditorSidebar 不渲染，侧栏那对
+  // 「选中岸段 / 全选」根本不在页面上，地图底部工具栏的「选中岸段」是唯一入口，
+  // 而它原来只会切换点选模式 —— 于是选几十条岸段只能一条条点。
+  // 现在侧栏的「全选」与地图工具栏共用同一份实现。
+
+  // 地图上可作为岸段选中的线要素 id（与 getShoreLineId 同源）
+  const mapShoreLineIds = (): string[] => {
+    const out: string[] = [];
+    (uploadedData?.features || []).forEach((f: any, index: number) => {
+      const t = f?.geometry?.type;
+      if (t === 'LineString' || t === 'MultiLineString') out.push(getShoreLineId(f, index));
+    });
+    return out;
+  };
+
+  // 是否"已经全选"。用 every(has) 而不是"数量相等"：后者在 selectedLines 里混入了
+  // 不属于 uploadedData 的 id 时会误判成"已全选"，从而把全选做成清空。
+  const isAllMapShoreLinesSelected = (): boolean => {
+    const ids = mapShoreLineIds();
+    return ids.length > 0 && ids.every((id) => selectedLines.has(id));
+  };
+
+  const selectAllMapShoreLines = () => {
+    const ids = mapShoreLineIds();
+    if (ids.length === 0) { message.warning('地图上还没有岸段，请先从资源树加载'); return; }
+    setSelectedLines(new Set(ids));
+    message.success(`已选中地图上的 ${ids.length} 条岸段`);
+  };
+
+  const clearMapShoreLineSelection = () => {
+    if (selectedLines.size === 0) { message.info('当前没有选中的岸段'); return; }
+    setSelectedLines(new Set());
+    message.success('已清空岸段选择');
+  };
+
+  // 全选或取消全选所有岸段（侧栏那颗按钮）
   const toggleSelectAllShoreLines = () => {
     if (!uploadedData) {
       alert('请先上传 GeoJSON 数据');
       return;
     }
-
-    // 如果当前已经全选了（选中数量等于可选线要素数量），则清空
-    const selectableIds: string[] = [];
-    uploadedData.features.forEach((f: any, index: number) => {
-      if (f?.geometry?.type === 'LineString' || f?.geometry?.type === 'MultiLineString') {
-        selectableIds.push(getShoreLineId(f, index));
-      }
-    });
-
-    if (selectedLines.size === selectableIds.length && selectableIds.length > 0) {
+    if (isAllMapShoreLinesSelected()) {
       setSelectedLines(new Set());
     } else {
-      setSelectedLines(new Set(selectableIds));
+      setSelectedLines(new Set(mapShoreLineIds()));
     }
   };
 
@@ -2515,6 +2799,59 @@ function EditorPage(props: EditorPageProps) {
   // === 资源树侧栏：节点操作分发 ===
   const bumpTreeData = () => useResourceTreeStore.getState().bumpData();
 
+  /**
+   * 终止一个正在运行的任务（下半区运行横幅 / 资源树任务节点 / 结果页进度栏共用这一条）。
+   *
+   * <p>三段式：二次确认 → 调接口 → 按 outcome 给不同反馈并刷新界面。
+   * 「确认框文案」和「成功文案」都刻意区分了两种情形（真在跑 / 进程已死的僵尸），
+   * 因为它们的后果完全不同：前者结果保留、后者本来就没结果。含糊其辞会让人误判。
+   *
+   * @returns true 表示请求已受理（调用方据此把按钮锁成「终止中」）
+   */
+  const handleStopTask = async (taskId: string, taskName?: string): Promise<boolean> => {
+    const name = taskName || taskId;
+    const ok = await requestConfirm({
+      title: '终止运行中的任务',
+      content: (
+        <div style={{ lineHeight: 1.7 }}>
+          <div>确认终止任务「{name}」？</div>
+          <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+            <li>当前正在计算的那条断面会算完，之后的断面不再计算；</li>
+            <li>已经算完并入库的断面结果<b>全部保留</b>，可照常在结果页查看；</li>
+            <li>任务状态将变为「已终止」，不会自动重跑。</li>
+          </ul>
+          <div style={{ marginTop: 8, color: '#b45309' }}>
+            若跑它的进程已经不存在（例如后端重启过），系统会直接把它标记为「已终止」——
+            那类任务本来就没有任何计算在跑，只是状态一直没被收掉。
+          </div>
+        </div>
+      ),
+      confirmText: '终止任务',
+      danger: true,
+    });
+    if (!ok) return false;
+
+    const outcome = await cancelTask(taskId);
+    if (!outcome.ok) {
+      message.error(outcome.message, 6);
+      return false;
+    }
+
+    if (outcome.kind === 'stopping') {
+      message.success(`已请求终止「${name}」：当前断面算完后停止，已完成的结果保留`, 5);
+    } else if (outcome.kind === 'stale-cleared') {
+      message.success(`「${name}」的执行进程早已不存在，已直接标记为「已终止」`, 6);
+    } else {
+      message.info(`「${name}」当前并不在运行中，已刷新状态`);
+    }
+
+    bumpTreeData();
+    // 协作式取消要等执行循环察觉标志才落库（通常 <1s，但可能等一条模型调用）。
+    // 这里补两次跟进刷新，免得界面非要等满 5s 的轮询周期才把「运行中」摘掉。
+    [1200, 4000].forEach((ms) => window.setTimeout(bumpTreeData, ms));
+    return true;
+  };
+
   const handleTreeNodeSelect = (node: TreeNode) => {
     const key = node.ref?.key || '';
     if (node.kind === 'task' && key) {
@@ -2544,6 +2881,8 @@ function EditorPage(props: EditorPageProps) {
     }
     if (node.ref?.entity === 'dem') {
       setShowTiffBounds(true);
+      // 只聚焦被点中的这一条，避免把整库 DEM 的范围一起铺到地图上
+      if (key) setFocusedDemKeys([String(key)]);
       return;
     }
   };
@@ -2553,6 +2892,7 @@ function EditorPage(props: EditorPageProps) {
       void loadBankById(node.ref.key);
     } else if (node.ref?.entity === 'dem') {
       setShowTiffBounds(true);
+      if (node.ref.key) setFocusedDemKeys([String(node.ref.key)]);
     }
   };
 
@@ -2728,6 +3068,9 @@ function EditorPage(props: EditorPageProps) {
       case 'bank.uploadSelected': await sendSelectedShoreLinesGeoJson(); break;
       case 'bank.delete': await deleteBankById(key); bumpTreeData(); break;
       case 'bank.clearLoaded': deleteLoadedBanks(); break;
+      // 文件夹级批量：与 section.loadAll / section.removeAll 对称
+      case 'bank.loadAll': await loadAllBanksUnder(node); break;
+      case 'bank.removeAll': removeAllBanksUnder(node); break;
 
       case 'section.upload': sectionsUploadInputRef.current?.click(); break;
       case 'section.toggleVisible': setShowCrossLines(!showCrossLines); break;
@@ -2814,13 +3157,22 @@ function EditorPage(props: EditorPageProps) {
         break;
       }
 
+      case 'param.create': setCreateParamModalOpen(true); break;
       case 'param.select': await handleSelectBasicParam(key); break;
       case 'param.props': await openGlobalPropertiesModal(); break;
       case 'param.editSectionParams': await configureSelectedCrossLineProperties(); break;
 
       case 'dem.select':
       case 'dem.upload': setDemPickerOpen(true); break;
-      case 'dem.toggleBounds': setShowTiffBounds(!showTiffBounds); break;
+      case 'dem.toggleBounds': {
+        // 资源树里点的是「某一条」DEM 的开关 ⇒ 只切这一条，不动别的：
+        //   点第二下 = 关掉它自己（用户明确要的语义），不是"把全库画出来"。
+        // 关到一条不剩时连总开关一起关（见 toggleDemBounds）。
+        const next = toggleDemBounds({ showTiffBounds, focusedDemKeys }, key);
+        setShowTiffBounds(next.showTiffBounds);
+        setFocusedDemKeys(next.focusedDemKeys);
+        break;
+      }
       case 'dem.selectBanks': selectBanksByTiffRange(key); break;
       case 'dem.delete': {
         const svc = await import('../services/tiffService');
@@ -2853,6 +3205,7 @@ function EditorPage(props: EditorPageProps) {
         break;
       }
       case 'task.run': useResourceTreeStore.getState().setCurrentTask(key); await handleStartAnalysis(); break;
+      case 'task.stop': await handleStopTask(key, node.label); break;
       case 'task.generateCompute': useResourceTreeStore.getState().setCurrentTask(key); await handleGenerateComputeSections(); bumpTreeData(); break;
       case 'task.setParam': useResourceTreeStore.getState().setCurrentTask(key); await openGlobalPropertiesModal(); break;
       case 'task.viewResult': setPage?.('result', key); break;
@@ -2878,6 +3231,24 @@ function EditorPage(props: EditorPageProps) {
   const totalSelectedSegments = groups.filter(g => g.end !== null).length;
   const clippedBanks = (bankList || []).filter((b: any) => String(b.bank_id || '').includes('_clip_'));
 
+  // —— 侧栏下半区「已加载到屏幕」需要两个"屏幕现状"字段 ——
+  // ① DEM 范围：只统计**真正喂给地图**的那份（visibleTiffBoundsData），
+  //    用全量会重复上次那个"点一条却列出全部"的坑（见 visibleTiffBoundsData 的注释）。
+  const demKeysOnMap = useMemo(() => {
+    if (!showTiffBounds || !visibleTiffBoundsData) return [] as string[];
+    const keys = (visibleTiffBoundsData.features || [])
+      .map((f: any) => String(f?.properties?.tiff_key ?? ''))
+      .filter(Boolean);
+    return [...new Set(keys)];
+  }, [showTiffBounds, visibleTiffBoundsData]);
+
+  // ② 当前在地图上选中的断面（面板据此高亮对应行）
+  const activeSectionIdOnMap = useMemo(() => {
+    const list = (perpendicularData?.features || []) as any[];
+    if (selectedCrossLineIndex == null || !list[selectedCrossLineIndex]) return null;
+    return sectionIdOfFeature(list[selectedCrossLineIndex]) || null;
+  }, [perpendicularData, selectedCrossLineIndex]);
+
   return (
     <div className="editor-layout">
       <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -2886,12 +3257,25 @@ function EditorPage(props: EditorPageProps) {
           <input ref={sectionsUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleSectionsFileUpload} />
           {sidebarMode === 'tree' && (
             <ResourceSidebar
+              demKeys={demKeysOnMap}
+              activeSectionId={activeSectionIdOnMap}
               handlers={{
                 onAction: handleTreeNodeAction,
                 onNodeSelect: handleTreeNodeSelect,
                 onNodeDoubleClick: handleTreeNodeDoubleClick,
                 onRun: handleStartAnalysis,
-              }}
+                // —— 下半区「已加载到屏幕」的行级/组级操作 ——
+                onFocusBank: (id) => { void focusBankOnMap(id); },
+                onRemoveBank: removeBankFromMap,
+                onRemoveAllBanks: removeLoadedBanksFromMap,
+                onFocusSection: (id) => { void focusSectionOfTreeNode(id); },
+                onRemoveSection: (id) => removeSectionsByIds([id]),
+                onRemoveAllSections: removeLoadedSectionsFromMap,
+          onFocusDem: (key) => { setShowTiffBounds(true); setFocusedDemKeys([String(key)]); },
+          onHideDems: () => { setShowTiffBounds(false); setFocusedDemKeys(null); },
+          // —— 下半区运行横幅的「终止」：与资源树 task.stop 走同一条实现 ——
+          onStopTask: (id, name) => handleStopTask(id, name),
+        }}
             />
           )}
           {sidebarMode === 'classic' && (
@@ -2989,7 +3373,11 @@ function EditorPage(props: EditorPageProps) {
           showCrossLines={showCrossLines}
           setShowCrossLines={setShowCrossLines}
           showTiffBounds={showTiffBounds}
-          setShowTiffBounds={setShowTiffBounds}
+          // 侧栏这个是「全局」开关：打开时清掉聚焦，回到显示全部 DEM 范围
+          setShowTiffBounds={(v: boolean) => {
+            setShowTiffBounds(v);
+            if (v) setFocusedDemKeys(null);
+          }}
           satellite={satellite}
           setSatellite={setSatellite}
           handleStartAnalysis={handleStartAnalysis}
@@ -3035,7 +3423,7 @@ function EditorPage(props: EditorPageProps) {
           applyCrossLineGeometriesLocal={applyCrossLineGeometriesLocal}
           persistCrossLineGeometry={persistCrossLineGeometry}
           createCrossLineByEndpoints={createCrossLineByEndpoints}
-          tiffBoundsData={tiffBoundsData}
+          tiffBoundsData={visibleTiffBoundsData}
           showTiffBounds={showTiffBounds}
           resizeTrigger={resizeTrigger}
           satellite={satellite}
@@ -3088,14 +3476,54 @@ function EditorPage(props: EditorPageProps) {
           <button type="button" className="emt-create" onClick={handleNewTask} title="新建任务">
             <Plus size={26} strokeWidth={3} />
           </button>
-          <button
-            type="button"
-            className={`emt-btn ${isSelectingShoreLines ? 'emt-active' : ''}`}
-            onClick={toggleShoreLineSelection}
-            title="在地图上点选岸段"
-          >
-            <MousePointer2 size={15} /> 选中岸段
-          </button>
+          {/* 分裂按钮：主体 = 进入/退出地图点选（保持原来的一键行为，不增加常用路径的点击次数）；
+              右侧小箭头 = 批量选择。
+              为什么需要：默认（资源树）模式下 EditorSidebar 不渲染，侧栏那对
+              「选中岸段 / 全选」根本不在页面上，地图上逐条点选是唯一办法 —— 选几十条岸段
+              就只能一条条点。批量口径见上面的 mapShoreLineIds 注释。 */}
+          <div className="emt-split" data-tour="map-select-bank">
+            <button
+              type="button"
+              className={`emt-btn ${isSelectingShoreLines ? 'emt-active' : ''}`}
+              onClick={toggleShoreLineSelection}
+              title="在地图上点选岸段"
+            >
+              <MousePointer2 size={15} /> 选中岸段
+            </button>
+            <Dropdown
+              trigger={['click']}
+              placement="topRight"
+              menu={{
+                items: [
+                  {
+                    key: 'selectAll',
+                    icon: <CheckCircle2 size={14} />,
+                    label: isAllMapShoreLinesSelected()
+                      ? '取消全选'
+                      : `全选地图上的岸段（${mapShoreLineIds().length}）`,
+                  },
+                  {
+                    key: 'clear',
+                    icon: <Eraser size={14} />,
+                    label: '清空选择',
+                    disabled: selectedLines.size === 0,
+                  },
+                ],
+                onClick: ({ key: k }) => {
+                  if (k === 'selectAll') {
+                    if (isAllMapShoreLinesSelected()) clearMapShoreLineSelection();
+                    else selectAllMapShoreLines();
+                  } else if (k === 'clear') {
+                    clearMapShoreLineSelection();
+                  }
+                },
+              }}
+            >
+              <button type="button" className="emt-btn emt-caret" title="批量选择岸段">
+                <ChevronDown size={13} />
+              </button>
+            </Dropdown>
+          </div>
           <button type="button" className="emt-btn" onClick={onClear} title="清除断面">
             <Eraser size={15} /> 清除断面
           </button>
@@ -3153,6 +3581,21 @@ function EditorPage(props: EditorPageProps) {
         />
       )}
 
+      {/* 新建参数模板弹窗（「参数模板」文件夹右键 → 新建参数模板） */}
+      {createParamModalOpen && (
+        <CreateParamTemplateModal
+          templates={basicParamsList
+            .map((p: any) => ({
+              param_id: String(p.param_id ?? p.id ?? ''),
+              param_name: String(p.param_name || p.paramName || p.param_id || p.id || ''),
+            }))
+            .filter((t: ParamTemplateOption) => Boolean(t.param_id))}
+          defaultSegment="Yangtze"
+          onSubmit={handleCreateParamTemplate}
+          onCancel={() => setCreateParamModalOpen(false)}
+        />
+      )}
+
       {/* 属性弹窗（任务/岸段/断面/参数/DEM） */}
       {infoModal && (
         <InfoModal title={infoModal.title} groups={infoModal.groups} onClose={() => setInfoModal(null)} />
@@ -3182,7 +3625,13 @@ function EditorPage(props: EditorPageProps) {
               label="DEM 资源"
               value=""
               onConfirm={(key) => {
-                if (key) setShowTiffBounds(true);
+                // 与资源树里「显示范围」口径一致：只把这个 DEM 的框画出来。
+                // 这里从前把 key 丢掉了 ⇒ 只有 setShowTiffBounds(true) 而 focusedDemKeys 仍是 null，
+                // 地图会把全库 DEM 的框一起铺出来，跟点单条的表现不一致。
+                if (key) {
+                  setShowTiffBounds(true);
+                  setFocusedDemKeys([String(key)]);
+                }
                 setDemPickerOpen(false);
               }}
             />

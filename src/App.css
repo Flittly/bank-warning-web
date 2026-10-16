@@ -362,6 +362,34 @@
   color: #1d4ed8;
   text-shadow: none;
 }
+/* 「选中岸段」分裂按钮：主体（进入点选）+ 右侧小箭头（批量选择菜单）。
+   两段拼成一颗胶囊，中间一条细竖线做分隔，悬停时各自高亮。 */
+.editor-map-toolbar .emt-split {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+.editor-map-toolbar .emt-split .emt-btn:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-right: 8px;
+}
+.editor-map-toolbar .emt-split .emt-caret {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 7px 6px 7px 5px;
+  color: #475569;
+}
+.editor-map-toolbar .emt-split .emt-caret::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 24%;
+  bottom: 24%;
+  width: 1px;
+  background: rgba(15, 23, 42, 0.14);
+}
 .editor-map-toolbar .emt-create {
   position: relative;
   width: 46px;
@@ -1518,4 +1546,63 @@
 .tour-guide-root .ant-tour .ant-tour-inner .ant-tour-indicators .ant-tour-indicator-active {
   width: 20px;
   background: #1e293b;
+}
+
+/* ===== 任务卡片：右键操作菜单 ===== */
+.task-hint {
+  margin-top: 5px;
+  font-size: 0.68rem;
+  color: #a3b1c2;
+  user-select: none;
+}
+
+.task-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 176px;
+  padding: 4px;
+  background: #ffffff;
+  border: 1px solid #e4e9f0;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
+  font-size: 0.8rem;
+  color: #1e293b;
+}
+
+.task-menu-title {
+  padding: 5px 10px 7px;
+  margin-bottom: 4px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.task-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #1e293b;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.task-menu-item:hover:not(:disabled) {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.task-menu-item:disabled {
+  color: #94a3b8;
+  cursor: default;
 }

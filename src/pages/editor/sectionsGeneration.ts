@@ -583,7 +583,16 @@ export async function runCurrentTask(params: {
     const result = await response.json();
     console.log('任务运行结果:', result);
 
-    if (result.success) {
+    // 被终止**不是失败**：后端会正常返回 200 + status=cancelled（success=false）。
+    // 不单独拦一下，用户点了「终止」之后看到的会是"任务运行失败"，以为自己搞坏了什么。
+    if (String(result?.status ?? '') === 'cancelled') {
+      const summary: any = result?.summary ?? {};
+      message.warning(
+        `任务已终止：已处理 ${summary.success ?? 0} 个断面（失败 ${summary.failed ?? 0}），` +
+        `${summary.skipped ?? 0} 个未处理，已完成的结果保留`,
+        6,
+      );
+    } else if (result.success) {
       message.success(`任务运行成功！状态: ${result.status}，已处理 ${result.results?.length || 0} 个断面`);
     } else {
       message.error('任务运行失败，请检查控制台');
