@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type CSSProperties } from 'react';
 import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -10,12 +10,165 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search } from 'lucide-react';
+import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search, Waves, Play, Pause } from 'lucide-react';
 import { ConfigProvider, Modal } from 'antd';
 import { useSearchParams } from 'react-router-dom';
+import { cancelTask } from '../services/taskRunControl';
+import { FlowFieldLayer, FLOW_FIELD_LAYER_ID, type FlowFieldStatus } from '../map/flowFieldLayer';
+import {
+  DEFAULT_FLOW_COLOR_SCHEME,
+  FLOW_COLOR_SCHEMES,
+  flowColorSchemeGradient,
+  latFromMercatorY,
+  type FlowColorSchemeId,
+  type FlowFieldGeometry,
+} from '../map/flowField';
+import {
+  describeCase,
+  describeScene,
+  fetchFlowFieldCases,
+  fetchFlowFieldGeometry,
+  fetchFlowFieldScenes,
+  findSceneForDem,
+  inferPreferredTidal,
+  tidalLevelLabel,
+  type FlowFieldCase,
+  type FlowFieldScene,
+} from '../services/flowFieldApi';
+import { demBoundsOf, fetchTiffBounds } from '../services/tiffService';
 
 // —— Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+
+// —— AI 出图弹窗：分幅设置的输入框样式（与弹窗内既有手写样式保持一致的细边框小输入框）
+const vizNumInputStyle: CSSProperties = {
+  width: 52,
+  border: '1px solid #e2e8f0',
+  borderRadius: 6,
+  padding: '2px 6px',
+  fontSize: '0.8rem',
+  background: 'rgba(255,255,255,0.6)',
+};
+const vizEdgeInputStyle: CSSProperties = {
+  width: 74,
+  border: '1px solid #e2e8f0',
+  borderRadius: 6,
+  padding: '2px 6px',
+  fontSize: '0.78rem',
+  background: 'rgba(255,255,255,0.6)',
+};
+
+// —— 分幅设置（AI 出图 与 AI 出报告 共用）
+// 两处共用同一份状态形状、同一份面板与同一份 JSON 组装逻辑：用户在哪儿配的
+// 分幅都走同一套语义，报告的分区边界因此必然与出图分区一致。
+
+/** 逐幅边界的四个输入值（字符串；空串 = 沿用均分网格的对应边） */
+type TileEdges = { west: string; south: string; east: string; north: string };
+
+const EMPTY_TILE_EDGES: TileEdges = { west: '', south: '', east: '', north: '' };
+const EDGE_KEYS = ['west', 'south', 'east', 'north'] as const;
+const EDGE_PLACEHOLDER: Record<(typeof EDGE_KEYS)[number], string> =
+  { west: '西', south: '南', east: '东', north: '北' };
+
+/** 行×列限幅：单方向 1~6（36 幅封顶，防误操作） */
+const clampGrid = (n: number) => Math.min(6, Math.max(1, Number.isFinite(n) ? n : 1));
+
+/**
+ * 逐幅边界 → splitTiles JSON：只打包非空边，row/col 按行优先序号对齐网格。
+ * 出图与出报告共用，保证两处提交的分幅参数形状一致。
+ */
+function buildSplitTilesJson(cols: number, edges: TileEdges[]): string | undefined {
+  const custom = edges.map((tile, i) => {
+    const out: Record<string, number> = { row: Math.floor(i / cols), col: i % cols };
+    EDGE_KEYS.forEach(key => {
+      const raw = tile[key].trim();
+      if (raw !== '') {
+        const num = Number(raw);
+        if (Number.isFinite(num)) out[key] = num;
+      }
+    });
+    return out;
+  }).filter(t => Object.keys(t).length > 2); // 至少自定义了一条边
+  return custom.length > 0 ? JSON.stringify(custom) : undefined;
+}
+
+/**
+ * 「按经纬度分幅」设置面板——AI 出图 与 AI 出报告 共用同一份 UI。
+ * 两处配置出来的分区边界因此完全一致，报告的分区才能与出图分区对齐。
+ */
+function SplitSettingsPanel(props: {
+  enabled: boolean;
+  onToggle: (next: boolean) => void;
+  rows: number;
+  cols: number;
+  onGridChange: (rows: number, cols: number) => void;
+  edges: TileEdges[];
+  onEdgesChange: (updater: (prev: TileEdges[]) => TileEdges[]) => void;
+  title: string;
+  hint: string;
+  summary?: string;
+}) {
+  const { enabled, onToggle, rows, cols, onGridChange, edges, onEdgesChange,
+          title, hint, summary } = props;
+  return (
+    <div style={{ marginTop: 14, borderTop: '1px dashed #e2e8f0', paddingTop: 10 }}>
+      <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: '#444' }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} />
+        {title}{' '}
+        <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{hint}</span>
+      </label>
+      {enabled && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: '0.8rem', color: '#475569' }}>
+            <span>分块数</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              行（纬度方向）
+              <input
+                type="number" min={1} max={6} value={rows}
+                onChange={(e) => onGridChange(parseInt(e.target.value || '1', 10) || 1, cols)}
+                style={vizNumInputStyle}
+              />
+            </label>
+            <span>×</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              列（经度方向）
+              <input
+                type="number" min={1} max={6} value={cols}
+                onChange={(e) => onGridChange(rows, parseInt(e.target.value || '1', 10) || 1)}
+                style={vizNumInputStyle}
+              />
+            </label>
+            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
+              某方向填 1 = 该方向不切；共 {rows * cols} 幅{summary ? ` · ${summary}` : ''}
+            </span>
+          </div>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 8, marginTop: 8, maxHeight: 230, overflowY: 'auto', background: 'rgba(255,255,255,0.4)' }}>
+            <div style={{ color: '#64748b', fontSize: '0.75rem', marginBottom: 6 }}>
+              每幅经纬度边界（选填）：留空的边沿用均分网格默认值；各幅范围允许重叠，重叠部分会分别出图，互不干扰。
+            </div>
+            {edges.map((tileEdges, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: '0.78rem' }}>
+                <span style={{ width: 52, color: '#475569', flexShrink: 0 }}>第 {i + 1} 幅</span>
+                {EDGE_KEYS.map(key => (
+                  <input
+                    key={key}
+                    type="number"
+                    step="any"
+                    placeholder={EDGE_PLACEHOLDER[key]}
+                    value={tileEdges[key]}
+                    onChange={(e) => onEdgesChange(prev =>
+                      prev.map((t, j) => (j === i ? { ...t, [key]: e.target.value } : t)))}
+                    style={vizEdgeInputStyle}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ============================================================
 //  类型定义
@@ -209,6 +362,8 @@ function ResultPage(props: ResultPageProps) {
 
   const [progressOpen, setProgressOpen] = useState(false);
   const [progress, setProgress] = useState<TaskProgressSnapshot | null>(null);
+  /** 「终止」请求在途：按钮置灰防重复点（协作式取消可能要等一条模型调用才算完） */
+  const [cancelling, setCancelling] = useState(false);
   const [expandedErrorIds, setExpandedErrorIds] = useState<Record<string, boolean>>({});
 
   const [matrixOpen, setMatrixOpen] = useState(false);
@@ -220,6 +375,56 @@ function ResultPage(props: ResultPageProps) {
 
   const [chatCollapsed, setChatCollapsed] = useState<boolean>(false);
   const [satellite, setSatellite] = useState<boolean>(false);
+  // —— 流场（水动力粒子图层）
+  // 素材只在模型服务里，经 Java 后端 /v0/bank/flow-field/** 代理转发；见 topics/flow-field.md。
+  const flowLayerRef = useRef<FlowFieldLayer | null>(null);
+  const flowGeometryRef = useRef<FlowFieldGeometry | null>(null);
+  /** 在途的工况清单请求，用于 StrictMode 双挂载时去重（见下方 effect 注释） */
+  const flowCasesRequestRef = useRef<Promise<unknown> | null>(null);
+  /**
+   * 清单是否已经拉到过一次（无论成功还是失败）。
+   *
+   * 用"结果长度 > 0"当守卫会在**两边都返回空**时变成死循环：effect 跑完 → 长度仍是 0 →
+   * 依赖变化或重渲染又跑一次 → 再打两个请求。服务器上真有一个场景都没有的时候，那就是一直打。
+   */
+  const flowListSettledRef = useRef<boolean>(false);
+  const [flowEnabled, setFlowEnabled] = useState<boolean>(false);
+  const [flowCases, setFlowCases] = useState<FlowFieldCase[]>([]);
+  /** 按场景生成的流场（覆盖整片 DEM）。与 flowCases 共用同一套取数路径，只是 id 形态不同。 */
+  const [flowScenes, setFlowScenes] = useState<FlowFieldScene[]>([]);
+  const [flowCaseId, setFlowCaseId] = useState<string>('');
+  /**
+   * 用户是否手动挑过工况/场景。
+   *
+   * 【为什么需要它】默认行为是"跟着所选任务的 DEM 自动切场景"，但如果用户已经手动选了
+   * 某个工况，再被自动切走就很烦。这一位一旦置起，自动切换就永久让位给用户的选择。
+   */
+  const flowUserPickedRef = useRef<boolean>(false);
+  /**
+   * `tiff-bounds` 的惰性缓存。
+   *
+   * 自动选场景的"被包含"那一级要知道任务 DEM 自己的范围，而这份数据只有 `tiff-bounds` 接口有
+   * （场景清单里只有场景自己的范围）。它跟流场没关系，所以**只在真的需要时**才拉一次，
+   * 并且把 promise 存起来 —— 同一个页面里多个任务来回切时不会重复请求。
+   */
+  const tiffBoundsPromiseRef = useRef<Promise<GeoJSON.FeatureCollection | null> | null>(null);
+  const loadTiffBounds = () => {
+    if (!tiffBoundsPromiseRef.current) {
+      tiffBoundsPromiseRef.current = fetchTiffBounds();
+    }
+    return tiffBoundsPromiseRef.current;
+  };
+  /** 当前生效的场景（选了场景才有值），用来在面板上显示"覆盖整片 DEM"的说明。 */
+  const activeFlowScene = useMemo(
+    () => flowScenes.find((scene) => scene.sceneId === flowCaseId) ?? null,
+    [flowScenes, flowCaseId],
+  );
+  const [flowStatus, setFlowStatus] = useState<FlowFieldStatus | null>(null);
+  const [flowError, setFlowError] = useState<string | null>(null);
+  const [flowCasesLoading, setFlowCasesLoading] = useState<boolean>(false);
+  /** 流场配色：换配色走 setParameters，不重建图层（重建会白丢已下载的 26 帧纹理）。 */
+  const [flowColorScheme, setFlowColorScheme] = useState<FlowColorSchemeId>(DEFAULT_FLOW_COLOR_SCHEME);
+  const flowColorSchemeRef = useRef<FlowColorSchemeId>(flowColorScheme);
   const [resizeTrigger, setResizeTrigger] = useState(0);
   const [leftPanelWidth, setLeftPanelWidth] = useState(350);
   const [rightPanelWidth, setRightPanelWidth] = useState(350);
@@ -229,6 +434,25 @@ function ResultPage(props: ResultPageProps) {
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [reportList, setReportList] = useState<any[]>([]);
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<'tasks' | 'reports' | 'progress' | 'skills'>('tasks');
+  const [vizTarget, setVizTarget] = useState<{ taskId: string; taskName: string } | null>(null);
+  const [vizMode, setVizMode] = useState<'merged' | 'per_bank'>('per_bank');
+  const [vizBanks, setVizBanks] = useState<string[]>([]);
+  const [vizSelected, setVizSelected] = useState<string[]>([]);
+  const [vizBankCounts, setVizBankCounts] = useState<Record<string, number>>({});
+  const [vizGenerating, setVizGenerating] = useState(false);
+  // 分幅出图：每张图再按经纬度切成 行×列 幅子图；每幅四项边界均为字符串，
+  // 留空 = 该边沿用均分网格默认值；各幅范围允许重叠，重叠部分分别出图。
+  const [vizSplit, setVizSplit] = useState(false);
+  const [vizSplitRows, setVizSplitRows] = useState(1);
+  const [vizSplitCols, setVizSplitCols] = useState(1);
+  const [vizTileEdges, setVizTileEdges] = useState<TileEdges[]>([]);
+
+  // —— AI 出报告：与出图完全相同的分幅语义（同一份面板、同一份 JSON 组装）
+  const [rptSplit, setRptSplit] = useState(false);
+  const [rptSplitRows, setRptSplitRows] = useState(1);
+  const [rptSplitCols, setRptSplitCols] = useState(1);
+  const [rptTileEdges, setRptTileEdges] = useState<TileEdges[]>([]);
+  const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; taskId: string; taskName: string } | null>(null);
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -248,17 +472,40 @@ function ResultPage(props: ResultPageProps) {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileDetail, setProfileDetail] = useState<SectionProfile | null>(null);
   const [regenerateTarget, setRegenerateTarget] = useState<{ taskId: string; taskName: string } | null>(null);
+  /** 出报告弹窗的语义：首次生成 / 已存在报告再生成（仅影响文案） */
+  const [reportDialogMode, setReportDialogMode] = useState<'create' | 'regenerate'>('create');
 
   // ============================================================
   //  API 请求 & 报告生成
   // ============================================================
 
-  const doGenerateReport = async (taskId: string, taskName: string) => {
+  /**
+   * 生成报告。
+   *
+   * @param split 按经纬度分幅参数（可选）。语义与「AI 出图」完全一致：
+   *              同一个 rows×cols 网格 + 同一份逐幅边界 → 出图与报告用同一组分区。
+   *              不传 = 不分幅，报告结构与历史版本一致。
+   */
+  const doGenerateReport = async (
+    taskId: string,
+    taskName: string,
+    split?: { rows: number; cols: number; tiles?: string },
+  ) => {
     setGeneratingTaskId(taskId);
     const ts = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    console.log(`[doGenerateReport] 开始生成报告: taskId=${taskId}, 时间=${ts}`);
+    console.log(`[doGenerateReport] 开始生成报告: taskId=${taskId}, split=${split ? `${split.rows}x${split.cols}` : '无'}, 时间=${ts}`);
     try {
-      const res = await fetch(`/v0/bank/ai/agent/report/task/${taskId}`, { method: 'POST' });
+      // 不分幅时**不带请求体**，与历史行为逐字节一致
+      const init: RequestInit = { method: 'POST' };
+      if (split) {
+        init.headers = { 'Content-Type': 'application/json' };
+        init.body = JSON.stringify({
+          splitRows: split.rows,
+          splitCols: split.cols,
+          ...(split.tiles ? { splitTiles: split.tiles } : {}),
+        });
+      }
+      const res = await fetch(`/v0/bank/ai/agent/report/task/${taskId}`, init);
       const data = await res.json();
       console.log(`[doGenerateReport] API 响应:`, data);
       if (data.success && data.data) {
@@ -281,14 +528,173 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
+  /**
+   * 打开出报告弹窗。**总是弹窗**（而不是首次直接生成）——弹窗里要能配置
+   * 「按经纬度分幅」，否则首次生成根本没有机会设置分区。默认不分幅，
+   * 直接点「生成报告」即等价于历史行为。
+   */
   const handleGenerateReport = (taskId: string, taskName: string) => {
     const existsInList = reportList.some((r: any) => r.taskId === taskId);
-    if (existsInList) {
-      setRegenerateTarget({ taskId, taskName });
-      return;
-    }
-    doGenerateReport(taskId, taskName);
+    setReportDialogMode(existsInList ? 'regenerate' : 'create');
+    setRegenerateTarget({ taskId, taskName });
   };
+
+  /** 打开出图弹窗：先拉该任务断面，按岸段聚合出可选清单 */
+  const openVizDialog = async (taskId: string, taskName: string) => {
+    setVizTarget({ taskId, taskName });
+    setVizMode('per_bank');
+    setVizBanks([]);
+    setVizSelected([]);
+    setVizBankCounts({});
+    setVizSplit(false);
+    setVizSplitRows(1);
+    setVizSplitCols(1);
+    setVizTileEdges([]);
+    try {
+      const res = await fetch(`/v0/bank/sections?task_id=${encodeURIComponent(taskId)}`);
+      const js = await res.json().catch(() => null);
+      const raw = js?.sections ?? js?.data ?? js;
+      const list: any[] = Array.isArray(raw) ? raw : [];
+      const counts: Record<string, number> = {};
+      list.forEach((s: any) => {
+        const bid = String(s?.bank_id ?? s?.bankId ?? '');
+        if (bid) counts[bid] = (counts[bid] || 0) + 1;
+      });
+      const banks = Object.keys(counts).sort();
+      setVizBankCounts(counts);
+      setVizBanks(banks);
+      setVizSelected(banks);
+    } catch {
+      // 拉不到清单时不再传 bankIds，由后端按任务解析全部有结果的岸段
+    }
+  };
+
+  /** 分块数钳制：单方向 1~6（6×6=36 幅封顶，防止误操作产生上百个 Python 进程） */
+  /** 调整 行×列：同步把逐幅边界数组伸缩到 rows*cols 项（保留已填内容） */
+  const applyVizSplitGrid = (rows: number, cols: number) => {
+    const r = clampGrid(rows);
+    const c = clampGrid(cols);
+    setVizSplitRows(r);
+    setVizSplitCols(c);
+    setVizTileEdges(prev =>
+      Array.from({ length: r * c }, (_, i) => prev[i] ?? { ...EMPTY_TILE_EDGES }));
+  };
+
+  /** 出报告的分幅 行×列 调整（与出图同一套限幅/伸缩规则） */
+  const applyRptSplitGrid = (rows: number, cols: number) => {
+    const r = clampGrid(rows);
+    const c = clampGrid(cols);
+    setRptSplitRows(r);
+    setRptSplitCols(c);
+    setRptTileEdges(prev =>
+      Array.from({ length: r * c }, (_, i) => prev[i] ?? { ...EMPTY_TILE_EDGES }));
+  };
+
+  /** 触发批量出图，并把返回的图片清单渲染成一个报告标签页 */
+  const runViz = async () => {
+    if (!vizTarget) return;
+    setVizGenerating(true);
+    try {
+      const splitTilesJson = vizSplit ? buildSplitTilesJson(vizSplitCols, vizTileEdges) : undefined;
+      const res = await fetch('/v0/bank/ai/viz/risk-map/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: vizTarget.taskId,
+          mode: vizMode,
+          bankIds: vizMode === 'per_bank' ? vizSelected : [],
+          ...(vizSplit ? { splitRows: vizSplitRows, splitCols: vizSplitCols } : {}),
+          ...(splitTilesJson ? { splitTiles: splitTilesJson } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        alert(translateError(data?.error || '出图失败'));
+        return;
+      }
+      const ts = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const images: any[] = Array.isArray(data.images) ? data.images : [];
+      const splitOn = vizSplit && (vizSplitRows > 1 || vizSplitCols > 1 || !!splitTilesJson);
+      const lines: string[] = [
+        '# AI 出图结果', '',
+        `**任务**：${vizTarget.taskName}（${vizTarget.taskId}）`, '',
+        `**模式**：${data.mode === 'per_bank' ? '按岸段分开出图' : '合并出图（整任务一张）'}`,
+        splitOn ? `（分幅 ${vizSplitRows} 行 × ${vizSplitCols} 列）` : '', '',
+        `**结果**：成功 ${data.succeeded} / 共 ${data.total} 张`,
+        (data.imageTotal > data.total ? `（分幅展开共 ${data.imageTotal} 幅子图）` : ''), '',
+      ];
+      let rendered = 0;
+      images.forEach((img: any) => {
+        const title = img.bankName || img.bankId || '任务风险分布图';
+        // 分幅条目：images[] 为多幅子图（行优先），逐幅渲染
+        if (img.success && Array.isArray(img.images) && img.images.length > 0) {
+          lines.push(`### ${title}（分幅 ${img.images.length} 幅）`, '');
+          img.images.forEach((sub: any, i: number) => {
+            const label = `第 ${i + 1}/${img.images.length} 幅`;
+            const range = Array.isArray(sub.bbox)
+              ? `（lng ${sub.bbox[0]}~${sub.bbox[2]}，lat ${sub.bbox[1]}~${sub.bbox[3]}）` : '';
+            rendered++;
+            lines.push(`**${label}**${range}`, '');
+            lines.push(sub.url ? `![${label}](${sub.url})` : `> ${label} 缺失文件`);
+            lines.push('');
+          });
+          return;
+        }
+        lines.push(`### ${title}`, '');
+        if (img.success && img.url) {
+          rendered++;
+          lines.push(`![${title}](${img.url})`);
+        } else {
+          lines.push(`> 出图失败：${img.error || '未知错误'}`);
+        }
+        lines.push('');
+      });
+      const prevLength = reportTabs.length;
+      setReportTabs(prev => [...prev, {
+        taskId: vizTarget.taskId,
+        taskName: `出图 · ${vizTarget.taskName} (${ts})`,
+        content: lines.join('\n'),
+      }]);
+      setActiveReportTab(prevLength);
+      if (prevLength === 0) setWorkspaceHeight(300);
+      setVizTarget(null);
+    } catch (e: any) {
+      alert(translateError(e?.message || '网络错误'));
+    } finally {
+      setVizGenerating(false);
+    }
+  };
+
+  /** 右键任务卡片弹出操作菜单，位置按视口边界收敛 */
+  const openTaskMenu = (e: ReactMouseEvent<HTMLDivElement>, task: { task_id: string; task_name: string }) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const MENU_W = 184;
+    const MENU_H = 150;
+    setTaskMenu({
+      x: Math.max(8, Math.min(e.clientX, window.innerWidth - MENU_W - 8)),
+      y: Math.max(8, Math.min(e.clientY, window.innerHeight - MENU_H - 8)),
+      taskId: task.task_id,
+      taskName: task.task_name,
+    });
+  };
+
+  /** 菜单打开时：点击空白 / 右键别处 / 滚动 / Esc 都关闭 */
+  useEffect(() => {
+    if (!taskMenu) return;
+    const close = () => setTaskMenu(null);
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setTaskMenu(null); };
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [taskMenu]);
 
   const handleExportSectionsDetail = async (taskId: string, taskName: string) => {
     try {
@@ -936,6 +1342,19 @@ function ResultPage(props: ResultPageProps) {
     return () => window.removeEventListener('report-saved', handler);
   }, []);
 
+  // 报告导出成功后（分幅报告会打包各分区断面详情 CSV）给一句明确回执，
+  // 否则浏览器只是静默下载一个 zip，用户不知道里面多了什么。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const csvCount = Number((e as CustomEvent).detail?.csvCount || 0);
+      if (csvCount > 0) {
+        alert(`已导出报告压缩包：报告.docx + ${csvCount} 个分区断面详情 CSV。`);
+      }
+    };
+    window.addEventListener('report-exports-saved', handler);
+    return () => window.removeEventListener('report-exports-saved', handler);
+  }, []);
+
   const parseResultsList = (data: any): any[] => parseList(data, 'results');
 
   // — 标准化结果记录
@@ -1098,7 +1517,10 @@ function ResultPage(props: ResultPageProps) {
       return acc;
     }, 0);
 
-    // 如果任务已完成，但仍有部分断面没有结果，则把它们当作“无结果/计算失败”展示出来
+    // 如果任务已完成，但仍有部分断面没有结果，则把它们当作“无结果/计算失败”展示出来。
+    // 例外：任务是被**终止**的 —— 那些断面根本没跑过，报成"计算失败"会冤枉它们，
+    // 所以换一条如实文案。终止后进度条能立刻收尾、不再空转，也靠这里区分开。
+    const cancelled = String(taskInfo?.status ?? '').toLowerCase() === 'cancelled';
     const completed = isTaskCompleted(taskInfo);
     const missingAsErrors: TaskProgressSnapshot['errors'] = [];
     if (completed) {
@@ -1113,7 +1535,9 @@ function ResultPage(props: ResultPageProps) {
               section_id: s.section_id,
               section_name: s.section_name,
               bank_id: s.bank_id,
-              message: hasAnyResult ? '计算未返回有效风险等级' : '未返回结果（可能计算失败）'
+              message: cancelled
+                ? '任务已终止，该断面未运行'
+                : (hasAnyResult ? '计算未返回有效风险等级' : '未返回结果（可能计算失败）')
             });
           }
         }
@@ -1588,6 +2012,233 @@ function ResultPage(props: ResultPageProps) {
     requestAnimationFrame(() => map.resize());
   }, [resizeTrigger]);
 
+  // —— 流场：第一次打开流场时才拉清单，避免页面加载就多打两个请求。
+  // 两条清单各来自一处：
+  //   * 内置工况（51 个 = 17 档流量 × 3 种潮型）来自模型服务的资源树，2024-08 的固定素材，
+  //     只盖住大区 DEM 的约 8%；
+  //   * 场景来自 resource/flowField/<scene-id>/，是按 DEM 范围从库里点云生成的，覆盖整片 DEM。
+  // 两者共用同一套取数路径，只是 id 形态不同，所以这里合并成一次加载、一个下拉。
+  //
+  // ⚠️ 这里刻意**不用** "let cancelled = false + cleanup 里置位" 那套写法，也不把
+  // flowCasesLoading 放进依赖数组。原因（真机踩过）：StrictMode 会「挂载 → 卸载 → 再挂载」，
+  // 而 loading 一旦进依赖，第二次挂载后状态更新触发的 cleanup 会把**唯一还活着**的那次请求
+  // 标记成 cancelled ⇒ 面板永远停在"正在读取工况清单…"。改用一个 ref 持有在途请求来做去重，
+  // 并且无论组件状态如何都清掉 loading。
+  useEffect(() => {
+    if (!flowEnabled || flowListSettledRef.current) return;
+    if (flowCasesRequestRef.current) return;
+    setFlowCasesLoading(true);
+    setFlowError(null);
+    // ⚠ 两个取数函数的**成功**返回形状不一样，必须在这里各自归一化成同一个对象形状：
+    //     * fetchFlowFieldCases()  -> { cases, frames }（对象）
+    //     * fetchFlowFieldScenes() -> FlowFieldScene[]（**数组本身**）
+    //   之前写成 `(sceneResult as { scenes?: FlowFieldScene[] })?.scenes ?? []`，
+    //   而数组没有 `.scenes` 字段 ⇒ 成功路径上**恒得空数组**；失败兜底的 `{ scenes: [] }`
+    //   恰好长得像成功结果，于是既不报错也不显示场景，静默退回内置工况（老范围）。
+    //   现在两条路径都产出 { ...: 数组, error? }，形状由 tsc 盯着，改错一侧就编译不过。
+    const request = Promise.all([
+      fetchFlowFieldCases().then(
+        (r) => ({ cases: r.cases, frames: r.frames, error: undefined as string | undefined }),
+        (err: any) => ({ cases: [] as FlowFieldCase[], frames: 0, error: err?.message as string | undefined }),
+      ),
+      fetchFlowFieldScenes().then(
+        (r) => ({ scenes: r, error: undefined as string | undefined }),
+        (err: any) => ({ scenes: [] as FlowFieldScene[], error: err?.message as string | undefined }),
+      ),
+    ]);
+    flowCasesRequestRef.current = request;
+    request
+      .then(([caseResult, sceneResult]) => {
+        const cases = caseResult?.cases ?? [];
+        const scenes = sceneResult?.scenes ?? [];
+        setFlowCases(cases);
+        setFlowScenes(scenes);
+        const firstError = caseResult?.error || sceneResult?.error;
+        if (firstError) setFlowError(String(firstError));
+        // 默认优先给场景 —— 它覆盖整片 DEM；没有场景才退回内置工况。
+        // 场景的具体选哪一档交给下面那个"跟着任务 DEM 走"的 effect，这里只兜一个底。
+        const fallbackScene = scenes[Math.floor(scenes.length / 2)];
+        const preferredCase = cases.find((c) => c.caseId === '84000dc')
+          ?? cases.find((c) => c.caseId === '10000dc')
+          ?? cases[Math.floor(cases.length / 2)];
+        const initial = fallbackScene?.sceneId ?? preferredCase?.caseId ?? '';
+        if (initial) setFlowCaseId((prev) => prev || initial);
+      })
+      .finally(() => {
+        flowCasesRequestRef.current = null;
+        flowListSettledRef.current = true;
+        setFlowCasesLoading(false);
+      });
+  }, [flowEnabled]);
+
+  // —— 流场：把粒子图层挂到结果页地图上。
+  // 三个必须处理的点：
+  //  1. 切换卫星底图走的是 map.setStyle，会把图层全部清掉 ⇒ 要在 style.load 时重新挂；
+  //  2. 内置工况的包围盒只有约 68km × 37km，地图默认 zoom 下只有几十像素 ⇒ 打开时飞到它上面；
+  //     按场景生成的则是一整片 DEM（大区那份是 312 × 96 km），同样需要飞过去才看得见；
+  //     两种情况都用 description 里的 extent 做 fitBounds，不用分别处理。
+  //  3. 场景的 id 与内置工况形态不同，但请求路径一样，所以这里不需要分支。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!flowEnabled || !flowCaseId) {
+      const existing = flowLayerRef.current;
+      if (existing) {
+        try {
+          if (map.getLayer(FLOW_FIELD_LAYER_ID)) map.removeLayer(FLOW_FIELD_LAYER_ID);
+        } catch {
+          // 样式正在切换时 getLayer 可能抛错，此时图层本来也会被清掉
+        }
+        existing.dispose();
+        flowLayerRef.current = null;
+      }
+      flowGeometryRef.current = null;
+      setFlowStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    setFlowError(null);
+    const layer = new FlowFieldLayer({
+      // 用 ref 读当前配色：配色变化只走下面的 setParameters，
+      // 不放进本 effect 的依赖里 —— 否则换一次颜色就重建整层、白丢 26 帧纹理。
+      colorScheme: flowColorSchemeRef.current,
+      onStatus: (status) => {
+        if (!cancelled) setFlowStatus(status);
+      },
+    });
+    flowLayerRef.current = layer;
+
+    const attach = () => {
+      if (cancelled) return;
+      try {
+        if (!map.getLayer(FLOW_FIELD_LAYER_ID)) map.addLayer(layer);
+      } catch {
+        // 样式还没就绪：后面的 load / style.load 会再试一次
+      }
+    };
+    map.on('load', attach);
+    map.on('style.load', attach);
+    attach();
+
+    void (async () => {
+      try {
+        const geometry = await fetchFlowFieldGeometry(flowCaseId);
+        if (cancelled) return;
+        flowGeometryRef.current = geometry;
+        await layer.loadCase(flowCaseId, geometry);
+        if (cancelled) return;
+        map.fitBounds(
+          [
+            [geometry.west * 360 - 180, latFromMercatorY(geometry.south)],
+            [geometry.east * 360 - 180, latFromMercatorY(geometry.north)],
+          ],
+          { padding: 24, duration: 700 },
+        );
+      } catch (err: any) {
+        if (!cancelled) setFlowError(err?.message || String(err));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      map.off('load', attach);
+      map.off('style.load', attach);
+      try {
+        if (map.getLayer(FLOW_FIELD_LAYER_ID)) map.removeLayer(FLOW_FIELD_LAYER_ID);
+      } catch {
+        // 同上：样式切换中忽略
+      }
+      layer.dispose();
+      if (flowLayerRef.current === layer) flowLayerRef.current = null;
+      flowGeometryRef.current = null;
+    };
+  }, [flowEnabled, flowCaseId]);
+
+  /** 换配色：只把新的色带重烘进 1 KB 的查找纹理，粒子状态与已下载的帧纹理都不动。 */
+  useEffect(() => {
+    flowColorSchemeRef.current = flowColorScheme;
+    flowLayerRef.current?.setParameters({ colorScheme: flowColorScheme });
+  }, [flowColorScheme]);
+
+  /**
+   * 流场跟着「当前任务的 DEM」走。
+   *
+   * 这是"流场要能展示所属"那条需求的落点：
+   *   任务 → 断面档案里的 dem_id → 覆盖这片 DEM 的场景 → 场景的 extent 就是那片 DEM 的范围。
+   * 内置工况那 68 km 的小框因此只在"没有对应场景"时才会被用到。
+   *
+   * 匹配分两级（细节见 {@link findSceneForDem}）：先找 `tiff_keys` 里有这片 DEM 的场景；
+   * 找不到再退一步，找"范围包住这片 DEM"的场景。第二级要 DEM 自己的包围盒，所以这里
+   * 惰性拉一次 `tiff-bounds` —— 只有第一级落空时才会真去打这个请求。
+   *
+   * 取 dem_id 走的是断面档案接口（`section_profiles.dem_id`），它已经按任务缓存过
+   * （{@link ensureTaskProfilesLoaded}），所以这里一般不会多打请求。
+   */
+  useEffect(() => {
+    if (!flowEnabled || flowScenes.length === 0) return;
+    // 用户手动挑过就不再自动切，免得刚选好又被顶掉
+    if (flowUserPickedRef.current) return;
+    const taskId = selectedTask;
+    if (!taskId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profiles = await ensureTaskProfilesLoaded(taskId);
+        if (cancelled) return;
+        const demIds = Array.from(
+          new Set(
+            Object.values(profiles)
+              .map((profile: any) => String(profile?.dem_id ?? profile?.demId ?? '').trim())
+              .filter(Boolean),
+          ),
+        );
+        // 第一级：同范围的 DEM（不需要额外请求）
+        let hit = demIds
+          .map((dem) => findSceneForDem(flowScenes, dem, inferPreferredTidal(dem)))
+          .find(Boolean) ?? null;
+        // 第二级：小区域 DEM 没有自己的场景，退一步找"范围包住它"的场景。
+        // 这一步才需要各 DEM 的范围；拉不到（比如服务里没有登记这片 DEM）就保持原样。
+        if (!hit) {
+          const bounds = await loadTiffBounds();
+          if (cancelled) return;
+          hit = demIds
+            .map((dem) =>
+              findSceneForDem(flowScenes, dem, inferPreferredTidal(dem), demBoundsOf(bounds, dem)),
+            )
+            .find(Boolean) ?? null;
+        }
+        if (!hit || cancelled) return;
+        setFlowCaseId(hit.sceneId);
+      } catch {
+        // 任务还没跑出断面档案时拿不到 dem_id —— 保持当前选择即可，不打扰用户。
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // ensureTaskProfilesLoaded 是稳定的取数封装（内部有缓存），不进依赖以免每渲染都重跑
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowEnabled, flowScenes, selectedTask]);
+
+  /** 工况按流量档分组，51 条平铺在一个下拉里太糊。 */
+  const flowCaseGroups = useMemo(() => {
+    const groups = new Map<string, FlowFieldCase[]>();
+    for (const item of flowCases) {
+      const bucket = groups.get(item.waterQs);
+      if (bucket) bucket.push(item);
+      else groups.set(item.waterQs, [item]);
+    }
+    return [...groups.entries()].map(([waterQs, items]) => ({ waterQs, cases: items }));
+  }, [flowCases]);
+
+  const toggleFlowPlaying = () => {
+    const layer = flowLayerRef.current;
+    if (!layer) return;
+    layer.setPlaying(flowStatus?.phase !== 'playing');
+  };
+
   const progressPercent = useMemo(() => {
     if (!progress) return 0;
     if (progress.expectedTotal <= 0) return 0;
@@ -1623,6 +2274,49 @@ function ResultPage(props: ResultPageProps) {
     fontSize: '0.8rem', color: '#334155',
     display: 'flex', alignItems: 'center', gap: 4,
     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+  };
+
+  // ——— 终止当前选中的运行中任务 ———
+  // 与资源树 / 侧栏下半区共用同一个接口。三段式：确认 → 调接口 → 就地刷新进度。
+  // 刻意不干等 2s 轮询周期：终止后 status 与 run_completed_at 都会变，
+  // 就地刷一次能让进度条立刻收尾、按钮立刻消失，反馈才跟得上点击。
+  const handleStopRunningTask = async () => {
+    const taskId = selectedTask;
+    if (!taskId || cancelling) return;
+    const taskName = taskList.find((t: any) => String(t?.task_id ?? t?.id) === String(taskId))?.task_name || taskId;
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: '终止运行中的任务',
+        content: `确认终止任务「${taskName}」？当前正在计算的那条断面会算完，之后的断面不再计算；已经算完并入库的断面结果全部保留。`,
+        okText: '终止任务',
+        cancelText: '再想想',
+        okButtonProps: { danger: true },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+
+    setCancelling(true);
+    try {
+      const outcome = await cancelTask(taskId);
+      if (!outcome.ok) {
+        alert(outcome.message);
+        return;
+      }
+      if (outcome.kind === 'stopping') {
+        alert(`已请求终止「${taskName}」：当前断面算完后停止，已完成的结果保留。`);
+      } else if (outcome.kind === 'stale-cleared') {
+        alert(`「${taskName}」的执行进程早已不存在，已直接标记为「已终止」。`);
+      } else {
+        alert(`「${taskName}」当前并不在运行中，已刷新状态。`);
+      }
+      const latest = (lastSectionsByTaskRef.current[taskId] ?? []) as SectionResult[];
+      await updateProgressAndMap(taskId, taskName, latest);
+    } finally {
+      setCancelling(false);
+    }
   };
 
   // ============================================================
@@ -1697,6 +2391,7 @@ function ResultPage(props: ResultPageProps) {
                     key={task.task_id} 
                     className={`task-item ${selectedTask === task.task_id ? 'active' : ''}`}
                     onClick={() => handleTaskClick(task.task_id)}
+                    onContextMenu={(e) => openTaskMenu(e, task)}
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('application/task-id', task.task_id);
@@ -1717,45 +2412,7 @@ function ResultPage(props: ResultPageProps) {
                         handleDeleteTaskById(task.task_id);
                       }} title="删除任务">×</button>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleGenerateReport(task.task_id, task.task_name); }}
-                      disabled={generatingTaskId === task.task_id}
-                      style={{
-                        padding: '5px 14px', fontSize: '0.8rem',
-                        background: generatingTaskId === task.task_id
-                          ? '#94a3b8'
-                          : 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(59,130,246,0.22) 100%)',
-                        color: generatingTaskId === task.task_id ? '#fff' : '#1E40AF',
-                        border: generatingTaskId === task.task_id ? 'none' : '1.5px solid rgba(59,130,246,0.45)',
-                        borderRadius: 14, cursor: generatingTaskId === task.task_id ? 'default' : 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                        backdropFilter: 'blur(8px) saturate(1.3)',
-                        WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
-                        boxShadow: '0 0 10px rgba(59,130,246,0.1), inset 0 1px 0 rgba(255,255,255,0.4)',
-                      }}
-                    >
-                      <FileText size={12} />
-                      {generatingTaskId === task.task_id ? '生成中...' : 'AI 出报告'}
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleExportSectionsDetail(task.task_id, task.task_name); }}
-                      style={{
-                        padding: '5px 14px', fontSize: '0.8rem',
-                        background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(16,185,129,0.22) 100%)',
-                        color: '#065F46',
-                        border: '1.5px solid rgba(16,185,129,0.45)',
-                        borderRadius: 14, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                        backdropFilter: 'blur(8px) saturate(1.3)',
-                        WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
-                        boxShadow: '0 0 10px rgba(16,185,129,0.1), inset 0 1px 0 rgba(255,255,255,0.4)',
-                      }}
-                    >
-                      <Download size={12} />
-                      导出断面详情
-                    </button>
-                    </div>
+                    <div className="task-hint">右键查看操作</div>
                   </div>
                 ))}
               </div>
@@ -1850,6 +2507,33 @@ function ResultPage(props: ResultPageProps) {
                     <div>成功: {progress?.successCount ?? 0} · 失败: {progress?.errorCount ?? 0}</div>
                     <div style={{ marginTop: 2, fontSize: '0.65rem' }}>更新: {progress?.lastUpdatedAt ? new Date(progress.lastUpdatedAt).toLocaleTimeString() : '-'}</div>
                   </div>
+
+                  {/* 终止入口：只在任务确实还在跑时出现；终止后 status 变化，按钮自动消失 */}
+                  {String(progress?.status ?? '').toLowerCase() === 'running' && (
+                    <button
+                      type="button"
+                      onClick={() => { void handleStopRunningTask(); }}
+                      disabled={cancelling}
+                      data-tour="result-stop"
+                      style={{
+                        marginTop: 10, width: '100%',
+                        border: '1px solid #fca5a5',
+                        background: cancelling ? '#fffbeb' : '#fff',
+                        color: cancelling ? '#a16207' : '#b91c1c',
+                        borderColor: cancelling ? '#fcd34d' : '#fca5a5',
+                        borderRadius: 6,
+                        cursor: cancelling ? 'default' : 'pointer',
+                        fontSize: '0.72rem', padding: '5px 10px',
+                      }}
+                    >
+                      {cancelling ? '终止中…（等一下当前断面算完）' : '终止任务'}
+                    </button>
+                  )}
+                  {String(progress?.status ?? '').toLowerCase() === 'cancelled' && (
+                    <div style={{ marginTop: 8, fontSize: '0.7rem', color: '#b45309', lineHeight: 1.6 }}>
+                      该任务已终止：已算完的断面结果保留，未运行的断面不会补算。
+                    </div>
+                  )}
                   {(progress?.errors?.length ?? 0) > 0 ? (
                     <div className="task-list-container" style={{ marginTop: 10 }}>
                       {progress!.errors.map(err => {
@@ -2067,6 +2751,175 @@ function ResultPage(props: ResultPageProps) {
           <MessageCircle size={14} />
           {chatCollapsed ? 'AI' : '收起'}
         </button>
+        {/* —— 流场开关与控件：接在卫星 / AI 这组浮层按钮之后 */}
+        <button
+          onClick={() => setFlowEnabled(v => !v)}
+          title={flowEnabled ? '关闭流场' : '显示流场（水动力粒子）'}
+          style={{
+            ...MAP_OVERLAY_BTN_STYLE,
+            top: 88,
+            ...(flowEnabled
+              ? { background: 'rgba(14,165,233,0.92)', color: '#ffffff', borderColor: 'rgba(14,165,233,0.65)' }
+              : null),
+          }}
+        >
+          <Waves size={14} /> 流场
+        </button>
+
+        {flowEnabled && (
+          <div
+            style={{
+              position: 'absolute', right: 12, top: 126, zIndex: 10, width: 248,
+              background: 'rgba(255,255,255,0.84)',
+              backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+              border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14,
+              padding: '10px 12px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+              display: 'flex', flexDirection: 'column', gap: 8,
+              fontSize: '0.78rem', color: '#334155',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: 600, color: '#0f172a' }}>流场 · 水动力</span>
+              <span style={{ color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                {flowStatus?.phase === 'playing' ? `${flowStatus.fps} FPS` : ''}
+              </span>
+            </div>
+
+            {flowCasesLoading ? (
+              <div style={{ color: '#64748b' }}>正在读取场景与工况清单…</div>
+            ) : flowScenes.length === 0 && flowCases.length === 0 ? (
+              <div style={{ color: '#b45309' }}>没有可用的流场工况或场景</div>
+            ) : (
+              <select
+                value={flowCaseId}
+                onChange={(e) => {
+                  // 手动选过之后，上面的"跟着任务 DEM 自动切"就永久让位，不再顶掉用户的选择
+                  flowUserPickedRef.current = true;
+                  setFlowCaseId(e.target.value);
+                }}
+                title={
+                  activeFlowScene
+                    ? `场景 ${activeFlowScene.sceneId}：${describeScene(activeFlowScene)}`
+                    : flowCases.find(c => c.caseId === flowCaseId)
+                      ? describeCase(flowCases.find(c => c.caseId === flowCaseId)!)
+                      : ''
+                }
+                style={{
+                  width: '100%', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)',
+                  padding: '4px 6px', fontSize: '0.78rem', color: '#334155',
+                  background: 'rgba(255,255,255,0.9)',
+                }}
+              >
+                {/* 场景在前：它覆盖整片 DEM，是"展示所属 DEM"的正确选项 */}
+                {flowScenes.length > 0 && (
+                  <optgroup label="覆盖任务 DEM（按场景生成）">
+                    {flowScenes.map(item => (
+                      <option key={item.sceneId} value={item.sceneId}>{describeScene(item)}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {flowCaseGroups.map(group => (
+                  <optgroup key={group.waterQs} label={`内置工况 · 流量 ${group.waterQs} m³/s（仅局部）`}>
+                    {group.cases.map(item => (
+                      <option key={item.caseId} value={item.caseId}>{tidalLevelLabel(item.tidalLevel)}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            )}
+
+            {activeFlowScene && (
+              <div style={{ color: '#0f766e', lineHeight: 1.5 }}>
+                场景覆盖整片 DEM：与 DEM 包围盒重叠
+                {activeFlowScene.coverage != null ? ` ${(activeFlowScene.coverage * 100).toFixed(1)}%` : '—'}
+                {activeFlowScene.cellSizeM > 0 ? `，格距 ${activeFlowScene.cellSizeM.toFixed(0)} m` : ''}
+              </div>
+            )}
+
+            {/* —— 配色：每个按钮直接用该色带自己的 stop 画渐变，预览与地图上出现的颜色同源 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: '#64748b', flex: '0 0 auto' }}>配色</span>
+              <div style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0 }}>
+                {FLOW_COLOR_SCHEMES.map(scheme => {
+                  const active = scheme.id === flowColorScheme;
+                  return (
+                    <button
+                      key={scheme.id}
+                      onClick={() => setFlowColorScheme(scheme.id)}
+                      title={`${scheme.label} —— ${scheme.hint}`}
+                      aria-label={`流场配色：${scheme.label}`}
+                      aria-pressed={active}
+                      style={{
+                        // ⚠ padding 必须显式清零：index.css 里 Vite 模板遗留的全局
+                        // `button { padding: .6em 1.2em }` 会把固定尺寸按钮的内容区整个吃掉。
+                        padding: 0,
+                        flex: '1 1 0', minWidth: 0, height: 22, borderRadius: 6, cursor: 'pointer',
+                        background: flowColorSchemeGradient(scheme),
+                        border: active ? '2px solid #0f172a' : '1px solid rgba(0,0,0,0.12)',
+                        boxShadow: active ? '0 0 0 2px rgba(14,165,233,0.35)' : 'none',
+                        transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {(flowStatus?.frameCount ?? 0) > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={toggleFlowPlaying}
+                  disabled={!flowStatus || flowStatus.phase === 'loading' || flowStatus.phase === 'error'}
+                  title={flowStatus?.phase === 'playing' ? '暂停' : '播放'}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    // ⚠ padding 必须显式清零：index.css 里 Vite 模板遗留的全局
+                    // `button { padding: .6em 1.2em }` 会把 26px 宽的按钮内容宽度整个吃掉，
+                    // 内联 SVG 作为 flex 子项被压成 0 宽 ⇒ 图标静默消失（活动栏图标、断面「×」踩过同一个坑）。
+                    padding: 0,
+                    width: 26, height: 26, borderRadius: 8, cursor: 'pointer',
+                    border: '1px solid rgba(0,0,0,0.10)', background: 'rgba(255,255,255,0.9)',
+                    color: '#334155', flex: '0 0 auto',
+                  }}
+                >
+                  {flowStatus?.phase === 'playing'
+                    ? <Pause size={12} style={{ flex: '0 0 auto' }} />
+                    : <Play size={12} style={{ flex: '0 0 auto' }} />}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, flowStatus!.frameCount - 1)}
+                  value={flowStatus?.frame ?? 0}
+                  onChange={(e) => flowLayerRef.current?.seekFrame(Number(e.target.value))}
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+                <span style={{ color: '#64748b', fontVariantNumeric: 'tabular-nums', flex: '0 0 auto' }}>
+                  {(flowStatus?.frame ?? 0) + 1}/{flowStatus!.frameCount}
+                </span>
+              </div>
+            )}
+
+            {flowError && <div style={{ color: '#b91c1c', lineHeight: 1.5 }}>{flowError}</div>}
+            {!flowError && flowStatus?.message && (
+              <div style={{ color: '#b45309', lineHeight: 1.5 }}>{flowStatus.message}</div>
+            )}
+            {!flowError && flowStatus?.phase === 'loading' && (
+              <div style={{ color: '#64748b' }}>正在加载流场纹理…</div>
+            )}
+            {!flowError && flowStatus && flowStatus.phase !== 'loading'
+              && flowStatus.loadedFrames < flowStatus.frameCount && (
+                <div style={{ color: '#64748b' }}>
+                  纹理缓存 {flowStatus.loadedFrames}/{flowStatus.frameCount}（后台补齐中）
+                </div>
+              )}
+            <div style={{ color: '#94a3b8', lineHeight: 1.5 }}>
+              流速已作视觉放大（×2600）—— 真实流速走完整个流场范围要几十小时，不放大看不出移动；
+              粒子按流速取色带（右端为最大流速）。场景覆盖的 DEM 比内置工况大得多，同样的放大倍数下
+              屏幕上会显得更慢，这是尺度差异，不是流速变小。
+            </div>
+          </div>
+        )}
         {reportTabs.length > 0 && (
           <>
             <VerticalResizeHandle onResize={(delta) => setWorkspaceHeight(h => Math.max(80, h + delta))} onDragEnd={() => setResizeTrigger(t => t + 1)} />
@@ -2108,18 +2961,186 @@ function ResultPage(props: ResultPageProps) {
       </div>
       {!chatCollapsed && <ResizeHandle onResize={(delta) => setRightPanelWidth(w => Math.max(200, Math.min(600, w - delta)))} onDragEnd={() => setResizeTrigger(t => t + 1)} />}
       <ChatPanel collapsed={chatCollapsed} width={rightPanelWidth} selectedSkills={selectedSkills} setSelectedSkills={setSelectedSkills} chatTasks={chatTasks} setChatTasks={setChatTasks} chatReports={chatReports} setChatReports={setChatReports} onReportsUpdated={() => { fetchReportList(); }} />
+      {taskMenu && (
+        <div
+          className="task-menu"
+          style={{ top: taskMenu.y, left: taskMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        >
+          <div className="task-menu-title" title={taskMenu.taskName}>{taskMenu.taskName}</div>
+          <button
+            className="task-menu-item"
+            disabled={generatingTaskId === taskMenu.taskId}
+            onClick={() => { const t = taskMenu; setTaskMenu(null); handleGenerateReport(t.taskId, t.taskName); }}
+          >
+            <FileText size={13} />
+            {generatingTaskId === taskMenu.taskId ? '报告生成中…' : 'AI 出报告'}
+          </button>
+          <button
+            className="task-menu-item"
+            onClick={() => { const t = taskMenu; setTaskMenu(null); openVizDialog(t.taskId, t.taskName); }}
+          >
+            <BarChart3 size={13} />
+            AI 出图
+          </button>
+          <button
+            className="task-menu-item"
+            title="整表导出：该任务全部断面合并为一个 CSV，不按经纬度分区拆分。分区断面详情请用「AI 出报告」生成报告后在报告面板右上角导出。"
+            onClick={() => { const t = taskMenu; setTaskMenu(null); handleExportSectionsDetail(t.taskId, t.taskName); }}
+          >
+            <Download size={13} />
+            导出断面详情（整表 CSV）
+          </button>
+        </div>
+      )}
+      {vizTarget && (
+        <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
+        <Modal
+          title="AI 出图"
+          open={true}
+          onOk={runViz}
+          confirmLoading={vizGenerating}
+          onCancel={() => { if (!vizGenerating) setVizTarget(null); }}
+          okText={vizSplit
+            ? `分幅出图（${vizMode === 'per_bank'
+              ? (vizBanks.length > 0 ? `${vizSelected.length} 岸段 × ${vizSplitRows * vizSplitCols} 幅` : `每岸段 ${vizSplitRows * vizSplitCols} 幅`)
+              : `${vizSplitRows * vizSplitCols} 幅`}）`
+            : vizMode === 'per_bank'
+              ? (vizBanks.length > 0 ? `按岸段出图（${vizSelected.length} 张）` : '按岸段出图（全部岸段）')
+              : '合并出图（1 张）'}
+          cancelText="取消"
+          centered
+          okButtonProps={{
+            disabled: vizGenerating || (vizMode === 'per_bank' && vizBanks.length > 0 && vizSelected.length === 0),
+            style: {
+              borderRadius: 14,
+              background: 'linear-gradient(135deg, rgba(139,92,246,0.45) 0%, rgba(109,40,217,0.32) 100%)',
+              border: '1px solid rgba(139,92,246,0.3)',
+              color: '#fff',
+              fontWeight: 500,
+              backdropFilter: 'blur(8px) saturate(1.3)',
+              WebkitBackdropFilter: 'blur(8px) saturate(1.3)',
+            },
+          }}
+          cancelButtonProps={{
+            style: {
+              borderRadius: 14,
+              background: 'rgba(255,255,255,0.35)',
+              border: '1px solid rgba(150,150,150,0.35)',
+              color: '#555',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+            },
+          }}
+          styles={{
+            mask: {
+              background: 'rgba(0,0,0,0.3)',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)',
+            },
+            container: {
+              background: 'radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.4) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(254,243,199,0.15) 0%, transparent 50%), rgba(255,255,255,0.82)',
+              backdropFilter: 'blur(16px) saturate(1.5)',
+              WebkitBackdropFilter: 'blur(16px) saturate(1.5)',
+              borderRadius: 14,
+              border: '1px solid rgba(255,255,255,0.35)',
+              boxShadow: '0 0 0 1px rgba(255,255,255,0.15), 0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.4)',
+            },
+            header: { background: 'transparent', borderBottom: 'none' },
+            body: { background: 'transparent' },
+            footer: { background: 'transparent', borderTop: 'none' },
+          }}
+        >
+          <div style={{ fontSize: '0.85rem', color: '#444' }}>
+            <div style={{ marginBottom: 10 }}>
+              任务：<b>{vizTarget.taskName}</b>（{vizTarget.taskId}）
+            </div>
+            <div style={{ display: 'flex', gap: 20, marginBottom: 12 }}>
+              <label style={{ cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="viz-mode"
+                  checked={vizMode === 'merged'}
+                  onChange={() => setVizMode('merged')}
+                />{' '}
+                合并出图 <span style={{ color: '#94a3b8' }}>（全部岸段合到一张）</span>
+              </label>
+              <label style={{ cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="viz-mode"
+                  checked={vizMode === 'per_bank'}
+                  onChange={() => setVizMode('per_bank')}
+                />{' '}
+                按岸段分开出图 <span style={{ color: '#94a3b8' }}>（每岸段一张）</span>
+              </label>
+            </div>
+            {vizMode === 'per_bank' && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                  <span style={{ color: '#64748b' }}>共 {vizBanks.length} 个岸段</span>
+                  <button
+                    onClick={() => setVizSelected(vizBanks)}
+                    style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontSize: '0.78rem', padding: 0 }}
+                  >全选</button>
+                  <button
+                    onClick={() => setVizSelected([])}
+                    style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontSize: '0.78rem', padding: 0 }}
+                  >清空</button>
+                </div>
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 8, maxHeight: 220, overflowY: 'auto' }}>
+                  {vizBanks.length === 0 && (
+                    <div style={{ color: '#94a3b8' }}>未取到岸段清单，将按该任务全部有结果的岸段出图</div>
+                  )}
+                  {vizBanks.map((bid) => (
+                    <label key={bid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 2px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={vizSelected.includes(bid)}
+                        onChange={(e) => setVizSelected(prev =>
+                          e.target.checked ? [...prev, bid] : prev.filter(x => x !== bid))}
+                      />
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{bid}</span>
+                      <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{vizBankCounts[bid] || 0} 断面</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+            {/* 分幅出图：把每张图按经纬度再切成 行×列 幅独立子图（两种模式下均可用） */}
+            <SplitSettingsPanel
+              enabled={vizSplit}
+              onToggle={(next) => {
+                setVizSplit(next);
+                if (next) applyVizSplitGrid(vizSplitRows, vizSplitCols);
+              }}
+              rows={vizSplitRows}
+              cols={vizSplitCols}
+              onGridChange={applyVizSplitGrid}
+              edges={vizTileEdges}
+              onEdgesChange={setVizTileEdges}
+              title="按经纬度分幅出图"
+              hint="（每张图再切成 行×列 幅，各自独立文件）"
+            />
+          </div>
+        </Modal>
+        </ConfigProvider>
+      )}
       {regenerateTarget && (
         <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
         <Modal
-          title="确认生成报告"
+          title={reportDialogMode === 'regenerate' ? '确认生成报告' : '生成风险评估报告'}
           open={true}
           onOk={() => {
             const { taskId, taskName } = regenerateTarget;
+            const tiles = rptSplit ? buildSplitTilesJson(rptSplitCols, rptTileEdges) : undefined;
             setRegenerateTarget(null);
-            doGenerateReport(taskId, taskName);
+            doGenerateReport(taskId, taskName,
+              rptSplit ? { rows: rptSplitRows, cols: rptSplitCols, tiles } : undefined);
           }}
           onCancel={() => setRegenerateTarget(null)}
-          okText="生成新报告"
+          okText={reportDialogMode === 'regenerate' ? '生成新报告' : '生成报告'}
           cancelText="取消"
           centered
           okButtonProps={{
@@ -2176,8 +3197,34 @@ function ResultPage(props: ResultPageProps) {
           }}
         >
           <p style={{ fontSize: '0.9rem', color: '#444' }}>
-            该任务已有报告记录，是否基于最新数据再生成一份新的报告？
+            {reportDialogMode === 'regenerate'
+              ? '该任务已有报告记录，是否基于最新数据再生成一份新的报告？'
+              : '将基于该任务的最新断面风险数据生成一份完整报告。'}
           </p>
+          {regenerateTarget && (
+            <div style={{ fontSize: '0.85rem', color: '#444' }}>
+              <div>
+                任务：<b>{regenerateTarget.taskName}</b>（{regenerateTarget.taskId}）
+              </div>
+              {/* 与「AI 出图」同一份面板：两处配出来的分区边界必然一致，
+                  报告的分区章节因此天然对齐出图的子图 */}
+              <SplitSettingsPanel
+                enabled={rptSplit}
+                onToggle={(next) => {
+                  setRptSplit(next);
+                  if (next) applyRptSplitGrid(rptSplitRows, rptSplitCols);
+                }}
+                rows={rptSplitRows}
+                cols={rptSplitCols}
+                onGridChange={applyRptSplitGrid}
+                edges={rptTileEdges}
+                onEdgesChange={setRptTileEdges}
+                title="按经纬度分幅（报告与出图使用同一套分区）"
+                hint="（报告按分区组织章节，每个分区对应一幅分布图子图）"
+                summary={rptSplit ? `报告将分 ${rptSplitRows * rptSplitCols} 个区域` : undefined}
+              />
+            </div>
+          )}
         </Modal>
         </ConfigProvider>
       )}
