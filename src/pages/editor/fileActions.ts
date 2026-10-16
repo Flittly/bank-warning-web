@@ -3,6 +3,7 @@ import * as turf from '@turf/turf';
 import type { ChangeEvent } from 'react';
 import { ensureDefaultBasicParams } from '../../services/basicParamsService';
 import { setCurrentTaskId } from './taskState';
+import { newTaskId } from '../../utils/taskId';
 import { stripZFromGeoJSON } from '../../utils/geojson';
 import { coordsToVerticalFootPoint, getVerticalFootPointFromAny } from '../../utils/verticalFootPoint';
 
@@ -153,7 +154,7 @@ export async function uploadSectionsGeoJsonAndCreateTaskAction(params: {
       return;
     }
 
-    const taskId = `task-${Date.now()}`;
+    const taskId = newTaskId();
     setCurrentTaskId(taskId);
 
     const bankIdSet = new Set<string>();

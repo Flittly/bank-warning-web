@@ -6,6 +6,7 @@ import { ensureDefaultBasicParams } from '../../services/basicParamsService';
 import type { SectionParams } from '../../types/sections';
 import { fetchSectionParams } from './sectionApi';
 import { getCurrentTaskId, setCurrentTaskId } from './taskState';
+import { newTaskId } from '../../utils/taskId';
 import {
   coordsToVerticalFootPoint,
   getVerticalFootCoordsFromAny,
@@ -209,7 +210,7 @@ async function generateSectionsAndCreateTaskCore(params: {
         // 用户取消创建任务
         return;
       }
-      taskId = `task-${Date.now()}`;
+      taskId = newTaskId();
       setCurrentTaskId(taskId);
     }
 
