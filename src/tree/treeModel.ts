@@ -1,4 +1,7 @@
 import type { TreeNode } from './types';
+// 「什么算 running」全仓只允许有一个定义（后端的字面量写在 TaskMapper.xml 的 markRunning）。
+// 这里刻意复用下半区面板那份，而不是再抄一遍字符串比较 —— 那正是两处口径慢慢漂移的起点。
+import { isRunningStatus } from '../components/tree/loadedOnMap';
 
 export function buildBanksFolder(banks: any[]): TreeNode {
   const children: TreeNode[] = (banks || [])
@@ -23,7 +26,10 @@ export function buildBanksFolder(banks: any[]): TreeNode {
         ],
       };
     });
-  return { id: 'folder:banks', kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(children.length), children, actions: ['bank.upload', 'bank.colorToggle'] };
+  // 与「断面」文件夹对称：文件夹上挂一对批量动作（全部加载到地图 / 全部移出地图）。
+  // 岸段库里上百条时，只能逐条点行尾的「加载到地图」是同一类痛点，之前只补了断面那一侧。
+  // 这对 key 只在右键菜单与行尾出现（FOLDER_HOVER_KEYS 控制），不会给单条岸段加图标。
+  return { id: 'folder:banks', kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(children.length), children, actions: ['bank.upload', 'bank.colorToggle', 'bank.loadAll', 'bank.removeAll'] };
 }
 
 export function buildParamsFolder(params: any[]): TreeNode {
@@ -42,7 +48,10 @@ export function buildParamsFolder(params: any[]): TreeNode {
       actions: ['param.select', 'param.props', 'param.info', 'param.editSectionParams'],
     };
   });
-  return { id: 'folder:params', kind: 'folder', label: '参数模板', icon: 'param', selectable: false, meta: String(children.length), children };
+  // actions 只放「新建参数模板」：文件夹右键菜单由它驱动。
+  // ResourceTreeNode 的 FOLDER_HOVER_KEYS 会把它挡在行尾图标之外，
+  // 所以这个动作只出现在右键菜单里，不会让文件夹行凭空多一个加号。
+  return { id: 'folder:params', kind: 'folder', label: '参数模板', icon: 'param', selectable: false, meta: String(children.length), children, actions: ['param.create'] };
 }
 
 export function buildDemFolder(tiffs: any[]): TreeNode {
@@ -207,6 +216,11 @@ export function buildTasksGroup(
       } else {
         kids = [{ id: `task-loading:${tid}`, kind: 'task-ref', label: '展开以加载…', selectable: false }];
       }
+      // 「终止运行」只在任务确实 running 时挂上去：pending 的任务没有可终止的线程，
+      // 已结束的任务更不该出现这个按钮 —— 动作列表本身要如实反映"现在能对这个任务做什么"。
+      const taskActions = ['task.props', 'task.run', 'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete'];
+      if (isRunningStatus(t?.status)) taskActions.splice(2, 0, 'task.stop');
+
       return {
         id: `task:${tid}`,
         kind: 'task' as const,
@@ -215,7 +229,7 @@ export function buildTasksGroup(
         meta: t?.status ? String(t.status) : undefined,
         ref: { entity: 'task' as const, key: tid },
         selectable: true,
-        actions: ['task.props', 'task.run', 'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete'],
+        actions: taskActions,
         children: kids,
       };
     });

@@ -14,12 +14,14 @@ const OVERSCAN = 8;
 
 interface Props {
   root: TreeNode;
+  /** 当前画在地图上的 DEM tiff_key 集合（用于把对应行的开关标成"已开"） */
+  activeDemKeys?: Set<string>;
   onNodeSelect: (node: TreeNode) => void;
   onNodeDoubleClick: (node: TreeNode) => void;
   onNodeAction: (node: TreeNode, actionKey: string) => void;
 }
 
-export default function ResourceTree({ root, onNodeSelect, onNodeDoubleClick, onNodeAction }: Props) {
+export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNodeDoubleClick, onNodeAction }: Props) {
   const expanded = useResourceTreeStore((s) => s.expanded);
   const selectedId = useResourceTreeStore((s) => s.selectedId);
   const toggleExpanded = useResourceTreeStore((s) => s.toggleExpanded);
@@ -91,6 +93,7 @@ export default function ResourceTree({ root, onNodeSelect, onNodeDoubleClick, on
                 depth={r.depth}
                 expanded={Boolean(expanded[r.node.id])}
                 selected={selectedId === r.node.id}
+                activeDemKeys={activeDemKeys}
                 onToggle={handleToggle}
                 onSelect={handleSelect}
                 onDoubleClick={onNodeDoubleClick}

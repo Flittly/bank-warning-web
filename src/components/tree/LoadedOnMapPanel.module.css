@@ -1,0 +1,349 @@
+/**
+ * 「已加载到屏幕」面板样式。
+ *
+ * 颜色变量沿用 ResourceSidebar.module.css 在 .sidebar 上定义的那一套
+ * （`--tree-*`），并用 fallback 兜住单独渲染的情况 —— 这样两处配色不会各写一份而慢慢漂移。
+ */
+.panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--tree-border, #e2e8f0);
+  background: var(--tree-panel, rgba(255, 255, 255, 0.85));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+.head:hover {
+  background: var(--tree-hover, #f1f5f9);
+}
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  color: #94a3b8;
+  flex: 0 0 auto;
+}
+.headTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tree-fg, #1e293b);
+  letter-spacing: 0.2px;
+}
+.headCount {
+  font-size: 10.5px;
+  color: #64748b;
+  background: #eef2f7;
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+.live {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 8px;
+  padding: 0 7px;
+  line-height: 17px;
+  white-space: nowrap;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.75); }
+}
+
+/* 独立滚动区：上半区（资源树）与本区各滚各的，互不牵动 */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 8px 10px;
+}
+
+.running {
+  margin: 2px 8px 8px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.runningRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+.spinner {
+  width: 11px;
+  height: 11px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid #fbbf24;
+  border-top-color: transparent;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.runningText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.runningName {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #92400e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.runningTime {
+  font-size: 10.5px;
+  color: #b45309;
+}
+/* 终止按钮固定贴在运行横幅右侧（align-self 抵消 .runningRow 的 flex-start） */
+.stopBtn {
+  margin-left: auto;
+  align-self: center;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid #fca5a5;
+  background: #fff;
+  color: #b91c1c;
+  font-size: 10.5px;
+  line-height: 16px;
+  padding: 1px 7px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.stopBtn:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+/* 「已请求终止、等它停下来」的中间态：用琥珀色而不是灰掉，避免看起来像坏了 */
+.stopBtn:disabled {
+  cursor: default;
+  color: #a16207;
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.empty {
+  margin: 10px 6px;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: #94a3b8;
+}
+
+/* 每组渲染上限的展开入口 */
+.moreBtn {
+  display: block;
+  width: calc(100% - 12px);
+  margin: 3px 6px 2px;
+  border: 1px dashed var(--tree-border, #e2e8f0);
+  background: transparent;
+  color: #64748b;
+  font-size: 10.5px;
+  padding: 3px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.moreBtn:hover {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.4);
+  color: var(--tree-sel-fg, #1d4ed8);
+}
+
+.group {
+  margin-top: 2px;
+  /* 给下一组的吸顶标题留出缓冲：滚到底时「显示全部」按钮不会被压在半透明标题底下 */
+  padding-bottom: 8px;
+}
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 4px 3px;
+  position: sticky;
+  top: 0;
+  /* 用近乎不透明的底色而不是 .panel 的半透明变量：吸顶标题要盖住滚动内容，
+     半透明 + blur 会把底下的行/按钮糊成一团 */
+  background: rgba(252, 253, 255, 0.97);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 7px;
+}
+.groupHead:hover {
+  background: var(--tree-hover, #f1f5f9);
+}
+.groupChevron {
+  display: inline-flex;
+  align-items: center;
+  color: #94a3b8;
+  flex: 0 0 auto;
+}
+.groupIcon {
+  display: inline-flex;
+  align-items: center;
+  color: #64748b;
+}
+.groupTitle {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+}
+.groupCount {
+  font-size: 10px;
+  color: #64748b;
+  background: #eef2f7;
+  border-radius: 7px;
+  padding: 0 5px;
+  line-height: 15px;
+}
+.groupAction {
+  margin-left: auto;
+  display: inline-flex;
+}
+.groupBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 10.5px;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 7px;
+  transition: background-color 0.15s, color 0.15s;
+}
+.groupBtn:hover {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--tree-sel-fg, #1d4ed8);
+}
+.groupEmpty {
+  margin: 2px 6px 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #a8b4c4;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 2px 8px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: var(--tree-fg, #1e293b);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color 0.15s, color 0.15s;
+}
+.row:hover {
+  background: var(--tree-hover, #f1f5f9);
+}
+.rowActive {
+  background: var(--tree-sel-bg, rgba(37, 99, 235, 0.12));
+  color: var(--tree-sel-fg, #1d4ed8);
+  border-color: rgba(37, 99, 235, 0.28);
+}
+.rowDimmed {
+  opacity: 0.45;
+}
+.rowLabel {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 占位撑开：标签左对齐、次要信息与操作图标都靠右，互不挤压 */
+.spacer {
+  flex: 1 1 auto;
+}
+.rowMeta {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: #94a3b8;
+  background: #f1f5f9;
+  border-radius: 7px;
+  padding: 0 5px;
+  line-height: 15px;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tagCurrent {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.14);
+  border-radius: 6px;
+  padding: 0 5px;
+  line-height: 15px;
+}
+.rowActions {
+  display: none;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.row:hover .rowActions {
+  display: inline-flex;
+}
+.rowBtn {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--tree-accent, #2563eb);
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 6px;
+}
+.rowBtn:hover {
+  background: rgba(37, 99, 235, 0.14);
+}

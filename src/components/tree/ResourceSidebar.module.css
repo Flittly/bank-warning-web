@@ -29,6 +29,46 @@
   z-index: 1;
 }
 
+/* 上半区容器：资源树（数据资源 + 计算任务）。
+   flex:1 + min-height:0 让它在与下半区抢空间时能收缩，滚动交给内部的 .tree。 */
+.treeZone {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 1;
+}
+
+/* 资源库整体为空时的提示（只在真的一条数据都没有时出现） */
+.upperHint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 8px 2px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--tree-border);
+  color: #94a3b8;
+  font-size: 11.5px;
+  line-height: 1.6;
+  flex-shrink: 0;
+}
+.upperHint svg {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+/* 下半区容器：高度由用户拖动决定（收起时 auto），内容自己滚 */
+.loadedZone {
+  flex: 0 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .tree {
   flex: 1;
   min-height: 0;
@@ -60,6 +100,11 @@
 .rowInvalid {
   opacity: 0.5;
   text-decoration: line-through;
+}
+/* 这条 DEM 的范围正画在地图上（左侧强调条）。
+   开关状态必须一眼可见 —— 之前用户要看"开没开"只能靠点第二下试出来。 */
+.rowDemActive {
+  box-shadow: inset 2px 0 0 var(--tree-accent);
 }
 
 .chevron {
@@ -129,6 +174,10 @@
 }
 .hIcon:hover {
   background: rgba(37, 99, 235, 0.14);
+}
+/* 这条 DEM 的开关处于"已开"（与 .rowDemActive 同一状态） */
+.hIconActive {
+  background: rgba(37, 99, 235, 0.16);
 }
 
 .footer {

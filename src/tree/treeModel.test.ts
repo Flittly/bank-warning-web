@@ -27,6 +27,13 @@ describe('buildParamsFolder', () => {
     expect(folder.children?.[0]).toMatchObject({ id: 'param:PARAM_DEFAULT_TEMPLATE', kind: 'param', meta: '默认' });
     expect(folder.children?.[1]).toMatchObject({ id: 'param:PARAM_FLOOD', kind: 'param' });
   });
+
+  // 文件夹右键菜单靠 node.actions 驱动（ResourceTree.handleContextMenu 在 actions 为空时直接 return）。
+  // 这个断言就是"参数模板文件夹右键一定有菜单"的护栏。
+  it('exposes 新建参数模板 on the folder context menu', () => {
+    const folder = buildParamsFolder([]);
+    expect(folder.actions).toEqual(['param.create']);
+  });
 });
 
 describe('buildDemFolder', () => {
@@ -61,6 +68,29 @@ describe('buildTasksGroup', () => {
     const group = buildTasksGroup([{ task_id: 't1', task_name: '任务1234' }]);
     expect(group.children?.[0]).toMatchObject({ id: 'task:t1', kind: 'task', label: '任务1234' });
   });
+
+  it('只在 running 的任务上挂「终止运行」，并紧跟在「执行风险分析」后面', () => {
+    const group = buildTasksGroup([
+      { task_id: 't1', task_name: '跑着的', status: 'running' },
+      { task_id: 't2', task_name: '没跑的', status: 'pending' },
+      { task_id: 't3', task_name: '跑完的', status: 'partial_failed' },
+    ]);
+    const [running, pending, failed] = group.children || [];
+
+    expect(running.actions).toEqual([
+      'task.props', 'task.run', 'task.stop',
+      'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete',
+    ]);
+    // 非 running 一个都不该有：pending/已结束的任务没有可终止的线程
+    expect(pending.actions).not.toContain('task.stop');
+    expect(failed.actions).not.toContain('task.stop');
+    expect(pending.actions).toContain('task.run');
+  });
+
+  it('status 的大小写与首尾空格不影响终止入口的出现', () => {
+    const group = buildTasksGroup([{ task_id: 't9', status: ' RUNNING ' }]);
+    expect(group.children?.[0].actions).toContain('task.stop');
+  });
 });
 
 describe('resolveTaskRefs', () => {
@@ -84,6 +114,19 @@ describe('buildResourceTree', () => {
     const resources = root.children?.find((c) => c.id === 'group:resources');
     expect(resources?.children?.length).toBe(4);
     expect(resources?.children?.map((c) => c.id)).toEqual(['folder:banks', 'folder:sections', 'folder:params', 'folder:dems']);
+  });
+  // 「岸段」文件夹原本只有上传 + 着色开关；库里上百条岸段逐条点「加载到地图」不现实。
+  // 这对批量动作与断面文件夹的 section.loadAll / section.removeAll 同义对称。
+  it('gives the 岸段 folder the batch pair, mirroring the 断面 folder', () => {
+    const root = buildResourceTree({ banks: [{ bank_id: 'b1' }], params: [], tiffs: [], tasks: [], sections: [] });
+    const resources = root.children?.find((c) => c.id === 'group:resources');
+    const banksFolder = resources?.children?.find((c) => c.id === 'folder:banks');
+    const sectionsFolder = resources?.children?.find((c) => c.id === 'folder:sections');
+    expect(banksFolder?.actions).toContain('bank.loadAll');
+    expect(banksFolder?.actions).toContain('bank.removeAll');
+    // 断面侧保持原样，两侧都要有同一对语义
+    expect(sectionsFolder?.actions).toContain('section.loadAll');
+    expect(sectionsFolder?.actions).toContain('section.removeAll');
   });
 });
 

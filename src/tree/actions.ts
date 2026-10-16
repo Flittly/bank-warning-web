@@ -25,6 +25,11 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
   'bank.delete': { key: 'bank.delete', label: '删除岸段', icon: 'trash', danger: true, separatorBefore: true },
   'bank.clearLoaded': { key: 'bank.clearLoaded', label: '清除已加载岸段', icon: 'eraser' },
 
+  // 「岸段」文件夹上的一对批量动作，与下面 section.loadAll / section.removeAll 完全对称。
+  // 库里岸段上百条（实测 113 条），逐条点行尾的「加载到地图」不现实。
+  'bank.loadAll': { key: 'bank.loadAll', label: '全部加载到地图', icon: 'eye' },
+  'bank.removeAll': { key: 'bank.removeAll', label: '全部移出地图', icon: 'eyeOff' },
+
   'section.upload': { key: 'section.upload', label: '上传断面', icon: 'upload' },
   'section.toggleVisible': { key: 'section.toggleVisible', label: '显示/隐藏设计', icon: 'eye' },
   // 把（已被移出地图的）断面重新拉回地图。岸段「移出地图」会连带摘掉其断面，
@@ -46,6 +51,10 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
   'section.info': { key: 'section.info', label: '属性', icon: 'settings' },
   'section.delete': { key: 'section.delete', label: '删除断面', icon: 'trash', danger: true, separatorBefore: true },
 
+  // 「参数模板」文件夹上的新建入口。此前该文件夹没有任何动作（右键无菜单），
+  // 想加新模板只能先随便打开一个已有模板、用属性弹窗里的「复制」按钮 + window.prompt 生成副本，
+  // 且 param_id 由 `名称_copy_时间戳` 拼出来 —— 中文名会被整段丢掉，副本名还常常和原名对不上。
+  'param.create': { key: 'param.create', label: '新建参数模板', icon: 'plus' },
   'param.select': { key: 'param.select', label: '设为当前/任务引用', icon: 'check' },
   'param.props': { key: 'param.props', label: '模板属性配置', icon: 'settings' },
   'param.editSectionParams': { key: 'param.editSectionParams', label: '编辑断面参数', icon: 'settings' },
@@ -61,6 +70,9 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
   'task.create': { key: 'task.create', label: '新建任务', icon: 'plus' },
   'task.props': { key: 'task.props', label: '任务属性', icon: 'settings' },
   'task.run': { key: 'task.run', label: '执行风险分析', icon: 'play' },
+  // 只在任务确实 running 时才会挂到节点动作里（见 treeModel 按 status 拼 actions），
+  // 所以这里不需要再做条件判断；danger 是为了让它在右键菜单里就是红色的。
+  'task.stop': { key: 'task.stop', label: '终止运行', icon: 'stop', danger: true },
   'task.generateCompute': { key: 'task.generateCompute', label: '生成计算断面…', icon: 'ruler' },
   'task.setParam': { key: 'task.setParam', label: '更换参数模板 / DEM', icon: 'settings' },
   'task.viewResult': { key: 'task.viewResult', label: '查看结果', icon: 'chart' },
