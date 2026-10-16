@@ -195,3 +195,57 @@ export function formatTiffResourceLabel(resource: TiffResource): string {
   const suffix = resource.file_name ? ` · ${resource.file_name}` : '';
   return `${segment} · ${year}/${timepoint}${suffix} · ${resource.tiff_key}`;
 }
+
+/** 经纬度包围盒 `[west, south, east, north]`。 */
+export type LonLatBounds = [number, number, number, number];
+
+/** 把 GeoJSON 的 Polygon / MultiPolygon 坐标摊平成一串 `[lon, lat]`。 */
+function ringPoints(geometry: any): number[][] {
+  const type = String(geometry?.type ?? '');
+  const coords = geometry?.coordinates;
+  if (!Array.isArray(coords)) return [];
+  if (type === 'Polygon') return (coords as any[]).flat(1);
+  if (type === 'MultiPolygon') return (coords as any[]).flat(2);
+  if (type === 'Point') return [coords];
+  return [];
+}
+
+/**
+ * 从 `/v0/bank/tiff-bounds` 的返回里取某个 DEM 的经纬包围盒。
+ *
+ * <p>放在这里而不是 `flowFieldApi`：GeoJSON 的字段形状是这个接口的契约，
+ * 换接口时应该只改这一处。匹配用 {@link normalizeTiffKey} —— 库里 `tiff\A\B` 与
+ * `tiff/A/B` 两种写法都出现过。
+ *
+ * @returns 找不到该 DEM、或它的几何没解析出来时返回 `null`（不抛错）
+ */
+export function demBoundsOf(
+  collection: GeoJSON.FeatureCollection | null | undefined,
+  demId: string | null | undefined,
+): LonLatBounds | null {
+  const wanted = normalizeTiffKey(String(demId ?? ''));
+  if (!wanted) return null;
+  const features: any[] = Array.isArray((collection as any)?.features)
+    ? ((collection as any).features as any[])
+    : [];
+  const feature = features.find(
+    (f) => normalizeTiffKey(String(f?.properties?.tiff_key ?? '')) === wanted,
+  );
+  const points = ringPoints(feature?.geometry);
+  if (points.length === 0) return null;
+  let w = Infinity;
+  let s = Infinity;
+  let e = -Infinity;
+  let n = -Infinity;
+  for (const pair of points) {
+    const lon = Number(pair?.[0]);
+    const lat = Number(pair?.[1]);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+    if (lon < w) w = lon;
+    if (lon > e) e = lon;
+    if (lat < s) s = lat;
+    if (lat > n) n = lat;
+  }
+  if (!Number.isFinite(w) || !Number.isFinite(s) || w > e || s > n) return null;
+  return [w, s, e, n];
+}

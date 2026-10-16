@@ -394,9 +394,30 @@ function EditorMap(props: EditorMapProps) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    map.setLayoutProperty('tiff-bounds-fill', 'visibility', showTiffBounds ? 'visible' : 'none');
-    map.setLayoutProperty('tiff-bounds-line', 'visibility', showTiffBounds ? 'visible' : 'none');
+    if (!map) return;
+
+    const applyVisibility = () => {
+      // 图层可能还没建出来（style 未 load）或已被 style 重建，两种情况都要防
+      if (!map.getLayer('tiff-bounds-fill') || !map.getLayer('tiff-bounds-line')) return;
+      const visibility = showTiffBounds ? 'visible' : 'none';
+      map.setLayoutProperty('tiff-bounds-fill', 'visibility', visibility);
+      map.setLayoutProperty('tiff-bounds-line', 'visibility', visibility);
+    };
+
+    // 这里**不能**写成 `if (!map.isStyleLoaded()) return;` 直接早退：
+    // 依赖只有 [showTiffBounds]，值不再变化就不会重跑 ⇒ 这一步会永久丢失。
+    // 而数据 effect 是独立的、无条件执行，已经先把 source 换成了新的集合
+    // ⇒ 「第二次点同一条 DEM」时数据变成全量、可见性却停在 visible，
+    //    地图上就把全库 DEM 的框全画出来了。
+    // 与同文件其余同类 effect 保持一致：style 未就绪就挂一次 idle 再补。
+    if (map.isStyleLoaded()) {
+      applyVisibility();
+      return undefined;
+    }
+    map.once('idle', applyVisibility);
+    return () => {
+      map.off('idle', applyVisibility);
+    };
   }, [showTiffBounds]);
 
   useEffect(() => {
@@ -911,9 +932,18 @@ function EditorMap(props: EditorMapProps) {
             );
           }
         } else if (label === '未验证' && error) {
+          // 「Failed to fetch」不是后端返回的错误码，而是请求根本没发出去/被浏览器掐断
+          // （典型：批量校验并发过多触发 net::ERR_INSUFFICIENT_RESOURCES）。
+          // 直接甩这句英文很容易被误读成「后端有问题」，这里补一句可操作的提示。
+          const isNetworkLayer = /Failed to fetch|NetworkError|Load failed|ERR_/i.test(String(error));
           detailHtml.push(
             `<p style="margin:4px 0 0; font-size:12px; color:#64748b;">上次请求失败: ${escapeHtml(error)}</p>`,
           );
+          if (isNetworkLayer) {
+            detailHtml.push(
+              `<p style="margin:2px 0 0; font-size:12px; color:#94a3b8;">（请求未到达后端，多为浏览器并发上限/网络中断；点「断面检查」重试即可）</p>`,
+            );
+          }
         }
 
         infoPopup = new mapboxgl.Popup()
