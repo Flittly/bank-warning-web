@@ -29,7 +29,7 @@ interface Props {
   /** 当前画在地图上的 DEM tiff_key 集合（把对应行的开关标成"已开"） */
   activeDemKeys?: Set<string>;
   onToggle: (node: TreeNode) => void;
-  onSelect: (node: TreeNode) => void;
+  onSelect: (node: TreeNode, mod: { shift: boolean; ctrlOrMeta: boolean }) => void;
   onDoubleClick: (node: TreeNode) => void;
   onAction: (node: TreeNode, actionKey: string) => void;
   onContextMenu: (node: TreeNode, x: number, y: number) => void;
@@ -80,8 +80,12 @@ export default function ResourceTreeNode({
 
   const handleClick = (e: MouseEvent) => {
     e.stopPropagation();
-    onSelect(node);
-    if (hasChildren) onToggle(node);
+    const shift = e.shiftKey;
+    const ctrlOrMeta = e.ctrlKey || e.metaKey;
+    onSelect(node, { shift, ctrlOrMeta });
+    // 范围/多选点击（Shift / Ctrl/Cmd）不触发展开折叠——那是"挑范围"的意图，
+    // 展开折叠只留给普通单击，避免范围选择时节点开开关关晃眼。
+    if (hasChildren && !shift && !ctrlOrMeta) onToggle(node);
   };
 
   return (

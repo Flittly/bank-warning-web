@@ -7,6 +7,7 @@ import { useResourceTreeStore } from '../../store/useResourceTreeStore';
 import { useEditorStore } from '../../store/useEditorStore';
 import ResourceTree from './ResourceTree';
 import LoadedOnMapPanel from './LoadedOnMapPanel';
+import BatchActionBar from './BatchActionBar';
 import type { LoadedOnMapActions } from './LoadedOnMapPanel';
 import { buildLoadedGroups, pickRunningTasks } from './loadedOnMap';
 import VerticalResizeHandle from '../VerticalResizeHandle';
@@ -23,6 +24,8 @@ export interface ResourceSidebarHandlers extends LoadedOnMapActions {
   onNodeSelect: (node: TreeNode) => void;
   onNodeDoubleClick: (node: TreeNode) => void;
   onRun: () => void;
+  /** 批量操作：kind 为选中节点的统一类型，nodes 为参与批量操作的节点 */
+  onBatchAction?: (kind: string, nodes: TreeNode[], actionKey: string) => void;
 }
 
 interface Props {
@@ -84,6 +87,15 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
   const [sidebarH, setSidebarH] = useState(0);
   const [loadedH, setLoadedH] = useState<number>(readStoredHeight);
   const [collapsed, setCollapsed] = useState(false);
+
+  // 多选：ResourceTree 通过 onSelectionChange 把当前选中节点清单抛上来，
+  // 这里只负责渲染批量操作条 + 把批量动作转发给上层（EditorPage）。
+  const [selectedNodes, setSelectedNodes] = useState<TreeNode[]>([]);
+  const handleSelectionChange = useCallback((nodes: TreeNode[]) => setSelectedNodes(nodes), []);
+  const handleClearSelection = useCallback(() => {
+    setSelectedNodes([]);
+    useResourceTreeStore.getState().clearSelection();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -224,6 +236,11 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
 
       {/* 上半区：数据资源 + 计算任务（独立滚动） */}
       <div className={styles.treeZone} data-tour="tree-root">
+        <BatchActionBar
+          nodes={selectedNodes}
+          onBatchAction={(kind, list, actionKey) => handlers.onBatchAction?.(kind, list, actionKey)}
+          onClear={handleClearSelection}
+        />
         {libraryEmpty && (
           <div className={styles.upperHint}>
             <Database size={12} />
@@ -237,6 +254,7 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
             onNodeSelect={handlers.onNodeSelect}
             onNodeDoubleClick={handlers.onNodeDoubleClick}
             onNodeAction={handlers.onAction}
+            onSelectionChange={handleSelectionChange}
           />
         )}
       </div>

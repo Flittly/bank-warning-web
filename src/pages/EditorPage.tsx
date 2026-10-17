@@ -3227,6 +3227,130 @@ function EditorPage(props: EditorPageProps) {
     }
   };
 
+  /**
+   * 多选批量操作分发：ResourceSidebar 的批量条把「类型 + 该类型的选中节点 + 动作」抛到这里。
+   *
+   * 每种类型只放「对所有选中节点语义一致、可安全并发」的动作；依赖地图当前态的单条动作
+   * （平滑/截取/反切/定位）不进批量。具体每类支持哪些见 tree/batchActions.ts。
+   */
+  const handleBatchAction = async (kind: string, nodes: TreeNode[], actionKey: string) => {
+    const ids = nodes.map((n) => String(n.ref?.key || '')).filter(Boolean);
+    if (ids.length === 0) { message.warning('没有可操作的目标'); return; }
+
+    const clearTreeSelection = () => useResourceTreeStore.getState().clearSelection();
+
+    if (kind === 'bank') {
+      if (actionKey === 'bank.delete') {
+        await deleteBanksByIds(ids);
+        bumpTreeData();
+      } else if (actionKey === 'bank.loadMap') {
+        const hide = message.loading(`正在加载 ${ids.length} 条岸段…`, 0);
+        let ok = 0;
+        for (const id of ids) { try { await loadBankById(id); ok++; } catch { /* 单条失败跳过 */ } }
+        hide();
+        message.success(`已加载 ${ok}/${ids.length} 条岸段`);
+      } else if (actionKey === 'bank.removeMap') {
+        const ok = await requestConfirm({ title: '批量移出地图', content: `将把 ${ids.length} 条岸段（及其断面）从地图移出，确认继续？` });
+        if (!ok) return;
+        ids.forEach((id) => removeBankFromMap(id));
+        message.success(`已从地图移出 ${ids.length} 条岸段`);
+      }
+      clearTreeSelection();
+      return;
+    }
+
+    if (kind === 'section') {
+      if (actionKey === 'section.removeMap') {
+        removeSectionsByIds(ids);
+      } else if (actionKey === 'section.loadMap') {
+        // 复用 loadAllSectionsUnder 的思路，但目标是一组明确的 section_id
+        const hide = message.loading(`正在加载 ${ids.length} 条断面…`, 0);
+        let ok = 0; let fail = 0; let cursor = 0;
+        const worker = async () => {
+          while (cursor < ids.length) {
+            const id = ids[cursor++];
+            try {
+              const res = await fetch(`/v0/bank/sections/${encodeURIComponent(id)}`, { headers: { ...authHeaders() } });
+              if (!res.ok) throw new Error(`${res.status}`);
+              const data = await res.json();
+              const rec = data?.section ?? data?.data ?? data;
+              if (rec && (rec.section_id || rec.sectionId) && appendSectionsToMap([rec]) > 0) ok++;
+              else fail++;
+            } catch { fail++; }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(4, ids.length) }, worker));
+        hide();
+        if (ok > 0) setShowCrossLines(true);
+        if (fail > 0) message.warning(`已加载 ${ok} 条断面，${fail} 条未能加载`);
+        else message.success(`已加载 ${ok} 条断面`);
+      } else if (actionKey === 'section.delete') {
+        const ok = await requestConfirm({
+          title: '批量删除断面',
+          content: `将删除 ${ids.length} 条断面，后端记录会一并删除且无法撤销，确认继续？`,
+          danger: true,
+        });
+        if (!ok) return;
+        // 记下每条断面所属任务，删除后逐一失效其清单缓存，避免树上残留
+        const affectedTasks = new Set<string>();
+        ids.forEach((sid) => { const t = taskIdOfSection(sid); if (t) affectedTasks.add(t); });
+        const results = await Promise.allSettled(
+          ids.map((sid) => fetch(`/v0/bank/sections/${encodeURIComponent(sid)}`, { method: 'DELETE', headers: { ...authHeaders() } })
+            .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return true; })),
+        );
+        const okCount = results.filter((r) => r.status === 'fulfilled').length;
+        const failCount = results.length - okCount;
+        affectedTasks.forEach((tid) => useResourceTreeStore.getState().invalidateSections(tid));
+        // 同步从地图摘掉已删断面
+        removeSectionsByIds(ids);
+        bumpTreeData();
+        if (failCount > 0) message.warning(`已删除 ${okCount} 条断面，${failCount} 条失败`);
+        else message.success(`已删除 ${okCount} 条断面`);
+      }
+      clearTreeSelection();
+      return;
+    }
+
+    if (kind === 'dem') {
+      if (actionKey === 'dem.delete') {
+        const ok = await requestConfirm({ title: '批量删除 DEM', content: `将删除 ${ids.length} 个 DEM 资源，确认继续？`, danger: true });
+        if (!ok) return;
+        const svc = await import('../services/tiffService');
+        let okCount = 0; let failCount = 0;
+        for (const key of ids) {
+          try { await svc.deleteTiffResource(key); okCount++; } catch { failCount++; }
+        }
+        svc.invalidateTiffResourceCache();
+        bumpTreeData();
+        if (failCount > 0) message.warning(`已删除 ${okCount} 个 DEM，${failCount} 个失败`);
+        else message.success(`已删除 ${okCount} 个 DEM`);
+      }
+      clearTreeSelection();
+      return;
+    }
+
+    if (kind === 'task') {
+      if (actionKey === 'task.delete') {
+        const ok = await requestConfirm({ title: '批量删除任务', content: `将删除 ${ids.length} 个任务及其结果，确认继续？`, danger: true });
+        if (!ok) return;
+        let okCount = 0; let failCount = 0;
+        for (const tid of ids) {
+          try {
+            const res = await fetch(`/v0/bank/tasks/${encodeURIComponent(tid)}`, { method: 'DELETE', headers: { ...authHeaders() } });
+            if (!res.ok) throw new Error(`${res.status}`);
+            useResourceTreeStore.getState().removeTask(tid);
+            okCount++;
+          } catch { failCount++; }
+        }
+        bumpTreeData();
+        if (failCount > 0) message.warning(`已删除 ${okCount} 个任务，${failCount} 个失败`);
+        else message.success(`已删除 ${okCount} 个任务`);
+      }
+      clearTreeSelection();
+      return;
+    }
+  };
+
   const totalCrossLinesCount = perpendicularData?.features.length || 0;
   const totalSelectedSegments = groups.filter(g => g.end !== null).length;
   const clippedBanks = (bankList || []).filter((b: any) => String(b.bank_id || '').includes('_clip_'));
@@ -3264,6 +3388,7 @@ function EditorPage(props: EditorPageProps) {
                 onNodeSelect: handleTreeNodeSelect,
                 onNodeDoubleClick: handleTreeNodeDoubleClick,
                 onRun: handleStartAnalysis,
+                onBatchAction: handleBatchAction,
                 // —— 下半区「已加载到屏幕」的行级/组级操作 ——
                 onFocusBank: (id) => { void focusBankOnMap(id); },
                 onRemoveBank: removeBankFromMap,

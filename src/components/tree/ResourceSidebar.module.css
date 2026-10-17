@@ -261,3 +261,78 @@
   border-top: 1px solid var(--tree-border);
   margin: 4px 2px;
 }
+
+/* ====== 多选批量操作条 ====== */
+.batchBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 4px 8px 2px;
+  background: var(--tree-sel-bg);
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.batchCount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tree-sel-fg);
+  white-space: nowrap;
+}
+.batchGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.batchKind {
+  font-size: 11px;
+  color: #64748b;
+  background: #fff;
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.batchBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.batchBtn:hover {
+  background: var(--tree-hover);
+  border-color: var(--tree-border);
+}
+.batchBtnDanger {
+  color: #dc2626;
+}
+.batchBtnDanger:hover {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+.batchClear {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.batchClear:hover {
+  background: var(--tree-hover);
+  color: #64748b;
+}
