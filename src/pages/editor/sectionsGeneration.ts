@@ -5,7 +5,7 @@ import { generatePerpendicularLines } from '../../utils/geometry';
 import { ensureDefaultBasicParams } from '../../services/basicParamsService';
 import type { SectionParams } from '../../types/sections';
 import { fetchSectionParams } from './sectionApi';
-import { getCurrentTaskId, setCurrentTaskId } from './taskState';
+import { useResourceTreeStore } from '../../store/useResourceTreeStore';
 import { newTaskId } from '../../utils/taskId';
 import {
   coordsToVerticalFootPoint,
@@ -203,7 +203,7 @@ async function generateSectionsAndCreateTaskCore(params: {
     if (existingTaskId) {
       // 任务优先：复用用户选中的任务，不再命名/新建
       taskId = existingTaskId;
-      setCurrentTaskId(taskId);
+      useResourceTreeStore.getState().setCurrentTask(taskId);
     } else {
       taskName = (await params.requestTaskName())?.trim() || undefined;
       if (!taskName) {
@@ -211,7 +211,7 @@ async function generateSectionsAndCreateTaskCore(params: {
         return;
       }
       taskId = newTaskId();
-      setCurrentTaskId(taskId);
+      useResourceTreeStore.getState().setCurrentTask(taskId);
     }
 
     const taskBankIdSet = new Set<string>();
@@ -559,7 +559,7 @@ export async function runCurrentTask(params: {
     return;
   }
 
-  const taskId = getCurrentTaskId();
+  const taskId = useResourceTreeStore.getState().currentTaskId;
   if (!taskId) {
     message.warning('未找到任务ID，请先绘制断面');
     return;

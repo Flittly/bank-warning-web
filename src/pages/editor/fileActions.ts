@@ -2,7 +2,7 @@ import { message } from 'antd';
 import * as turf from '@turf/turf';
 import type { ChangeEvent } from 'react';
 import { ensureDefaultBasicParams } from '../../services/basicParamsService';
-import { setCurrentTaskId } from './taskState';
+import { useResourceTreeStore } from '../../store/useResourceTreeStore';
 import { newTaskId } from '../../utils/taskId';
 import { stripZFromGeoJSON } from '../../utils/geojson';
 import { coordsToVerticalFootPoint, getVerticalFootPointFromAny } from '../../utils/verticalFootPoint';
@@ -155,7 +155,7 @@ export async function uploadSectionsGeoJsonAndCreateTaskAction(params: {
     }
 
     const taskId = newTaskId();
-    setCurrentTaskId(taskId);
+    useResourceTreeStore.getState().setCurrentTask(taskId);
 
     const bankIdSet = new Set<string>();
     lineFeatures.forEach((f) => {
