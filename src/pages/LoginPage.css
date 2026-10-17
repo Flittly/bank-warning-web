@@ -196,11 +196,17 @@
          这是 1440×900 下"左边缘仍在中线右侧"能取到的上限（见上方横向预算）。
    中间档 min(47vw,75vh)：1440 下 = 675（vh 项生效），
          1920×1080 下 47vw=902、75vh=810 → 取上限 678；
-         窄屏靠 min 档收，避免被 .login-page 的 overflow:hidden 裁掉右边。 */
+         窄屏靠 min 档收，避免被 .login-page 的 overflow:hidden 裁掉右边。
+   ── 横向偏移：登录栏整体向左挪"圆半径的一半"（= 直径/4）。
+      .login-right 是 flex + justify-content:center，圆本就在容器 content 区居中。
+      这里用 transform: translateX 相对圆心位置精确左移，不掺和 flex 的 padding 计算；
+      直径 D 是响应式量，所以偏移也必须用同一个 clamp 表达式除 4（= 半径/2），
+      不能用写死像素（否则换屏比例就错了）。 */
 .login-container {
   width: clamp(510px, min(47vw, 75vh), 678px);
   height: clamp(510px, min(47vw, 75vh), 678px);
   flex: 0 0 auto;
+  transform: translateX(calc(clamp(510px, min(47vw, 75vh), 678px) / -4));
   padding: 0;
   border-radius: 50%;
   display: flex;
@@ -422,10 +428,12 @@
   }
 
   /* 高度上限 = 视口高 − 徽标带（边长 + 54px 上下留白）− 16px 余量；
-     内接正方形 ≈ 直径/1.414，内容宽 min(420,62%) → 恒安全。 */
+     内接正方形 ≈ 直径/1.414，内容宽 min(420,62%) → 恒安全。
+     窄屏是居中布局，撤销宽屏那档"向左移半半径"的偏移，让圆回到正中。 */
   .login-container {
     width: min(678px, 88vw, calc(100vh - var(--badge-size) - 70px));
     height: min(678px, 88vw, calc(100vh - var(--badge-size) - 70px));
+    transform: none;
   }
 }
 
