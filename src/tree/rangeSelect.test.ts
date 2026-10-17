@@ -50,6 +50,25 @@ describe('applyRangeSelect', () => {
     expect(s2.anchorIndex).toBe(0);
   });
 
+  it('没有锚点（null）时 Shift 点击只选点击行', () => {
+    const { rows } = makeRows();
+    const next = applyRangeSelect(rows, rows[3].node.id, emptySelection(), { shift: true, ctrlOrMeta: false });
+    expect([...next.selectedIds]).toEqual([rows[3].node.id]);
+    expect(next.anchorIndex).toBe(3);
+  });
+
+  it('调用方用 -1 表示无锚点时，Shift 点击不越界', () => {
+    const { rows } = makeRows();
+    const next = applyRangeSelect(
+      rows,
+      rows[3].node.id,
+      { selectedIds: new Set<string>(), anchorIndex: -1 },
+      { shift: true, ctrlOrMeta: false },
+    );
+    expect([...next.selectedIds]).toEqual([rows[3].node.id]);
+    expect(next.anchorIndex).toBe(3);
+  });
+
   it('Shift+点击（向下再向上）按锚点重选范围，而非累加', () => {
     const { rows } = makeRows();
     const s1 = applyRangeSelect(rows, rows[1].node.id, emptySelection(), { shift: false, ctrlOrMeta: false });

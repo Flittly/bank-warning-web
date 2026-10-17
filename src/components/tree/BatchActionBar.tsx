@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Trash2, X, Settings } from 'lucide-react';
+import { Eye, EyeOff, Trash2, X, Settings, type LucideIcon } from 'lucide-react';
 import type { TreeNode } from '../../tree/types';
 import { BATCH_ACTIONS, groupSelectedByKind } from '../../tree/batchActions';
 import styles from './ResourceSidebar.module.css';
@@ -11,7 +11,7 @@ const KIND_LABEL: Record<string, string> = {
   param: '参数模板',
 };
 
-const ACTION_ICONS: Record<string, any> = {
+const ACTION_ICONS: Record<string, LucideIcon> = {
   eye: Eye, eyeOff: EyeOff, trash: Trash2,
 };
 
@@ -28,7 +28,7 @@ interface Props {
 export default function BatchActionBar({ nodes, onBatchAction, onClear }: Props) {
   const groups = groupSelectedByKind(nodes);
   const total = nodes.length;
-  if (total === 0) return null;
+  if (total === 0 || groups.size === 0) return null;
 
   return (
     <div className={styles.batchBar}>
