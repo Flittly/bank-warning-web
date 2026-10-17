@@ -76,6 +76,8 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
   const setSectionsForTask = useResourceTreeStore((s) => s.setSectionsForTask);
   const currentTaskId = useResourceTreeStore((s) => s.currentTaskId);
   const expanded = useResourceTreeStore((s) => s.expanded);
+  const selectedIds = useResourceTreeStore((s) => s.selectedIds);
+  const clearSelection = useResourceTreeStore((s) => s.clearSelection);
 
   // 下半区读的是"地图上实际画着什么"，来源是编辑器 store，而不是后端清单
   const uploadedData = useEditorStore((s) => s.uploadedData);
@@ -87,15 +89,6 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
   const [sidebarH, setSidebarH] = useState(0);
   const [loadedH, setLoadedH] = useState<number>(readStoredHeight);
   const [collapsed, setCollapsed] = useState(false);
-
-  // 多选：ResourceTree 通过 onSelectionChange 把当前选中节点清单抛上来，
-  // 这里只负责渲染批量操作条 + 把批量动作转发给上层（EditorPage）。
-  const [selectedNodes, setSelectedNodes] = useState<TreeNode[]>([]);
-  const handleSelectionChange = useCallback((nodes: TreeNode[]) => setSelectedNodes(nodes), []);
-  const handleClearSelection = useCallback(() => {
-    setSelectedNodes([]);
-    useResourceTreeStore.getState().clearSelection();
-  }, []);
 
   useEffect(() => {
     (async () => {
@@ -156,16 +149,29 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
     [banks, params, tiffs, tasks, currentSections, sectionsByTask],
   );
 
+  const selectedNodes = useMemo(() => {
+    const byId = new Map<string, TreeNode>();
+    const walk = (node: TreeNode) => {
+      byId.set(node.id, node);
+      node.children?.forEach(walk);
+    };
+    walk(tree);
+    return [...selectedIds]
+      .map((id) => byId.get(id))
+      .filter((node): node is TreeNode => Boolean(node));
+  }, [selectedIds, tree]);
+
   const currentTaskName = useMemo(
-    () => tasks.find((t: any) => String(t.task_id ?? t.id) === currentTaskId)?.task_name || currentTaskId || '',
+    () => String(tasks.find((t: Record<string, unknown>) => String(t.task_id ?? t.id) === currentTaskId)?.task_name || currentTaskId || ''),
     [tasks, currentTaskId],
   );
 
   // —— 下半区数据 ——
   const demItems = useMemo(() => {
+    const rows = (tiffs || []) as Array<Record<string, unknown>>;
     const labelOf = (key: string) => {
-      const t: any = (tiffs || []).find(
-        (x: any) => String(x?.tiff_key ?? x?.key ?? x?.file_name) === key,
+      const t = rows.find(
+        (x) => String(x?.tiff_key ?? x?.key ?? x?.file_name) === key,
       );
       return String(t?.file_name || key.split('/').pop() || key);
     };
@@ -239,7 +245,7 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
         <BatchActionBar
           nodes={selectedNodes}
           onBatchAction={(kind, list, actionKey) => handlers.onBatchAction?.(kind, list, actionKey)}
-          onClear={handleClearSelection}
+          onClear={clearSelection}
         />
         {libraryEmpty && (
           <div className={styles.upperHint}>
@@ -254,7 +260,6 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
             onNodeSelect={handlers.onNodeSelect}
             onNodeDoubleClick={handlers.onNodeDoubleClick}
             onNodeAction={handlers.onAction}
-            onSelectionChange={handleSelectionChange}
           />
         )}
       </div>
