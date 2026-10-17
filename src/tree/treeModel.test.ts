@@ -158,6 +158,9 @@ describe('buildTasksGroup task children', () => {
     expect((task.children || []).map((c) => c.id)).toEqual(['task-banks:t1', 'task-sections:t1', 'task-param:t1', 'task-dems:t1']);
     const banksFolder = task.children!.find((c) => c.id === 'task-banks:t1')!;
     expect(banksFolder.children?.[0].label).toBe('岸段一');
+    // 任务下的「岸段」文件夹也要有与断面文件夹对称的批量动作对（全部加载/全部移出地图）。
+    expect(banksFolder.actions).toContain('bank.loadAll');
+    expect(banksFolder.actions).toContain('bank.removeAll');
     const sectionsFolder = task.children!.find((c) => c.id === 'task-sections:t1')!;
     expect(sectionsFolder.meta).toBe('2');
     const bankFolder = sectionsFolder.children![0];

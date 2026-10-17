@@ -208,7 +208,7 @@ export function buildTasksGroup(
             actions: ['dem.toggleBounds', 'dem.selectBanks', 'dem.info'],
           }));
         kids = [
-          { id: `task-banks:${tid}`, kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(bankNodes.length), children: bankNodes },
+          { id: `task-banks:${tid}`, kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(bankNodes.length), children: bankNodes, actions: ['bank.loadAll', 'bank.removeAll'] },
           { id: `task-sections:${tid}`, kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(secs.length), children: sectionBankFolders, actions: ['section.loadAll', 'section.removeAll'] },
           { id: `task-param:${tid}`, kind: 'task-ref', label: `参数模板: ${paramName || '未设置'}`, selectable: false, meta: '引用', ref: paramKey != null ? { entity: 'param' as const, key: String(paramKey) } : undefined },
           { id: `task-dems:${tid}`, kind: 'task-ref', label: 'DEM', icon: 'dem', selectable: false, children: demChildren },
