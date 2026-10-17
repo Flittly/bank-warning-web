@@ -59,7 +59,6 @@ import {
   fetchBasicParamsList,
   updateBasicParamAsSectionParams,
 } from './editor/basicParamsApi';
-import { getCurrentTaskId, setCurrentTaskId } from './editor/taskState';
 import {
   DEFAULT_REQUEST_CONCURRENCY,
   isNetworkLevelError,
@@ -2292,7 +2291,7 @@ function EditorPage(props: EditorPageProps) {
     };
 
     const banksToSend: any[] = [];
-    const currentTaskId = getCurrentTaskId();
+    const currentTaskId = useResourceTreeStore.getState().currentTaskId;
     const taskPrefix = currentTaskId ? `${currentTaskId}-` : '';
     selectedFeatures.forEach((f: any, index: number) => {
       const props = f?.properties || {};
@@ -2612,11 +2611,11 @@ function EditorPage(props: EditorPageProps) {
         setGlobalProperties,
         requestTaskName: () => requestTaskName('岸线分析任务'),
         skipUploadBanks: true,
-        existingTaskId: getCurrentTaskId(),
+        existingTaskId: useResourceTreeStore.getState().currentTaskId,
       });
     } finally {
       fetchBankGroups();
-      const tid = getCurrentTaskId();
+      const tid = useResourceTreeStore.getState().currentTaskId;
       if (tid) {
         useResourceTreeStore.getState().setCurrentTask(tid);
         useResourceTreeStore.getState().invalidateSections(tid);
@@ -2647,11 +2646,11 @@ function EditorPage(props: EditorPageProps) {
         requestTaskName: () => requestTaskName('岸线分析任务'),
         // 与精细断面保持一致：不强制同步上传岸段
         skipUploadBanks: true,
-        existingTaskId: getCurrentTaskId(),
+        existingTaskId: useResourceTreeStore.getState().currentTaskId,
       });
     } finally {
       fetchBankGroups();
-      const tid = getCurrentTaskId();
+      const tid = useResourceTreeStore.getState().currentTaskId;
       if (tid) {
         useResourceTreeStore.getState().setCurrentTask(tid);
         useResourceTreeStore.getState().invalidateSections(tid);
@@ -2856,7 +2855,6 @@ function EditorPage(props: EditorPageProps) {
     const key = node.ref?.key || '';
     if (node.kind === 'task' && key) {
       useResourceTreeStore.getState().setCurrentTask(key);
-      setCurrentTaskId(key);
       return;
     }
     if (node.ref?.entity === 'bank' && key) {
@@ -2970,7 +2968,7 @@ function EditorPage(props: EditorPageProps) {
       skipUploadBanks: true,
       existingTaskId: null,
     });
-    const tid = getCurrentTaskId();
+    const tid = useResourceTreeStore.getState().currentTaskId;
     if (tid) {
       useResourceTreeStore.getState().setCurrentTask(tid);
       useResourceTreeStore.getState().invalidateSections(tid);

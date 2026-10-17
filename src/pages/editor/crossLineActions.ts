@@ -4,7 +4,7 @@ import { authHeaders } from '../../utils/apiClient';
 import type { SectionParams } from '../../types/sections';
 import { ensureDefaultBasicParams } from '../../services/basicParamsService';
 import { fetchSectionParams } from './sectionApi';
-import { getCurrentTaskId } from './taskState';
+import { useResourceTreeStore } from '../../store/useResourceTreeStore';
 import {
   coordsToVerticalFootPoint,
   getVerticalFootCoordsFromAny,
@@ -322,7 +322,7 @@ export async function createCrossLineAtPointAction(params: {
     setPerpendicularData,
   } = params;
 
-  const taskId = getCurrentTaskId();
+  const taskId = useResourceTreeStore.getState().currentTaskId;
   if (!taskId) {
     alert('未找到任务ID，请先创建任务');
     return;
@@ -851,7 +851,7 @@ export async function createCrossLineByEndpointsAction(params: {
 }) {
   const { start, end, uploadedData, perpendicularData, setPerpendicularData } = params;
 
-  const taskId = getCurrentTaskId();
+  const taskId = useResourceTreeStore.getState().currentTaskId;
   const basicParamId = await ensureDefaultBasicParams();
 
   const newGeometry: GeoJSON.LineString = {
