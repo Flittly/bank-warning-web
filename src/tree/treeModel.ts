@@ -190,7 +190,6 @@ export function buildTasksGroup(
         }));
         const firstWith = (k: string) => secs.find((s: any) => s[k] != null && s[k] !== '');
         const paramName = firstWith('param_name')?.param_name;
-        const paramKey = firstWith('basic_param_id')?.basic_param_id;
         const bench = firstWith('bench_id')?.bench_id;
         const refId = firstWith('ref_id')?.ref_id;
         const demChildren: TreeNode[] = [
@@ -210,7 +209,17 @@ export function buildTasksGroup(
         kids = [
           { id: `task-banks:${tid}`, kind: 'folder', label: '岸段', icon: 'bank', selectable: false, meta: String(bankNodes.length), children: bankNodes, actions: ['bank.loadAll', 'bank.removeAll'] },
           { id: `task-sections:${tid}`, kind: 'folder', label: '断面', icon: 'section', selectable: false, meta: String(secs.length), children: sectionBankFolders, actions: ['section.loadAll', 'section.removeAll'] },
-          { id: `task-param:${tid}`, kind: 'task-ref', label: `参数模板: ${paramName || '未设置'}`, selectable: false, meta: '引用', ref: paramKey != null ? { entity: 'param' as const, key: String(paramKey) } : undefined },
+          // 任务参数是**本任务自己的一份**（basic_params.task_id = 该任务），不再是「引用」模板库：
+          // 改它只影响这个任务，改模板库也不会影响它。入口统一走 task.setParam。
+          {
+            id: `task-param:${tid}`,
+            kind: 'task-ref',
+            label: `参数模板: ${paramName || '未设置'}`,
+            selectable: false,
+            meta: '本任务',
+            actions: ['task.setParam'],
+            ref: { entity: 'task' as const, key: tid },
+          },
           { id: `task-dems:${tid}`, kind: 'task-ref', label: 'DEM', icon: 'dem', selectable: false, children: demChildren },
         ];
       } else {
@@ -218,7 +227,9 @@ export function buildTasksGroup(
       }
       // 「终止运行」只在任务确实 running 时挂上去：pending 的任务没有可终止的线程，
       // 已结束的任务更不该出现这个按钮 —— 动作列表本身要如实反映"现在能对这个任务做什么"。
-      const taskActions = ['task.props', 'task.run', 'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete'];
+      // `task.loadMap` 与「双击任务节点」是同一个动作（把本任务的岸段+断面整体铺到地图）。
+      // 放在 viewResult 之前，不动 index 2 的位置 —— 下面 running 时的 splice 依赖它。
+      const taskActions = ['task.props', 'task.run', 'task.generateCompute', 'task.setParam', 'task.loadMap', 'task.viewResult', 'task.delete'];
       if (isRunningStatus(t?.status)) taskActions.splice(2, 0, 'task.stop');
 
       return {
@@ -268,8 +279,9 @@ export function resolveTaskRefs(
     kind: 'task-ref',
     label: `参数模板: ${data.paramName || '未设置'}`,
     selectable: false,
-    meta: '引用',
-    ref: data.paramKey ? { entity: 'param', key: data.paramKey } : undefined,
+    meta: '本任务',
+    actions: ['task.setParam'],
+    ref: { entity: 'task', key: tid },
   };
   const demChildren: TreeNode[] = [
     { key: data.bench_id, meta: '基准' },

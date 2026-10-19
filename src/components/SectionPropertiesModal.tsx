@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import type { SectionParams } from '../types/sections';
 import TiffResourcePicker from './TiffResourcePicker';
 import styles from './Modal.module.css';
-import { updateSectionParams } from '../pages/editor/sectionApi';
 
 const TIDE_LABELS: Record<string, string> = { xc: '小潮', zc: '中潮', dc: '大潮' };
 
@@ -14,27 +13,42 @@ const formatHydroLabel = (waterQs: string, tidalLevel: string) => {
 
 interface SectionPropertiesModalProps {
   config: SectionParams | null;
-  onSave: (newConfig: SectionParams, scope?: string, bankIds?: string[]) => void | Promise<void>;
+  onSave: (newConfig: SectionParams) => void | Promise<void>;
   onClose: () => void;
   title: string;
   sectionId?: string;
-  bankList?: any[];
-  hideScope?: boolean;
+  /**
+   * 仅「任务参数」面板提供：从模板库拷一份覆盖本任务。
+   * 复制后两者再无关联，改模板不会回头影响这个任务。
+   */
+  templateOptions?: Array<{ param_id: string; param_name: string }>;
+  onImportTemplate?: (paramId: string) => void | Promise<void>;
 }
 
+/**
+ * 参数编辑弹窗（纯表单）。
+ *
+ * 这里**刻意不再有「应用范围」下拉**：那个下拉曾提供「下发到全部断面」，
+ * 而参数模板是全库共享的一份，选一次就能改掉所有历史任务的输入
+ * （2026-10-17 实测：模板 166 下 13822 条断面、横跨 15 个任务被一次改写）。
+ * 现在作用域由调用方决定且唯一：
+ *   · 任务参数面板 → 只写本任务；
+ *   · 模板库面板   → 只写模板本身；
+ *   · 单断面面板   → 只写这一条断面。
+ * 弹窗只负责收集值，不再提供任何批量下发入口。
+ */
 function SectionPropertiesModal({
   config,
   onSave,
   onClose,
   title,
   sectionId,
-  bankList = [],
-  hideScope = false,
+  templateOptions,
+  onImportTemplate,
 }: SectionPropertiesModalProps) {
   const [params, setParams] = useState<SectionParams>(config || {});
   const [isSaving, setIsSaving] = useState(false);
-  const [applyScope, setApplyScope] = useState<string>('all');
-  const [selectedBankIds, setSelectedBankIds] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
   const [hydroOptions, setHydroOptions] = useState<Array<{ water_qs: string; tidal_level: string }>>([]);
 
   const hydroValue =
@@ -132,11 +146,7 @@ function SectionPropertiesModal({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      if (sectionId && applyScope === 'single') {
-        await updateSectionParams(sectionId, params);
-      }
-      const bankIds = applyScope === 'selected' ? selectedBankIds : undefined;
-      await Promise.resolve(onSave(params, applyScope, bankIds));
+      await Promise.resolve(onSave(params));
       onClose();
     } catch (err: any) {
       console.error('保存参数失败:', err);
@@ -150,33 +160,6 @@ function SectionPropertiesModal({
     <div className={styles.overlay}>
       <div className={styles.container}>
         <h3 className={styles.title}>{title}</h3>
-
-        {!hideScope && (
-        /* 应用范围 */
-        <div className={styles.scopeSection}>
-          <label className={styles.label}>应用范围:</label>
-          <select value={applyScope} onChange={e => setApplyScope(e.target.value)} className={styles.select}>
-            <option value="none">仅保存模板</option>
-            <option value="all">全部断面</option>
-            {bankList.length > 0 && <option value="selected">已选岸段</option>}
-            {sectionId && <option value="single">仅当前断面</option>}
-          </select>
-          {applyScope === 'selected' && bankList.length > 0 && (
-            <div className={styles.bankSelectList}>
-              {bankList.map((b: any) => (
-                <label key={b.bank_id} className={styles.bankCheck}>
-                  <input type="checkbox" checked={selectedBankIds.includes(b.bank_id)}
-                    onChange={e => {
-                      if (e.target.checked) setSelectedBankIds(prev => [...prev, b.bank_id]);
-                      else setSelectedBankIds(prev => prev.filter(id => id !== b.bank_id));
-                    }} />
-                  {b.bank_name || b.bank_id}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-        )}
 
         {/* 基础信息 */}
         <fieldset className={styles.fieldset}>
@@ -400,6 +383,30 @@ function SectionPropertiesModal({
           </small>
         </fieldset>
         <div className={styles.actions}>
+          {onImportTemplate && templateOptions && templateOptions.length > 0 && (
+            <select
+              value=""
+              disabled={importing || isSaving}
+              onChange={async (e) => {
+                const nextId = e.target.value;
+                if (!nextId) return;
+                if (!window.confirm('用该模板库模板覆盖本任务的参数？本任务断面会被同步，需重跑才会更新结果。')) return;
+                setImporting(true);
+                try {
+                  await Promise.resolve(onImportTemplate(nextId));
+                } finally {
+                  setImporting(false);
+                }
+              }}
+              className={styles.select}
+              title="从模板库复制一份到本任务（之后互不影响）"
+            >
+              <option value="">{importing ? '导入中…' : '从模板库导入…'}</option>
+              {templateOptions.map((t) => (
+                <option key={t.param_id} value={t.param_id}>{t.param_name || t.param_id}</option>
+              ))}
+            </select>
+          )}
           <button
             onClick={onClose}
             disabled={isSaving}

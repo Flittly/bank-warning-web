@@ -1,9 +1,46 @@
 import { authHeaders } from '../utils/apiClient';
+import { fetchTaskParamsAsSectionParams } from '../pages/editor/basicParamsApi';
 
 let currentBasicParamId: number | null = null;
 
 export const setCurrentBasicParamId = (id: number | null) => {
   currentBasicParamId = id;
+};
+
+/**
+ * 每个任务自己的参数集 id 缓存。
+ *
+ * 断面必须挂任务参数（basic_params.task_id 非空），不能再挂模板库 ——
+ * 挂模板库就是「引用」，改一次模板就会改掉所有引用它的任务。这里按任务缓存，
+ * 断面批量创建时不用每条都请求一次。
+ */
+const taskParamsIdCache = new Map<string, number>();
+
+export const invalidateTaskParamsCache = (taskId?: string) => {
+  if (taskId) taskParamsIdCache.delete(taskId);
+  else taskParamsIdCache.clear();
+};
+
+/**
+ * 取（必要时物化）某任务的参数集数值 id，供断面 basic_param_id 使用。
+ * 返回 null 表示后端没有可用来源（既没有断面快照，模板库也空）。
+ */
+export const ensureTaskParamsId = async (
+  taskId: string,
+  templateParamId?: string | null,
+): Promise<number | null> => {
+  const cached = taskParamsIdCache.get(taskId);
+  if (cached != null) return cached;
+
+  try {
+    const { numericId } = await fetchTaskParamsAsSectionParams(taskId, templateParamId);
+    if (numericId == null) return null;
+    taskParamsIdCache.set(taskId, numericId);
+    return numericId;
+  } catch (err) {
+    console.error('获取任务参数失败:', err);
+    return null;
+  }
 };
 
 export const ensureDefaultBasicParams = async (): Promise<number | null> => {

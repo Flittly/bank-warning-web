@@ -79,12 +79,14 @@ describe('buildTasksGroup', () => {
 
     expect(running.actions).toEqual([
       'task.props', 'task.run', 'task.stop',
-      'task.generateCompute', 'task.setParam', 'task.viewResult', 'task.delete',
+      'task.generateCompute', 'task.setParam', 'task.loadMap', 'task.viewResult', 'task.delete',
     ]);
     // 非 running 一个都不该有：pending/已结束的任务没有可终止的线程
     expect(pending.actions).not.toContain('task.stop');
     expect(failed.actions).not.toContain('task.stop');
     expect(pending.actions).toContain('task.run');
+    // 「加载岸段与断面到地图」与运行状态无关：任何任务都能把自己的岸段/断面铺到图上
+    for (const n of [running, pending, failed]) expect(n.actions).toContain('task.loadMap');
   });
 
   it('status 的大小写与首尾空格不影响终止入口的出现', () => {

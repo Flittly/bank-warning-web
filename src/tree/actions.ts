@@ -68,13 +68,17 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
   'dem.info': { key: 'dem.info', label: '属性', icon: 'settings' },
 
   'task.create': { key: 'task.create', label: '新建任务', icon: 'plus' },
+  // 与「双击任务节点」同义：把这个任务的岸段与断面整体铺到地图上（先清掉图上原有的）。
+  // 双击是新用户最直觉的入口，但右键菜单要留一份，才知道这个能力存在。
+  'task.loadMap': { key: 'task.loadMap', label: '加载岸段与断面到地图', icon: 'eye' },
   'task.props': { key: 'task.props', label: '任务属性', icon: 'settings' },
   'task.run': { key: 'task.run', label: '执行风险分析', icon: 'play' },
   // 只在任务确实 running 时才会挂到节点动作里（见 treeModel 按 status 拼 actions），
   // 所以这里不需要再做条件判断；danger 是为了让它在右键菜单里就是红色的。
   'task.stop': { key: 'task.stop', label: '终止运行', icon: 'stop', danger: true },
   'task.generateCompute': { key: 'task.generateCompute', label: '生成计算断面…', icon: 'ruler' },
-  'task.setParam': { key: 'task.setParam', label: '更换参数模板 / DEM', icon: 'settings' },
+  // 打开的是「本任务」自己的参数集（basic_params.task_id = 该任务），不是模板库那份。
+  'task.setParam': { key: 'task.setParam', label: '编辑本任务参数…', icon: 'settings' },
   'task.viewResult': { key: 'task.viewResult', label: '查看结果', icon: 'chart' },
   'task.delete': { key: 'task.delete', label: '删除任务', icon: 'trash', danger: true, separatorBefore: true },
 

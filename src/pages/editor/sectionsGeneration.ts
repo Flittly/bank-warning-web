@@ -2,7 +2,7 @@ import { message } from 'antd';
 import { authHeaders } from '../../utils/apiClient';
 import * as turf from '@turf/turf';
 import { generatePerpendicularLines } from '../../utils/geometry';
-import { ensureDefaultBasicParams } from '../../services/basicParamsService';
+import { ensureTaskParamsId } from '../../services/basicParamsService';
 import type { SectionParams } from '../../types/sections';
 import { fetchSectionParams } from './sectionApi';
 import { getCurrentTaskId, setCurrentTaskId } from './taskState';
@@ -125,6 +125,8 @@ async function generateSectionsAndCreateTaskCore(params: {
   skipUploadBanks?: boolean;
   // 任务优先：若提供已有 task_id，则复用该任务，跳过命名与建任务步骤
   existingTaskId?: string | null;
+  // 新建任务时用户选定的模板库模板：后端会把它拷成该任务自己的参数集
+  templateParamId?: string | null;
   // 若为 true，则对每条断面沿起点->终点方向延长，直到与遇到的第一个岸线相交
   extendToFirstShorelineIntersection?: boolean;
 }) {
@@ -191,12 +193,6 @@ async function generateSectionsAndCreateTaskCore(params: {
   };
 
   try {
-    const basicParamId = await ensureDefaultBasicParams();
-    if (!basicParamId) {
-      message.error('初始化默认参数失败，请检查后端连接');
-      return;
-    }
-
     const existingTaskId = params.existingTaskId?.trim() || null;
     let taskName: string | undefined;
     let taskId: string;
@@ -302,6 +298,14 @@ async function generateSectionsAndCreateTaskCore(params: {
       }
     } else {
       console.info('任务优先：复用已有任务，跳过创建任务:', taskId);
+    }
+
+    // 断面必须挂「本任务」的参数集（不是模板库的引用）：任务已经存在，才谈得上任务参数。
+    // 指定了模板时后端会把该模板的内容拷进本任务，之后两者再无关联。
+    const basicParamId = await ensureTaskParamsId(taskId, params.templateParamId ?? null);
+    if (!basicParamId) {
+      message.error('初始化任务参数失败，请检查后端连接或先创建参数模板');
+      return;
     }
 
     const allPerpendicularLines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
@@ -520,6 +524,8 @@ export async function generateSectionsAndCreateTask(params: {
   skipUploadBanks?: boolean;
   // 任务优先：若提供已有 task_id，则复用该任务
   existingTaskId?: string | null;
+  // 新建任务时用户选定的模板库模板：后端会把它拷成该任务自己的参数集
+  templateParamId?: string | null;
 }) {
   await generateSectionsAndCreateTaskCore({
     ...params,
@@ -541,6 +547,8 @@ export async function generateComputeSectionsAndCreateTask(params: {
   skipUploadBanks?: boolean;
   // 任务优先：若提供已有 task_id，则复用该任务
   existingTaskId?: string | null;
+  // 新建任务时用户选定的模板库模板：后端会把它拷成该任务自己的参数集
+  templateParamId?: string | null;
 }) {
   await generateSectionsAndCreateTaskCore({
     ...params,

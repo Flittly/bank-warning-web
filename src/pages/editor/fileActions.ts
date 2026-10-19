@@ -1,7 +1,7 @@
 import { message } from 'antd';
 import * as turf from '@turf/turf';
 import type { ChangeEvent } from 'react';
-import { ensureDefaultBasicParams } from '../../services/basicParamsService';
+import { ensureTaskParamsId } from '../../services/basicParamsService';
 import { setCurrentTaskId } from './taskState';
 import { newTaskId } from '../../utils/taskId';
 import { stripZFromGeoJSON } from '../../utils/geojson';
@@ -142,12 +142,6 @@ export async function uploadSectionsGeoJsonAndCreateTaskAction(params: {
       return;
     }
 
-    const basicParamId = await ensureDefaultBasicParams();
-    if (!basicParamId) {
-      message.error('初始化默认参数失败，请检查后端连接');
-      return;
-    }
-
     const taskName = (await params.requestTaskName())?.trim();
     if (!taskName) {
       // 用户取消创建任务
@@ -190,6 +184,13 @@ export async function uploadSectionsGeoJsonAndCreateTaskAction(params: {
 
     if (!taskResponse.ok) {
       throw new Error(`创建任务失败: ${taskResponse.statusText}`);
+    }
+
+    // 任务已落库，才能取到／物化「本任务」的参数集。断面挂它，不再挂全局默认模板。
+    const basicParamId = await ensureTaskParamsId(taskId);
+    if (!basicParamId) {
+      message.error('初始化任务参数失败，请检查后端连接或先创建参数模板');
+      return;
     }
 
     const sectionsToCreate: any[] = [];

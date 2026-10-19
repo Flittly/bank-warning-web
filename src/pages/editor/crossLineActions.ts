@@ -2,7 +2,7 @@ import * as turf from '@turf/turf';
 import type { Dispatch, SetStateAction } from 'react';
 import { authHeaders } from '../../utils/apiClient';
 import type { SectionParams } from '../../types/sections';
-import { ensureDefaultBasicParams } from '../../services/basicParamsService';
+import { ensureTaskParamsId } from '../../services/basicParamsService';
 import { fetchSectionParams } from './sectionApi';
 import { getCurrentTaskId } from './taskState';
 import {
@@ -328,9 +328,10 @@ export async function createCrossLineAtPointAction(params: {
     return;
   }
 
-  const basicParamId = await ensureDefaultBasicParams();
+  // 断面挂的是本任务的参数集，不再挂模板库（模板库改动不该影响已有任务）
+  const basicParamId = await ensureTaskParamsId(taskId);
   if (!basicParamId) {
-    alert('获取默认参数失败');
+    alert('获取任务参数失败，请先创建参数模板');
     return;
   }
 
@@ -852,7 +853,8 @@ export async function createCrossLineByEndpointsAction(params: {
   const { start, end, uploadedData, perpendicularData, setPerpendicularData } = params;
 
   const taskId = getCurrentTaskId();
-  const basicParamId = await ensureDefaultBasicParams();
+  // 只有任务存在时才有「任务参数」；没有任务时下面会走纯前端绘制分支
+  const basicParamId = taskId ? await ensureTaskParamsId(taskId) : null;
 
   const newGeometry: GeoJSON.LineString = {
     type: 'LineString',

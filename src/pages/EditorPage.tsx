@@ -25,7 +25,7 @@ import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
 import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, ChevronDown, CheckCircle2 } from 'lucide-react';
-import { setCurrentBasicParamId } from '../services/basicParamsService';
+import { invalidateTaskParamsCache, setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
 import { resolveVisibleTiffBounds, toggleDemBounds } from '../map/tiffBoundsView';
 import { cancelTask } from '../services/taskRunControl';
@@ -57,9 +57,13 @@ import {
 import {
   fetchBasicParamDetailAsSectionParams,
   fetchBasicParamsList,
+  fetchTaskParamsAsSectionParams,
+  importTaskParamsFromTemplate,
   updateBasicParamAsSectionParams,
+  updateTaskParams,
 } from './editor/basicParamsApi';
 import { getCurrentTaskId, setCurrentTaskId } from './editor/taskState';
+import { updateSectionParams } from './editor/sectionApi';
 import {
   DEFAULT_REQUEST_CONCURRENCY,
   isNetworkLevelError,
@@ -193,11 +197,36 @@ function EditorPage(props: EditorPageProps) {
     resolve?.(ok);
   };
 
+  /**
+   * 参数面板当前的作用域。
+   *
+   * 只有两种，互不交叉：
+   *   · 'library' —— 模板库主数据，保存只写模板本身，**永远不影响任何任务**；
+   *   · 'task'    —— 当前任务自己的一份参数，保存只写该任务并同步该任务的断面。
+   *
+   * 旧实现把两者混成一个「全局属性配置」，保存时还问要不要「下发到断面」，
+   * 于是改一次模板就改掉了所有引用它的任务（模板 166 事发时波及 15 个任务的 13822 条断面）。
+   */
+  const [paramScope, setParamScope] = useState<'library' | 'task'>('library');
+  // 从模板库导入会替换整份参数：用 key 强制重挂弹窗，避免内部 state 还留着旧值
+  const [paramPanelRevision, setParamPanelRevision] = useState(0);
+
   const loadBasicParamAsGlobalProperties = async (paramIdStr: string) => {
     const { numericId, sectionParams } = await fetchBasicParamDetailAsSectionParams(paramIdStr);
     setGlobalProperties(sectionParams);
     setSelectedBasicParamIdState(paramIdStr);
     setCurrentBasicParamId(numericId);
+    setParamScope('library');
+    return sectionParams;
+  };
+
+  /** 载入「某个任务自己的参数集」，后续保存只写这个任务。 */
+  const loadTaskParamsAsGlobalProperties = async (taskId: string, templateParamId?: string | null) => {
+    const { numericId, paramId, sectionParams } = await fetchTaskParamsAsSectionParams(taskId, templateParamId);
+    setGlobalProperties(sectionParams);
+    setSelectedBasicParamIdState(paramId);
+    setCurrentBasicParamId(numericId);
+    setParamScope('task');
     return sectionParams;
   };
 
@@ -306,19 +335,16 @@ function EditorPage(props: EditorPageProps) {
   }, [showTiffBounds, tiffBoundsData]);
 
   const filteredTiffBoundsData = useMemo(() => {
-    if (!tiffBoundsData || selectedBasicParamIdState == null) return null;
-    const param = basicParamsList.find((p: any) => {
-      const pid = p.param_id ?? p.id;
-      return String(pid) === String(selectedBasicParamIdState);
-    });
-    if (!param) return null;
-    const demKeys = new Set([param.bench_id, param.ref_id].filter(Boolean));
+    // 用当前面板里的参数（任务参数 / 模板库参数都行）取 DEM key。
+    // 不能再去 basicParamsList 里按 param_id 找：任务参数不在模板库列表里，会永远找不到。
+    if (!tiffBoundsData || !globalProperties) return null;
+    const demKeys = new Set([globalProperties.bench_id, globalProperties.ref_id].filter(Boolean));
     if (demKeys.size === 0) return null;
     const features = tiffBoundsData.features.filter((f: any) =>
       demKeys.has(f.properties?.tiff_key)
     );
     return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
-  }, [tiffBoundsData, selectedBasicParamIdState, basicParamsList]);
+  }, [tiffBoundsData, globalProperties]);
 
   // 真正喂给地图的 TIF 范围数据（推导 + 单测见 map/tiffBoundsView.ts）。
   //
@@ -990,11 +1016,17 @@ function EditorPage(props: EditorPageProps) {
         return false;
       }
 
+      // 这里必须从 store 现取，而不是用闭包里捕获的 uploadedData。
+      // 批量场景（双击任务一键加载 / 文件夹「全部加载」）是「先清空、紧接着连续 loadBankById」，
+      // 闭包里的集合还停在清空之前 ⇒ 会把本该重新画上的岸段误判成"已在地图上"直接跳过，
+      // 症状就是"点了加载但地图上还是空的"。
+      const currentBanks = ((useEditorStore.getState().uploadedData?.features || []) as any[]);
+
       const newFeature = {
         type: 'Feature' as const,
         geometry: geom,
         properties: {
-          index: uploadedData ? uploadedData.features.length : 0,
+          index: currentBanks.length,
           bank_id: b.bank_id,
           bank_name: b.bank_name,
           region_code: b.region_code,
@@ -1005,7 +1037,7 @@ function EditorPage(props: EditorPageProps) {
       } as any;
 
       // 如果已存在相同 bank_id，避免重复加载
-      const exists = uploadedData?.features.some((f: any) => {
+      const exists = currentBanks.some((f: any) => {
         const p = f?.properties || {};
         return String(p.bank_id || p.bankId || '') === String(b.bank_id);
       });
@@ -1343,6 +1375,102 @@ function EditorPage(props: EditorPageProps) {
 
     hit.forEach((id) => removeBankFromMap(id));
     message.success(`已从地图移出 ${hit.length} 条岸段`);
+  };
+
+  // —— 双击「计算任务」下的任务节点：一键把该任务的岸段 + 断面铺到地图 ——
+  //
+  // 为什么要有：一个任务下动辄上百条断面，此前要"先把旧的移出、再逐个文件夹点全部加载"，
+  // 而且很容易把两个任务的断面混在一张图上（编号/颜色全对不上）。
+  // 双击任务 = 明确的"切到这个任务"的意图，所以这里**先清空**再加载，不做合并。
+
+  // 清空地图上现有的岸段与断面，并复位所有"按下标存"的选中态。
+  const clearMapForTaskSwitch = () => {
+    const beforeBanks = Number(useEditorStore.getState().uploadedData?.features?.length || 0);
+    const beforeSections = Number(useEditorStore.getState().perpendicularData?.features?.length || 0);
+
+    setUploadedData({ type: 'FeatureCollection', features: [] } as any);
+    setLoadedBanks([]);
+    setPerpendicularData({ type: 'FeatureCollection', features: [] } as any);
+
+    // 选中态是按 features 下标存的 ⇒ 清空后必须复位，否则下一次点断面会指到另一条
+    setSelectedCrossLineIndex(null);
+    setSelectedCrossLineIndices(new Set());
+    setSelectedLoadedBanks(new Set());
+
+    // 「移出后可恢复」的记录只对"用户手动移出"有意义；
+    // 这里是换任务，把上一个任务的断面恢复回来是错的。
+    removedBankSectionsRef.current.clear();
+
+    // 「选中岸段」是"用哪些岸段生成断面"的语义，跨任务复用会把上一任务的范围带过去
+    if (useEditorStore.getState().selectedLines.size > 0) setSelectedLines(new Set());
+
+    return { beforeBanks, beforeSections };
+  };
+
+  const loadTaskOntoMap = async (taskId: string, taskName?: string) => {
+    const tid = String(taskId || '');
+    if (!tid) return;
+    const label = taskName || tid;
+    // 同一个 key 复用一条提示：进度文案原地更新，不会叠一堆 toast
+    // （实测库里最大的任务有 2088 条断面 / 100 条岸段，串行加载要好几秒）
+    const toastKey = `task-load:${tid}`;
+    const toast = (content: string) => message.loading({ content, key: toastKey, duration: 0 });
+    toast(`正在读取任务「${label}」的断面清单…`);
+    try {
+      const { beforeBanks, beforeSections } = clearMapForTaskSwitch();
+
+      // 1) 一次取全该任务的断面（响应里带 section_geometry / vertical_foot_point），
+      //    顺带拿到这个任务实际涉及哪些岸段 —— 比 task.bank_ids 更可靠（那里可能为空）。
+      const res = await fetch(
+        `/v0/bank/sections?task_id=${encodeURIComponent(tid)}`,
+        { headers: { ...authHeaders() } },
+      );
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const data = await res.json();
+      const list: any[] = Array.isArray(data?.sections) ? data.sections : [];
+
+      const bankIds = [...new Set(list.map((s) => String(s?.bank_id || '')).filter(Boolean))];
+      const clearedNote = beforeBanks + beforeSections > 0
+        ? `（已先移出原有 ${beforeBanks} 条岸段、${beforeSections} 条断面）`
+        : '';
+
+      if (list.length === 0) {
+        message.warning({ content: `任务「${label}」下没有断面，地图已清空${clearedNote}`, key: toastKey, duration: 5 });
+        return;
+      }
+
+      // 2) 先铺岸段：断面是挂在岸段上的，岸段不在图上时断面会显得悬空。
+      //    走统一限流（6 并发）：岸段可能上百条，逐条串行在远程部署下会很慢。
+      toast(`正在加载任务「${label}」：${bankIds.length} 条岸段、${list.length} 条断面…`);
+      const bankResults = await mapWithConcurrency(
+        bankIds,
+        DEFAULT_REQUEST_CONCURRENCY,
+        (bid) => loadBankById(bid, { silent: true }),
+        (done, total) => {
+          if (total > DEFAULT_REQUEST_CONCURRENCY * 2 && (done % DEFAULT_REQUEST_CONCURRENCY === 0 || done === total)) {
+            toast(`正在加载任务「${label}」的岸段 ${done}/${total}…`);
+          }
+        },
+      );
+      const bankOk = bankResults.filter(Boolean).length;
+
+      // 3) 再铺断面
+      const added = appendSectionsToMap(list);
+      if (added > 0) setShowCrossLines(true);
+
+      const bankFail = bankIds.length - bankOk;
+      message.success({
+        content:
+          `已加载任务「${label}」：${bankOk} 条岸段、${added} 条断面` +
+          (bankFail > 0 ? `（${bankFail} 条岸段缺几何未画上）` : '') +
+          clearedNote,
+        key: toastKey,
+        duration: 5,
+      });
+    } catch (e: any) {
+      console.error('按任务加载岸段/断面失败:', e);
+      message.error({ content: `加载任务「${label}」失败：${e?.message || String(e)}`, key: toastKey, duration: 6 });
+    }
   };
 
   const deleteBankById = async (bankId: string) => {
@@ -1904,21 +2032,37 @@ function EditorPage(props: EditorPageProps) {
     }
   };
 
-  const openGlobalPropertiesModal = async () => {
-    const paramIdStr = selectedBasicParamIdState === null ? '' : String(selectedBasicParamIdState);
+  /**
+   * 打开参数面板。作用域必须由入口显式指定，不再靠「当前选中的模板」猜：
+   *   · 资源树「参数模板」文件夹（模板库）→ 只改模板本身；
+   *   · 任务节点右键「参数配置」/ 任务参数节点 → 只改该任务。
+   */
+  const openGlobalPropertiesModal = async (
+    target?: { scope: 'task'; taskId: string } | { scope: 'library'; paramId?: string | null },
+  ) => {
+    if (target?.scope === 'task') {
+      try {
+        await loadTaskParamsAsGlobalProperties(target.taskId);
+        setShowGlobalPropertiesModal(true);
+      } catch (err: any) {
+        console.error('加载任务参数失败:', err);
+        alert(`加载任务参数失败: ${err?.message || err}`);
+      }
+      return;
+    }
+
+    const paramIdStr = String(target?.paramId ?? selectedBasicParamIdState ?? '');
     if (!paramIdStr) {
       alert('请先选择一个参数模板');
       return;
     }
 
-    if (!globalProperties) {
-      try {
-        await loadBasicParamAsGlobalProperties(paramIdStr);
-      } catch (err) {
-        console.warn('打开属性配置时加载模板详情失败:', err);
-        alert('当前模板详情加载失败，请重试');
-        return;
-      }
+    try {
+      await loadBasicParamAsGlobalProperties(paramIdStr);
+    } catch (err) {
+      console.warn('打开属性配置时加载模板详情失败:', err);
+      alert('当前模板详情加载失败，请重试');
+      return;
     }
 
     setShowGlobalPropertiesModal(true);
@@ -2888,6 +3032,18 @@ function EditorPage(props: EditorPageProps) {
   };
 
   const handleTreeNodeDoubleClick = (node: TreeNode) => {
+    // 双击「计算任务」下的某个任务：把这个任务的岸段与断面整体铺到地图上
+    // （先清掉地图上原有的岸段/断面，不合并 —— 免得上一个任务的东西留在图上串号）。
+    // 注意判 kind 而不是 ref.entity：任务参数节点（task-ref）的 ref.entity 也是 'task'，
+    // 双击它应当是"编辑参数"，不能顺手把整张图换掉。
+    if (node.kind === 'task') {
+      const tid = String(node.ref?.key || '');
+      if (!tid) return;
+      useResourceTreeStore.getState().setCurrentTask(tid);
+      setCurrentTaskId(tid);
+      void loadTaskOntoMap(tid, node.label);
+      return;
+    }
     if (node.ref?.entity === 'bank') {
       void loadBankById(node.ref.key);
     } else if (node.ref?.entity === 'dem') {
@@ -2969,11 +3125,19 @@ function EditorPage(props: EditorPageProps) {
       requestTaskName: () => Promise.resolve(form.name),
       skipUploadBanks: true,
       existingTaskId: null,
+      templateParamId: form.templateId || null,
     });
     const tid = getCurrentTaskId();
     if (tid) {
       useResourceTreeStore.getState().setCurrentTask(tid);
       useResourceTreeStore.getState().invalidateSections(tid);
+      // 任务建好后，参数面板切到「本任务参数」——它已经是模板的一份独立副本，
+      // 之后再改模板库不会影响这个任务，面板上显示的也应该是这份副本。
+      try {
+        await loadTaskParamsAsGlobalProperties(tid);
+      } catch (err) {
+        console.warn('加载新任务参数失败:', err);
+      }
     }
     bumpTreeData();
     fetchBankGroups();
@@ -3159,7 +3323,7 @@ function EditorPage(props: EditorPageProps) {
 
       case 'param.create': setCreateParamModalOpen(true); break;
       case 'param.select': await handleSelectBasicParam(key); break;
-      case 'param.props': await openGlobalPropertiesModal(); break;
+      case 'param.props': await openGlobalPropertiesModal({ scope: 'library', paramId: key }); break;
       case 'param.editSectionParams': await configureSelectedCrossLineProperties(); break;
 
       case 'dem.select':
@@ -3207,12 +3371,14 @@ function EditorPage(props: EditorPageProps) {
       case 'task.run': useResourceTreeStore.getState().setCurrentTask(key); await handleStartAnalysis(); break;
       case 'task.stop': await handleStopTask(key, node.label); break;
       case 'task.generateCompute': useResourceTreeStore.getState().setCurrentTask(key); await handleGenerateComputeSections(); bumpTreeData(); break;
-      case 'task.setParam': useResourceTreeStore.getState().setCurrentTask(key); await openGlobalPropertiesModal(); break;
+      case 'task.setParam': useResourceTreeStore.getState().setCurrentTask(key); await openGlobalPropertiesModal({ scope: 'task', taskId: key }); break;
+      case 'task.loadMap': await loadTaskOntoMap(key, node.label); break;
       case 'task.viewResult': setPage?.('result', key); break;
       case 'task.delete': {
         const ok = await requestConfirm({ title: '删除任务', content: `确认删除任务「${node.label}」？`, danger: true });
         if (ok) {
           await fetch(`/v0/bank/tasks/${encodeURIComponent(key)}`, { method: 'DELETE', headers: { ...authHeaders() } });
+          invalidateTaskParamsCache(key);
           useResourceTreeStore.getState().removeTask(key);
           bumpTreeData();
         }
@@ -3769,13 +3935,52 @@ function EditorPage(props: EditorPageProps) {
         </div>
       )}
 
-      {/* 全局属性配置弹窗 */}
+      {/* 参数配置弹窗：作用域只有两种，见 paramScope 的注释 */}
       {showGlobalPropertiesModal && globalProperties && (
         <SectionPropertiesModal
+          key={`${paramScope}-${paramPanelRevision}`}
           config={globalProperties}
-          title="全局属性配置"
-          bankList={bankList}
-          onSave={async (newConfig, scope, bankIds) => {
+          title={paramScope === 'task' ? '任务参数（仅本任务）' : '模板库参数（仅模板本身）'}
+          templateOptions={
+            paramScope === 'task'
+              ? basicParamsList
+                  .map((p: any) => ({
+                    param_id: String(p.param_id ?? p.id ?? ''),
+                    param_name: String(p.param_name ?? p.paramName ?? ''),
+                  }))
+                  .filter((t) => t.param_id)
+              : undefined
+          }
+          onImportTemplate={
+            paramScope === 'task'
+              ? async (templateId: string) => {
+                  const taskId = getCurrentTaskId();
+                  if (!taskId) throw new Error('未找到当前任务');
+                  const r = await importTaskParamsFromTemplate(taskId, templateId);
+                  await loadTaskParamsAsGlobalProperties(taskId);
+                  setParamPanelRevision((v) => v + 1);
+                  alert(
+                    `已从模板库复制到本任务，并同步 ${r.updated_sections}/${r.total_sections} 条断面。\n\n` +
+                      '复制之后两者无关联：之后改模板库不会再影响这个任务。',
+                  );
+                }
+              : undefined
+          }
+          onSave={async (newConfig) => {
+            if (paramScope === 'task') {
+              const taskId = getCurrentTaskId();
+              if (!taskId) throw new Error('未找到当前任务，无法保存任务参数');
+
+              const result = await updateTaskParams(taskId, newConfig);
+              setGlobalProperties(newConfig);
+              alert(
+                '已保存到本任务的参数集。\n\n' +
+                  `本任务断面：${result.updated_sections}/${result.total_sections} 条已同步。\n` +
+                  '参数已变化，需要重跑本任务，风险结果才会更新；其它任务完全不受影响。',
+              );
+              return;
+            }
+
             const paramIdStr = selectedBasicParamIdState === null ? '' : String(selectedBasicParamIdState);
             if (!paramIdStr) throw new Error('未选择可保存的参数模板');
 
@@ -3788,31 +3993,14 @@ function EditorPage(props: EditorPageProps) {
               }),
             );
 
-            // 批量应用到断面上
-            if (scope === 'all' || scope === 'selected') {
-              const features = perpendicularData?.features || [];
-              let targetIds: string[] = [];
-              if (scope === 'all') {
-                targetIds = features
-                  .map((f: any) => f.properties?.sectionId || f.properties?.section_id)
-                  .filter(Boolean);
-              } else if (bankIds && bankIds.length > 0) {
-                targetIds = features
-                  .filter((f: any) => bankIds.includes(f.properties?.bank_id))
-                  .map((f: any) => f.properties?.sectionId || f.properties?.section_id)
-                  .filter(Boolean);
-              }
-              if (targetIds.length > 0) {
-                await fetch('/v0/bank/sections/batch-params', {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ section_ids: targetIds, params: newConfig }),
-                });
-              }
-              alert(`参数模板已保存，并应用到 ${targetIds.length} 个断面`);
-            } else {
-              alert('参数模板已保存到后端');
-            }
+            // 模板库是主数据，这里只写模板本身：
+            // 已有任务各自持有一份从模板复制出来的参数集（basic_params.task_id 非空），
+            // 与模板再无关联，所以不存在「改模板把历史任务一起改了」这件事。
+            alert(
+              '模板已保存（仅模板本身）。\n\n' +
+                '已有任务使用的是各自独立的参数集，不会被这次修改影响；' +
+                '之后新建的任务从该模板复制时才会用到新值。',
+            );
           }}
           onClose={() => setShowGlobalPropertiesModal(false)}
         />
@@ -3846,8 +4034,6 @@ function EditorPage(props: EditorPageProps) {
             alert(`${sectionIds.length} 个断面已更新`);
           }}
           onClose={() => setEditingBankParams(null)}
-          bankList={bankList}
-          hideScope={true}
         />
       )}
 
@@ -3881,7 +4067,11 @@ function EditorPage(props: EditorPageProps) {
               config={currentConfig}
               title={`断面 #${index + 1} 属性配置`}
               sectionId={sectionId}
-              onSave={(newConfig) => {
+              onSave={async (newConfig) => {
+                // 单断面弹窗只写这一条断面：这是唯一允许「只影响一条」的作用域。
+                if (sectionId) {
+                  await updateSectionParams(String(sectionId), newConfig);
+                }
                 // 更新前端状态
                 const updatedFeatures = [...perpendicularData.features];
                 updatedFeatures[index] = {
@@ -3893,7 +4083,10 @@ function EditorPage(props: EditorPageProps) {
                   }
                 };
                 setPerpendicularData(turf.featureCollection(updatedFeatures as GeoJSON.Feature<GeoJSON.LineString>[]));
-                alert(`断面 #${index + 1} 的属性配置已保存`);
+                alert(
+                  `断面 #${index + 1} 的参数已保存。\n\n` +
+                    '只改了这一条断面的参数快照；该断面所在任务需要重跑才会更新结果。',
+                );
               }}
               onClose={() => setEditingPropertiesGroupId(null)}
             />
