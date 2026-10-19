@@ -1,0 +1,209 @@
+.wrap {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 560px;
+  min-width: 220px;
+  margin: 0 24px;
+}
+
+.box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.boxActive {
+  border-color: #93c5fd;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.iconLeft {
+  color: #94a3b8;
+  flex: 0 0 auto;
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.input::placeholder {
+  color: #94a3b8;
+}
+
+.kbd {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #94a3b8;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 16px;
+}
+
+.clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.clear:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.spin {
+  flex: 0 0 auto;
+  color: #3b82f6;
+  animation: gsb-spin 0.9s linear infinite;
+}
+
+@keyframes gsb-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  max-height: 62vh;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+
+.state {
+  padding: 18px 14px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.summary {
+  padding: 8px 12px 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.list {
+  padding: 4px;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.itemActive {
+  background: #eff6ff;
+}
+
+.kind {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.kind_task { background: #eff6ff; color: #1d4ed8; }
+.kind_bank { background: #ecfdf5; color: #047857; }
+.kind_section { background: #fef3c7; color: #92400e; }
+.kind_dem { background: #f5f3ff; color: #6d28d9; }
+.kind_note { background: #fce7f3; color: #9d174d; }
+.kind_report { background: #f1f5f9; color: #334155; }
+
+.itemBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.itemTitleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.itemTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  color: #0f172a;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 同名对象（「岸线分析任务」有 10+ 条）只能靠日期区分，所以它必须常驻且不被截断 */
+.itemMeta {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.itemSnippet {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dup {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.hl {
+  background: #fde68a;
+  color: #78350f;
+  border-radius: 2px;
+  padding: 0 1px;
+}

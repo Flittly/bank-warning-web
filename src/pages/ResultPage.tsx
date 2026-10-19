@@ -37,6 +37,22 @@ import {
   type FlowFieldScene,
 } from '../services/flowFieldApi';
 import { demBoundsOf, fetchTiffBounds } from '../services/tiffService';
+import {
+  formatCellValue,
+  formatIndicatorResult,
+} from '../utils/indicatorDisplay';
+import SectionResultEditor from '../components/SectionResultEditor';
+import { useResourceTreeStore } from '../store/useResourceTreeStore';
+import {
+  RISK_COLORS,
+  RISK_LABELS,
+  RISK_MATRIX_GROUPS,
+  bucketRiskValue,
+  displayLevelOfResult,
+  resolveRiskParams,
+  toDisplayLevel,
+  type RiskMatrixGroup,
+} from '../utils/riskScoring';
 
 // —— Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -202,6 +218,8 @@ interface SectionResult {
   anchorPoint?: number[] | null;
   risk_level?: string | number;
   indicator_result?: number | null; // 字符串(high, medium, low, no) 或 数字(1, 2, 3, 4)
+  /** 该断面结果自带的 all 阈值；缺失时按默认 0.25/0.5/0.75 分级。 */
+  risk_thresholds?: number[] | null;
   risk_score?: number;
 }
 
@@ -251,22 +269,9 @@ type TaskProgressSnapshot = {
   }>;
 };
 
-// 颜色映射：支持数字 ID 和 字符串
-// 风险等级映射：0 最低，3 最高
-const RISK_COLORS: Record<string, string> = {
-  '0': '#10b981', // 最低风险 - 绿
-  '1': '#facc15', // 低-中 - 黄
-  '2': '#f97316', // 较高 - 橙
-  '3': '#ef4444', // 最高 - 红
-  'default': '#94a3b8'
-};
-
 // ============================================================
 //  模块级常量 & 工具函数
 // ============================================================
-
-// 风险等级中文标签
-const RISK_LABELS: Record<number, string> = { 3: '极高风险', 2: '高风险', 1: '一般风险', 0: '低/无风险' };
 
 // 通用 fetch + JSON 解析 + 错误处理
 async function fetchJSON(url: string, init?: RequestInit): Promise<any> {
@@ -291,37 +296,8 @@ function parseList(data: any, key?: string): any[] {
   return [];
 }
 
-// 矩阵指标分组配置
-
-const MATRIX_GROUPS = [
-  {
-    title: '水流动力指标',
-    weightKey: 'wRE',
-    indicatorKeys: [
-      { label: '抗冲流速(Ky)', key: 'Ky' },
-      { label: '造床流量当量(PQ)', key: 'PQ' },
-      { label: '水位变幅(Zd)', key: 'Zd' }
-    ]
-  },
-  {
-    title: '河床演变指标',
-    weightKey: 'wNM',
-    indicatorKeys: [
-      { label: '岸坡坡比(Sa)', key: 'Sa' },
-      { label: '近岸冲刷(Ln)', key: 'Ln' },
-      { label: '滩槽高差(Zb)', key: 'Zb' }
-    ]
-  },
-  {
-    title: '地质工程指标',
-    weightKey: 'wGE',
-    indicatorKeys: [
-      { label: '土体组成(Dsed)', key: 'Dsed' },
-      { label: '岸坡防护(PL)', key: 'PL' },
-      { label: '荷载控制(LC)', key: 'LC' }
-    ]
-  }
-] as const;
+// 矩阵指标分组配置统一由 utils/riskScoring 提供（与人工修改的重算共用同一份定义）
+const MATRIX_GROUPS = RISK_MATRIX_GROUPS;
 
 interface ResultPageProps {
   initialTaskId?: string;
@@ -344,6 +320,11 @@ function ResultPage(props: ResultPageProps) {
   const lastSectionsByTaskRef = useRef<Record<string, SectionResult[]>>({});
   const sectionIndicatorResultCacheRef = useRef<Record<string, Record<string, number | null>>>({});
   const sectionIndicatorResultPromiseRef = useRef<Record<string, Record<string, Promise<number | null> | null>>>({});
+  /** 每条结果自带的 all 阈值（人工修改后分级必须用它，不能写死 0.25/0.5/0.75）。 */
+  const sectionRiskThresholdsRef = useRef<Record<string, Record<string, number[] | null>>>({});
+  /** 当前打开的地图 Popup：保存后要把它关掉，避免悬停卡片仍显示旧等级。 */
+  const activePopupRef = useRef<mapboxgl.Popup | null>(null);
+  const activePopupSectionIdRef = useRef<string | null>(null);
   const bankGeometryCacheRef = useRef<Record<string, GeoJSON.LineString | null>>({});
 
   const sectionClickHandlerRef = useRef<((e: any) => void) | null>(null);
@@ -373,6 +354,10 @@ function ResultPage(props: ResultPageProps) {
   const [matrixSectionId, setMatrixSectionId] = useState<string | null>(null);
   const [matrixSectionName, setMatrixSectionName] = useState<string | null>(null);
   const [matrixDetail, setMatrixDetail] = useState<any | null>(null);
+  /** 矩阵弹窗是否处于「人工修改」态 */
+  const [resultEditing, setResultEditing] = useState(false);
+  /** 轻量提示：保存成功后给一句明确反馈（出图/报告不会自动变，也要在这里说清） */
+  const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
 
   const [chatCollapsed, setChatCollapsed] = useState<boolean>(false);
   const [satellite, setSatellite] = useState<boolean>(false);
@@ -859,6 +844,11 @@ function ResultPage(props: ResultPageProps) {
   const parseProfilesList = (data: any): any[] => parseList(data, 'profiles');
 
   // — 断面剖面数据加载与缓存
+  //
+  // 注意这是「一次性快照」：一次请求把整个任务的剖面都拉下来，之后整个会话都复用。
+  // 任务运行期间剖面是逐条入库的，快照里不会自动包含后跑出来的断面 ——
+  // 所以 openMatrixDetail 里对 miss 的 section 还有一次单条兜底（fetchSingleProfile）。
+  // 重新进入任务时（handleTaskClick）会清掉该任务的快照，保证重跑后拿到新剖面。
   const ensureTaskProfilesLoaded = async (taskId: string) => {
     if (!taskId) return {} as Record<string, SectionProfile>;
     if (profilesCacheRef.current[taskId]) return profilesCacheRef.current[taskId];
@@ -882,6 +872,24 @@ function ResultPage(props: ResultPageProps) {
       return await promise;
     } finally {
       profilesPromiseRef.current[taskId] = null;
+    }
+  };
+
+  // 单条断面剖面：按 section_id 直取，用于「任务级列表里没有这条」时兜底。
+  //
+  // 为什么需要它：任务级列表是一次性快照（见 profilesCacheRef 的说明），而任务运行期间
+  // 结果是一条条新增的 —— 先打开详情、后跑出结果的断面，在这个快照里根本不存在。
+  // 结果页的「指标矩阵」走的是 /results/{section_id} 单条查询，不受这个快照影响，
+  // 所以会表现为「指标正常、只有剖面显示无剖面数据」。
+  const fetchSingleProfile = async (sectionId: string): Promise<SectionProfile | null> => {
+    try {
+      const payload = await fetchJSON(`/v0/bank/sections/${encodeURIComponent(sectionId)}/profile`);
+      const one = payload?.profile ?? payload?.data?.profile ?? payload;
+      if (one && (one.section_id || one.sectionId)) return one as SectionProfile;
+      return null;
+    } catch {
+      // 该断面确实还没落剖面档案（例如模型刚返回、剖面还没写完）——交给上层显示空态。
+      return null;
     }
   };
 
@@ -947,7 +955,7 @@ function ResultPage(props: ResultPageProps) {
   };
 
   // — 矩阵详情弹窗
-  const openMatrixDetail = async (taskId: string | null, sectionId: string, sectionName?: string) => {
+  const openMatrixDetail = async (taskId: string | null, sectionId: string, sectionName?: string, editMode = false) => {
     if (!sectionId) return;
     setMatrixOpen(true);
     setMatrixLoading(true);
@@ -955,6 +963,7 @@ function ResultPage(props: ResultPageProps) {
     setMatrixSectionId(sectionId);
     setMatrixSectionName(sectionName || null);
     setMatrixDetail(null);
+    setResultEditing(editMode);
 
     setProfileLoading(true);
     setProfileError(null);
@@ -987,11 +996,20 @@ function ResultPage(props: ResultPageProps) {
     });
 
     const profilePromise = (async () => {
+      // 没有当前任务时也能出剖面：单条接口只认 section_id，不依赖任务上下文
+      // （典型场景：从资源树直接进结果页，selectedTask 还没落定）。
       if (!effectiveTaskId) {
-        throw new Error('未选择任务，无法加载断面剖面');
+        setProfileDetail(await fetchSingleProfile(sectionId));
+        return;
       }
       const bySection = await ensureTaskProfilesLoaded(effectiveTaskId);
-      const prof = bySection[String(sectionId)] ?? null;
+      let prof: SectionProfile | null = bySection[String(sectionId)] ?? null;
+      if (!prof) {
+        // 任务级快照里没有这条 —— 通常是「任务还在跑，这条结果是刚出来的」。
+        // 回退到按 section_id 单条查询，并写回缓存，避免同一个断面反复打请求。
+        prof = await fetchSingleProfile(sectionId);
+        if (prof) bySection[String(sectionId)] = prof;
+      }
       setProfileDetail(prof);
     })().catch((err: any) => {
       setProfileError(err?.message || '获取断面剖面失败');
@@ -1010,26 +1028,101 @@ function ResultPage(props: ResultPageProps) {
     setMatrixSectionId(null);
     setMatrixSectionName(null);
     setMatrixDetail(null);
+    setResultEditing(false);
 
     setProfileLoading(false);
     setProfileError(null);
     setProfileDetail(null);
   };
 
-  const formatCellValue = (v: any) => {
-    if (v === null || v === undefined) return '-';
-    if (typeof v === 'number') {
-      if (!Number.isFinite(v)) return String(v);
-      // 避免长小数影响可读性
-      return Math.abs(v) >= 1000 ? String(Math.round(v)) : String(Number(v.toFixed(4)));
+  /**
+   * 保存/恢复成功后：把服务端返回的结果合并回弹窗数据。
+   * 必须走 indicators 而不是简单 `{...prev, ...updated}` —— updated 是 RiskResultResponse，
+   * 它没有铺平的 matrices/raw_values，直接展开会把表格数据打散。
+   */
+  const mergeResultIntoDetail = (prev: any, updated: any) => {
+    if (!prev) return prev;
+    const indicators = updated?.indicators ?? {};
+    return {
+      ...prev,
+      ...indicators,
+      matrices: indicators.matrices ?? prev.matrices,
+      result: indicators.result ?? prev.result,
+      risk_level: updated?.risk_level ?? prev.risk_level,
+      'risk-level': indicators['risk-level'] ?? prev['risk-level'],
+      risk_value: updated?.risk_value ?? prev.risk_value,
+      edited: Boolean(updated?.edited),
+      edited_at: updated?.edited_at ?? null,
+      edit_note: updated?.edit_note ?? null,
+    };
+  };
+
+  /**
+   * 人工修改的就地生效：只 patch 受影响的那一条断面与它所属的岸段。
+   *
+   * 刻意**不**重新请求 /sections、不 fitBounds、不清图层：
+   * 全量 reload 会让视野跳动、整条岸线闪一下，而这里其实只需要换一个色标。
+   */
+  const applyResultOverride = (sectionId: string, result: any) => {
+    const taskId = selectedTaskRef.current;
+    if (!taskId) return;
+    const indicators = result?.indicators ?? {};
+    const riskValue = Number(indicators.result);
+    if (!Number.isFinite(riskValue)) return;
+
+    const params = resolveRiskParams(indicators);
+    const level = toDisplayLevel(result?.risk_level) ?? displayLevelOfResult({ indicators });
+
+    if (!sectionIndicatorResultCacheRef.current[taskId]) sectionIndicatorResultCacheRef.current[taskId] = {};
+    if (!sectionIndicatorResultPromiseRef.current[taskId]) sectionIndicatorResultPromiseRef.current[taskId] = {};
+    if (!sectionRiskThresholdsRef.current[taskId]) sectionRiskThresholdsRef.current[taskId] = {};
+    // 三处缓存同写：少了任一处，下一轮轮询/重绘就会把颜色改回旧值。
+    sectionIndicatorResultCacheRef.current[taskId][sectionId] = riskValue;
+    sectionIndicatorResultPromiseRef.current[taskId][sectionId] = null;
+    sectionRiskThresholdsRef.current[taskId][sectionId] = params.all;
+
+    const base = lastSectionsByTaskRef.current[taskId] ?? [];
+    const target = base.find(s => s.section_id === sectionId) ?? null;
+    const next = base.map(s => s.section_id === sectionId
+      ? { ...s, indicator_result: riskValue, risk_thresholds: params.all, risk_level: level ?? s.risk_level }
+      : s);
+    lastSectionsByTaskRef.current[taskId] = next;
+
+    if (mapRef.current) {
+      renderSections(next);
+      applyShorelineGradient(next, target?.bank_id ?? null);
     }
-    if (typeof v === 'string') return v;
-    if (typeof v === 'boolean') return v ? 'true' : 'false';
-    try {
-      return JSON.stringify(v);
-    } catch {
-      return String(v);
+
+    // 悬停卡片的等级是构建 DOM 时写死的，保存后必须关掉；用户再点一次就是新值。
+    if (activePopupSectionIdRef.current === sectionId) {
+      activePopupRef.current?.remove();
+      activePopupRef.current = null;
+      activePopupSectionIdRef.current = null;
     }
+  };
+
+  const handleOverrideSaved = (updated: any) => {
+    if (!matrixSectionId) return;
+    setMatrixDetail((prev: any) => mergeResultIntoDetail(prev, updated));
+    applyResultOverride(matrixSectionId, updated);
+    setResultEditing(false);
+    const level = toDisplayLevel(updated?.risk_level);
+    const label = level === null ? '未知' : RISK_LABELS[level];
+    setToast({
+      tone: 'ok',
+      text: `已保存：风险等级 ${label}，岸段已重绘；已生成的报告/图片需重新生成`,
+    });
+  };
+
+  const handleOverrideReverted = (updated: any) => {
+    if (!matrixSectionId) return;
+    setMatrixDetail((prev: any) => mergeResultIntoDetail(prev, updated));
+    applyResultOverride(matrixSectionId, updated);
+    // 退出编辑态：草稿里还是那组被驳回的数值，留在页面上会与地图/表格不一致。
+    setResultEditing(false);
+    const level = toDisplayLevel(updated?.risk_level);
+    const label = level === null ? '未知' : RISK_LABELS[level];
+    setToast({ tone: 'ok', text: `已恢复模型原值：风险等级 ${label}` });
   };
 
   const generateMatrixCSV = () => {
@@ -1060,6 +1153,7 @@ function ResultPage(props: ResultPageProps) {
       const weightKey = group.weightKey as keyof typeof indicators;
       const weightValues = indicators?.[weightKey];
       const subThresholds = indicators?.sub_thresholds || {};
+      const matrices = matrixDetail?.matrices ?? matrixDetail?.indicators?.matrices ?? {};
       const groupWeight = Array.isArray(indicators?.wRL) ? indicators.wRL[groupIdx] : weightValues;
       
       // 组标题
@@ -1077,7 +1171,7 @@ function ResultPage(props: ResultPageProps) {
         const displayThresholds = Array.isArray(thresholdRow) ? thresholdRow : [];
         const displayWeight = Array.isArray(weightValues) ? formatCellValue(weightValues[idx]) : formatCellValue(weightValues);
         const rawValues = matrixDetail?.raw_values || {};
-        const resultValue = rawValues[key] !== undefined && rawValues[key] !== null ? formatCellValue(rawValues[key]) : 'N/A';
+        const resultValue = formatIndicatorResult(key, rawValues, matrices);
         rows.push([
           label,
           displayThresholds[0] !== undefined ? formatCellValue(displayThresholds[0]) : 'N/A',
@@ -1124,11 +1218,12 @@ function ResultPage(props: ResultPageProps) {
   };
 
   // — 矩阵详情 — 指标组渲染
-  const renderAssessmentGroup = (group: typeof MATRIX_GROUPS[number], indicators: any, groupIdx: number) => {
+  const renderAssessmentGroup = (group: RiskMatrixGroup, indicators: any, groupIdx: number) => {
     const weightKey = group.weightKey as keyof typeof indicators;
     const weightValues = indicators?.[weightKey];
     const subThresholds = indicators?.sub_thresholds || {};
     const rawValues = matrixDetail?.raw_values || {};
+    const matrices = matrixDetail?.matrices ?? matrixDetail?.indicators?.matrices ?? {};
     const groupWeight = Array.isArray(indicators?.wRL) ? indicators.wRL[groupIdx] : weightValues;
     
     const hasAnyData = group.indicatorKeys.length > 0 && (groupWeight || Object.keys(subThresholds).length > 0 || weightValues);
@@ -1159,7 +1254,7 @@ function ResultPage(props: ResultPageProps) {
                 const thresholdRow = subThresholds[key] || [];
                 const displayThresholds = Array.isArray(thresholdRow) ? thresholdRow : [];
                 const displayWeight = Array.isArray(weightValues) ? weightValues[idx] : weightValues;
-                const resultValue = rawValues[key] !== undefined && rawValues[key] !== null ? formatCellValue(rawValues[key]) : 'N/A';
+                const resultValue = formatIndicatorResult(key, rawValues, matrices);
                 
                 return (
                   <tr key={key}>
@@ -1178,6 +1273,13 @@ function ResultPage(props: ResultPageProps) {
       </div>
     );
   };
+
+  // 提示 2.6s 自动消失；不阻塞地图操作
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   // 切换断面可见性
   useEffect(() => {
@@ -1238,19 +1340,21 @@ function ResultPage(props: ResultPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 风险解析辅助：根据 /v0/bank/results/{sectionId} 的 indicators.result(0-1) 映射到 0-3 风险等级
-  const mapIndicatorResultToRiskLevel = (value: any) => {
+  // 风险解析辅助：把 indicators.result(0-1) 映射到 0-3 风险等级。
+  // 阈值必须用**该结果自带的** risk_thresholds —— 任务参数里的 risk_thresholds.all 可能不是
+  // 默认的 0.25/0.5/0.75，写死会让地图配色与库内 risk_level 不一致（人工修改后尤其明显）。
+  const mapIndicatorResultToRiskLevel = (value: any, thresholds?: number[] | null) => {
     if (value === null || value === undefined || value === '') return null;
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0 || n > 1) return null;
-    if (n < 0.25) return 0;
-    if (n < 0.5) return 1;
-    if (n < 0.75) return 2;
-    return 3;
+    const all: [number, number, number] = thresholds && thresholds.length >= 3
+      ? [Number(thresholds[0]), Number(thresholds[1]), Number(thresholds[2])]
+      : [0.25, 0.5, 0.75];
+    return bucketRiskValue(n, all);
   };
 
-  const getRiskInfo = (indicatorResult: any) => {
-    const level = mapIndicatorResultToRiskLevel(indicatorResult);
+  const getRiskInfo = (indicatorResult: any, thresholds?: number[] | null) => {
+    const level = mapIndicatorResultToRiskLevel(indicatorResult, thresholds);
     if (level === null) {
       return { valid: false, color: RISK_COLORS.default, label: '未知', level: null };
     }
@@ -1271,8 +1375,8 @@ function ResultPage(props: ResultPageProps) {
 
   // 颜色展示：按 indicators.result 对应的四级风险颜色展示
   // 不同等级之间的过渡（岸线/中线）仍由 Mapbox 的 line-gradient 插值完成
-  const computeColorWithMatrix = (indicatorResult: any) => {
-    return getRiskInfo(indicatorResult);
+  const computeColorWithMatrix = (indicatorResult: any, thresholds?: number[] | null) => {
+    return getRiskInfo(indicatorResult, thresholds);
   };
 
   const ensureSectionIndicatorResultLoaded = async (taskId: string, sectionId: string): Promise<number | null> => {
@@ -1283,6 +1387,9 @@ function ResultPage(props: ResultPageProps) {
     if (!sectionIndicatorResultPromiseRef.current[taskId]) {
       sectionIndicatorResultPromiseRef.current[taskId] = {};
     }
+    if (!sectionRiskThresholdsRef.current[taskId]) {
+      sectionRiskThresholdsRef.current[taskId] = {};
+    }
     if (Object.prototype.hasOwnProperty.call(sectionIndicatorResultCacheRef.current[taskId], sectionId)) {
       return sectionIndicatorResultCacheRef.current[taskId][sectionId] ?? null;
     }
@@ -1292,6 +1399,13 @@ function ResultPage(props: ResultPageProps) {
       const payload = await fetchJSON(`/v0/bank/results/${encodeURIComponent(sectionId)}`);
       const value = parseIndicatorResultFromSectionDetail(payload);
       sectionIndicatorResultCacheRef.current[taskId][sectionId] = value;
+      // 阈值与数值同源：老记录没有 thresholds 时这里存 null，渲染层再回落默认值。
+      const indicators = payload?.result?.indicators ?? payload?.indicators ?? payload?.data?.result?.indicators;
+      const params = resolveRiskParams(indicators ?? payload?.result ?? payload);
+      const recordedAll = indicators?.thresholds?.risk_threshold;
+      sectionRiskThresholdsRef.current[taskId][sectionId] = Array.isArray(recordedAll) && recordedAll.length >= 3
+        ? params.all
+        : null;
       return value;
     })();
     sectionIndicatorResultPromiseRef.current[taskId][sectionId] = promise;
@@ -1503,10 +1617,12 @@ function ResultPage(props: ResultPageProps) {
       );
     }
 
+    const thresholdsBySection = sectionRiskThresholdsRef.current[taskId] ?? {};
     const sectionsWithIndicatorResult = mergedSections.map(s => {
       const cached = sectionIndicatorResultCacheRef.current[taskId]?.[s.section_id];
-      if (cached === undefined) return s;
-      return { ...s, indicator_result: cached };
+      const thresholds = thresholdsBySection[s.section_id] ?? s.risk_thresholds ?? null;
+      if (cached === undefined && !thresholds) return s;
+      return { ...s, indicator_result: cached ?? null, risk_thresholds: thresholds };
     });
 
     // 注：result 的数值意义尚不明确，暂不再轮询 /matrix（避免高频额外请求）
@@ -1573,6 +1689,9 @@ function ResultPage(props: ResultPageProps) {
 
     // 轮询驱动地图刷新（断面颜色 + 岸段插值）
     if (map) {
+      // 把「已带上 indicator_result / 阈值」的数组写回基准快照：
+      // 人工修改后的就地重绘要以它为底，否则会丢其它断面的颜色。
+      lastSectionsByTaskRef.current[taskId] = sectionsWithIndicatorResult;
       renderSections(sectionsWithIndicatorResult);
       applyShorelineGradient(sectionsWithIndicatorResult);
     }
@@ -1602,6 +1721,9 @@ function ResultPage(props: ResultPageProps) {
     // 清理地图上之前任务的图层和数据源
     const map = mapRef.current;
     if (map) clearMapLayers(map);
+
+    // 重新进入任务 = 重新取剖面快照。任务可能重跑过，剖面已更新，旧快照不能用。
+    delete profilesCacheRef.current[taskId];
 
     try {
       // 1) 先拉取断面列表（含几何），先渲染“未着色”的断面
@@ -1746,7 +1868,7 @@ function ResultPage(props: ResultPageProps) {
 
     // 转换断面数据为 GeoJSON
     const features = sections.filter(s => s.geometry).map(s => {
-      const info = computeColorWithMatrix(s.indicator_result);
+      const info = computeColorWithMatrix(s.indicator_result, s.risk_thresholds);
       const color = info.color;
       const displayRisk = info.valid ? info.level : info.label;
       const riskLabel = info.valid && info.level !== null ? RISK_LABELS[info.level] : '未知';
@@ -1864,7 +1986,29 @@ function ResultPage(props: ResultPageProps) {
         };
         root.appendChild(btn);
 
-        new mapboxgl.Popup().setLngLat(e.lngLat).setDOMContent(root).addTo(map);
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.textContent = '编辑数值';
+        editBtn.style.marginTop = '8px';
+        editBtn.style.marginLeft = '6px';
+        editBtn.style.border = '1px solid #cbd5e1';
+        editBtn.style.background = '#ffffff';
+        editBtn.style.color = '#334155';
+        editBtn.style.borderRadius = '6px';
+        editBtn.style.padding = '3px 8px';
+        editBtn.style.cursor = 'pointer';
+        editBtn.style.fontSize = '12px';
+        editBtn.onclick = () => {
+          const sid = String(p.id);
+          const sname = String(p.name ?? '断面');
+          const tid = selectedTaskRef.current;
+          openMatrixDetail(tid, sid, sname, true);
+        };
+        root.appendChild(editBtn);
+
+        activePopupRef.current?.remove();
+        activePopupSectionIdRef.current = String(p.id ?? '');
+        activePopupRef.current = new mapboxgl.Popup().setLngLat(e.lngLat).setDOMContent(root).addTo(map);
       };
       sectionEnterHandlerRef.current = () => {
         map.getCanvas().style.cursor = 'pointer';
@@ -1884,8 +2028,12 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
-  // 色带逻辑：直接在岸段线几何上按断面风险渲染渐变色带
-  const applyShorelineGradient = (sections: SectionResult[]) => {
+  /**
+   * 色带逻辑：直接在岸段线几何上按断面风险渲染渐变色带。
+   * `onlyBankId` 用于人工修改后的**局部重绘**：只重算受影响的那条岸段，
+   * 其它岸段连 setPaintProperty 都不碰（全量重算会让整条岸线闪一下）。
+   */
+  const applyShorelineGradient = (sections: SectionResult[], onlyBankId?: string | null) => {
     const map = mapRef.current;
     if (!map || !sections || sections.length === 0) return;
 
@@ -1899,6 +2047,7 @@ function ResultPage(props: ResultPageProps) {
 
     // 2. 遍历每个岸段组
     Object.keys(groups).forEach(bankId => {
+      if (onlyBankId && bankId !== onlyBankId) return;
       const bankSections = groups[bankId];
       if (!bankSections || bankSections.length === 0) return;
 
@@ -1921,7 +2070,7 @@ function ResultPage(props: ResultPageProps) {
       const riskStops: { val: number; color: string }[] = [];
       validSections.forEach(s => {
         const progress = Math.max(0, Math.min(1, s.distance / totalDist));
-        const info = computeColorWithMatrix(s.indicator_result);
+        const info = computeColorWithMatrix(s.indicator_result, s.risk_thresholds);
         if (info.valid) {
           riskStops.push({ val: progress, color: info.color });
         }
@@ -1969,6 +2118,29 @@ function ResultPage(props: ResultPageProps) {
       }
     });
   };
+
+  // 搜索命中跳转：等地图真正就绪再飞（mapReady 之前 mapRef 还是 null）。
+  // pendingFocus 由顶部搜索框写入；这里消费一次就清空 —— StrictMode 下 effect 会跑两次，
+  // 不清的话会飞两遍、弹窗闪两下。
+  const pendingFocusNonce = useResourceTreeStore((s) => s.pendingFocus?.nonce ?? 0);
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const focus = useResourceTreeStore.getState().pendingFocus;
+    if (!focus) return;
+    useResourceTreeStore.getState().clearPendingFocus();
+    if (focus.lng != null && focus.lat != null) {
+      map.flyTo({
+        center: [focus.lng, focus.lat],
+        zoom: Math.max(map.getZoom(), 12),
+        essential: true,
+      });
+    }
+    void openMatrixDetail(focus.taskId, focus.sectionId, focus.sectionName);
+    // openMatrixDetail 每次渲染都是新引用，放进依赖会无限触发；它只读 props/setState，捕获旧的也无副作用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFocusNonce, mapReady]);
 
   // 底图切换
   useEffect(() => {
@@ -2679,12 +2851,32 @@ function ResultPage(props: ResultPageProps) {
             <div className="matrix-modal" onClick={(e) => e.stopPropagation()}>
               <div className="matrix-modal-header">
                 <div>
-                  <div className="matrix-modal-title">断面矩阵详情</div>
+                  <div className="matrix-modal-title">
+                    断面矩阵详情
+                    {(matrixDetail?.edited || matrixDetail?.manual_override?.edited) && (
+                      <span
+                        className="matrix-edited-tag"
+                        title={[matrixDetail?.edited_at ? `修改于 ${matrixDetail.edited_at}` : '', matrixDetail?.edit_note || '']
+                          .filter(Boolean)
+                          .join(' · ')}
+                      >
+                        已人工修改
+                      </span>
+                    )}
+                  </div>
                   <div className="matrix-modal-subtitle">
                     {matrixSectionName ? `${matrixSectionName} | ` : ''}断面ID: {matrixSectionId || '-'}
                   </div>
                 </div>
                 <div className="matrix-modal-header-actions">
+                  <button
+                    className="matrix-modal-edit"
+                    onClick={() => setResultEditing(v => !v)}
+                    disabled={!matrixDetail || matrixLoading}
+                    title={resultEditing ? '退出编辑（未保存的改动会被丢弃）' : '直接在结果上改数值，不重跑模型'}
+                  >
+                    {resultEditing ? '退出编辑' : '编辑结果'}
+                  </button>
                   <button className="matrix-modal-download" onClick={downloadMatrixCSV} title="下载CSV数据">
                     下载CSV
                   </button>
@@ -2698,7 +2890,16 @@ function ResultPage(props: ResultPageProps) {
                 ) : matrixError ? (
                   <div className="matrix-error">{matrixError}</div>
                 ) : matrixDetail ? (
-                  <>
+                  resultEditing ? (
+                    <SectionResultEditor
+                      sectionId={String(matrixSectionId || matrixDetail.section_id || '')}
+                      taskId={selectedTask || selectedTaskRef.current}
+                      detail={matrixDetail}
+                      onSaved={handleOverrideSaved}
+                      onReverted={handleOverrideReverted}
+                      onCancel={() => setResultEditing(false)}
+                    />
+                  ) : (<>
                     <div className="matrix-kv">
                       <div className="matrix-kv-row"><span>case-id</span><span>{formatCellValue(matrixDetail['case-id'] ?? matrixDetail.case_id ?? matrixDetail.caseId)}</span></div>
                       <div className="matrix-kv-row"><span>task_id</span><span>{formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId)}</span></div>
@@ -2709,7 +2910,17 @@ function ResultPage(props: ResultPageProps) {
                       <div className="matrix-kv-row"><span>run_time</span><span>{formatCellValue(matrixDetail.run_time ?? matrixDetail.runTime ?? matrixDetail.run_time)}</span></div>
                       <div className="matrix-kv-row"><span>流量 (water_qs)</span><span>{formatCellValue(matrixDetail.water_qs ?? matrixDetail?.indicators?.water_qs ?? matrixDetail?.water_qs)}</span></div>
                       <div className="matrix-kv-row"><span>潮差 (tidal_level)</span><span>{formatCellValue(matrixDetail.tidal_level ?? matrixDetail?.indicators?.tidal_level ?? matrixDetail?.tidal_level)}</span></div>
-                      <div className="matrix-kv-row"><span>风险等级</span><span>{formatCellValue(matrixDetail.risk_level ?? matrixDetail.riskLevel)}</span></div>
+                      <div className="matrix-kv-row">
+                        <span>风险等级</span>
+                        <span>
+                          {(() => {
+                            // 库里存的是 1..4；这里翻译成与地图/图例一致的文案，避免"3"这种裸数字被误读
+                            const level = toDisplayLevel(matrixDetail.risk_level ?? matrixDetail.riskLevel)
+                              ?? displayLevelOfResult(matrixDetail);
+                            return level === null ? '-' : `${RISK_LABELS[level]}（第 ${level + 1} 档）`;
+                          })()}
+                        </span>
+                      </div>
                       
                     </div>
 
@@ -2724,7 +2935,7 @@ function ResultPage(props: ResultPageProps) {
                         return renderedGroups;
                       })()}
                     </div>
-                  </>
+                  </>)
                 ) : (
                   <div className="matrix-empty">无矩阵数据</div>
                 )}
@@ -2740,6 +2951,10 @@ function ResultPage(props: ResultPageProps) {
               </div>
             </div>
           </div>
+        )}
+
+        {toast && (
+          <div className={`result-toast${toast.tone === 'warn' ? ' warn' : ''}`}>{toast.text}</div>
         )}
 
         <button

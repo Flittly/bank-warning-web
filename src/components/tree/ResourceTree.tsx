@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { TreeNode } from '../../tree/types';
 import { flattenTree } from '../../tree/treeModel';
+import { expandedAll, makeHitPredicate, pruneTree } from '../../tree/filterTree';
 import { applyRangeSelect } from '../../tree/rangeSelect';
 import { getActions } from '../../tree/actions';
 import { useResourceTreeStore } from '../../store/useResourceTreeStore';
@@ -33,6 +34,12 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
   const clearSelection = useResourceTreeStore((s) => s.clearSelection);
   const toggleExpanded = useResourceTreeStore((s) => s.toggleExpanded);
   const selectNode = useResourceTreeStore((s) => s.selectNode);
+  // 搜索态：树只保留命中节点及其祖先路径。判定来源有两份 ——
+  // 本地词项（敲字立刻收窄）与后端 ref 集合（覆盖「词只在描述里」的命中）。
+  const searchTerms = useResourceTreeStore((s) => s.searchTerms);
+  const searchMatchedRefs = useResourceTreeStore((s) => s.searchMatchedRefs);
+  const searchStrict = useResourceTreeStore((s) => s.searchStrict);
+  const searching = searchTerms.length > 0;
   const [ctx, setCtx] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(600);
@@ -47,7 +54,25 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
     return () => ro.disconnect();
   }, []);
 
-  const rows = useMemo(() => flattenTree(root, expanded), [root, expanded]);
+  const hitPredicate = useMemo(
+    () => makeHitPredicate(searchTerms, searchMatchedRefs, searchStrict),
+    [searchTerms, searchMatchedRefs, searchStrict],
+  );
+  // 搜索态才剪枝；非搜索态直接用原树引用，不复制任何节点（避免每帧重建整棵树）
+  const prunedRoot = useMemo(
+    () => (searching ? pruneTree(root, hitPredicate) : root),
+    [searching, root, hitPredicate],
+  );
+  // 剪枝后必须全展开，否则命中的节点被折叠在看不见的地方。
+  // 用派生映射而不写进 store：搜索结束后用户原来的展开态要原样回来。
+  const effectiveExpanded = useMemo(
+    () => (searching ? expandedAll(prunedRoot) : expanded),
+    [searching, prunedRoot, expanded],
+  );
+  const rows = useMemo(
+    () => (prunedRoot ? flattenTree(prunedRoot, effectiveExpanded) : []),
+    [prunedRoot, effectiveExpanded],
+  );
   const { offsets, total } = useMemo(() => {
     const offsets = new Array<number>(rows.length);
     let acc = 0;
@@ -123,6 +148,15 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
     setCtx({ node, x, y });
   }, []);
 
+  // 搜索态下无任何命中：直接给空态，不要让虚拟滚动容器渲染 0 行空白
+  if (searching && !prunedRoot) {
+    return (
+      <div className={styles.treeWrap}>
+        <div className={styles.searchEmpty}>没有匹配「{searchTerms.join(' ')}」的节点</div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.treeWrap}>
       <div
@@ -138,7 +172,8 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
                 key={r.node.id}
                 node={r.node}
                 depth={r.depth}
-                expanded={Boolean(expanded[r.node.id])}
+                expanded={Boolean(effectiveExpanded[r.node.id])}
+                highlightTerms={searchTerms}
                 selected={selectedIds.has(r.node.id) || selectedId === r.node.id}
                 activeDemKeys={activeDemKeys}
                 onToggle={handleToggle}

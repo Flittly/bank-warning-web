@@ -125,6 +125,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 搜索命中片段：与顶部搜索框用同一套黄色，形成「一处命中、两处同色」的对应关系 */
+.hl {
+  background: #fde68a;
+  color: #78350f;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 500;
+}
+.searchEmpty {
+  padding: 18px 14px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.6;
+}
 .meta {
   color: #94a3b8;
   font-size: 11px;

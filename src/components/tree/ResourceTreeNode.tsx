@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { TreeNode } from '../../tree/types';
 import { getActions } from '../../tree/actions';
+import { splitHighlight } from '../../utils/highlight';
 import styles from './ResourceSidebar.module.css';
 
 const ICONS: Record<string, any> = {
@@ -28,6 +29,8 @@ interface Props {
   selected: boolean;
   /** 当前画在地图上的 DEM tiff_key 集合（把对应行的开关标成"已开"） */
   activeDemKeys?: Set<string>;
+  /** 搜索词：命中的片段用 <mark> 标出（非搜索态传空数组） */
+  highlightTerms?: string[];
   onToggle: (node: TreeNode) => void;
   onSelect: (node: TreeNode, mod: { shift: boolean; ctrlOrMeta: boolean }) => void;
   onDoubleClick: (node: TreeNode) => void;
@@ -62,7 +65,7 @@ const ROW_H = 28;
 const ROW_TALL = 42;
 
 export default function ResourceTreeNode({
-  node, depth, expanded, selected, activeDemKeys, onToggle, onSelect, onDoubleClick, onAction, onContextMenu,
+  node, depth, expanded, selected, activeDemKeys, highlightTerms, onToggle, onSelect, onDoubleClick, onAction, onContextMenu,
 }: Props) {
   const hasChildren = Boolean(node.children && node.children.length > 0);
   const Icon = ICONS[node.icon || node.kind] || FileText;
@@ -102,7 +105,17 @@ export default function ResourceTreeNode({
           {hasChildren ? (expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : null}
         </span>
         <span className={styles.icon}><Icon size={14} /></span>
-        <span className={styles.label}>{node.label}</span>
+        <span className={styles.label}>
+          {!highlightTerms || highlightTerms.length === 0
+            ? node.label
+            : splitHighlight(node.label, highlightTerms).map((seg, i) =>
+                seg.hit ? (
+                  <mark key={i} className={styles.hl}>{seg.text}</mark>
+                ) : (
+                  <span key={i}>{seg.text}</span>
+                ),
+              )}
+        </span>
         {node.meta ? <span className={styles.meta}>{node.meta}</span> : null}
         {hoverKeys.length > 0 && (
           <span className={styles.hoverActions}>

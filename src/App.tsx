@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminUserPage from './pages/AdminUserPage';
 import SkillApprovalsPage from './pages/SkillApprovalsPage';
+import GlobalSearchBar from './components/GlobalSearchBar';
 import SkillSecurityPage from './pages/SkillSecurityPage';
 import SkillVersionsPage from './pages/SkillVersionsPage';
 
@@ -170,6 +171,8 @@ function AppLayout() {
             <span className="nav-title-en">Yangtze River Bank Collapse Key Hazard Section Intelligent Risk Assessment Platform</span>
           </div>
         </div>
+        {/* 全局搜索：登录后才挂载（接口按 /v0 鉴权，未登录调用只会拿到 401） */}
+        {!isLoading && isAuthenticated && <GlobalSearchBar />}
         <div className="nav-right">
               {!isLoading && (
             isAuthenticated ? (
