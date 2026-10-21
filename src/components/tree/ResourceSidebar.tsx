@@ -5,6 +5,7 @@ import { buildResourceTree } from '../../tree/treeModel';
 import type { TreeNode } from '../../tree/types';
 import { useResourceTreeStore } from '../../store/useResourceTreeStore';
 import { useEditorStore } from '../../store/useEditorStore';
+import { useRuleStore } from '../../store/useRuleStore';
 import ResourceTree from './ResourceTree';
 import LoadedOnMapPanel from './LoadedOnMapPanel';
 import BatchActionBar from './BatchActionBar';
@@ -34,6 +35,14 @@ interface Props {
   demKeys?: string[];
   /** 地图上当前选中的断面 id，用于在下半区高亮对应行 */
   activeSectionId?: string | null;
+  /**
+   * DEM 覆盖范围图层当前是否显示。
+   *
+   * <p>它由 EditorPage 的 `showTiffBounds`（会和「聚焦某个 DEM」联动）持有，
+   * 不在 editor store 里，所以只能从上面传下来 —— 规则行 `R-SPACE-04` 的"眼睛"
+   * 要显示当前是开还是关，不能自己猜。
+   */
+  tiffBoundsVisible?: boolean;
 }
 
 async function fetchJSON(path: string) {
@@ -65,7 +74,7 @@ function readStoredHeight(): number {
   }
 }
 
-export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: Props) {
+export default function ResourceSidebar({ handlers, demKeys, activeSectionId, tiffBoundsVisible }: Props) {
   const setData = useResourceTreeStore((s) => s.setData);
   const dataVersion = useResourceTreeStore((s) => s.dataVersion);
   const banks = useResourceTreeStore((s) => s.banks);
@@ -81,6 +90,9 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
   const uploadedData = useEditorStore((s) => s.uploadedData);
   const perpendicularData = useEditorStore((s) => s.perpendicularData);
   const showCrossLines = useEditorStore((s) => s.showCrossLines);
+  const showRiverSurface = useEditorStore((s) => s.showRiverSurface);
+  // 规则开关：树是纯数据渲染，这里把 store 里的状态"织"进节点（见 buildRulesGroup）
+  const ruleEnabled = useRuleStore((s) => s.enabled);
 
   const [loaded, setLoaded] = useState(false);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
@@ -151,9 +163,18 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId }: 
   }, []);
 
   const currentSections = useMemo(() => sectionsByTask[currentTaskId || ''] || [], [sectionsByTask, currentTaskId]);
+  // 图层可见性也要进依赖：规则行的"眼睛"开/关是节点数据的一部分，
+  // 状态变了必须重建树，否则图标要等到下一次 banks/tiffs 变化才更新。
+  const layerVisible = useMemo(
+    () => ({ river: showRiverSurface, tiff: Boolean(tiffBoundsVisible) }),
+    [showRiverSurface, tiffBoundsVisible],
+  );
   const tree = useMemo(
-    () => buildResourceTree({ banks, params, tiffs, tasks, sections: currentSections, sectionsByTask }),
-    [banks, params, tiffs, tasks, currentSections, sectionsByTask],
+    () => buildResourceTree({
+      banks, params, tiffs, tasks, sections: currentSections, sectionsByTask,
+      rules: { enabled: ruleEnabled, layers: layerVisible },
+    }),
+    [banks, params, tiffs, tasks, currentSections, sectionsByTask, ruleEnabled, layerVisible],
   );
 
   const currentTaskName = useMemo(

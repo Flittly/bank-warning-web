@@ -17,7 +17,8 @@ import {
   Layout,
   Download,
   MoveHorizontal,
-  Move
+  Move,
+  Waves
 } from 'lucide-react';
 import { useState } from 'react';
 import type { SelectionGroup } from '../types/selection';
@@ -93,6 +94,15 @@ interface EditorSidebarProps {
   setShowCrossLines: (v: boolean) => void;
   showTiffBounds: boolean;
   setShowTiffBounds: (v: boolean) => void;
+  /**
+   * 长江范围参考图层（规则「与长江河面相交」的判定边界）。
+   *
+   * <p>资源树模式下，这个开关在「规则 → 断面空间校验 → 与长江河面相交」行尾的**眼睛**上；
+   * 经典侧栏没有树，所以这里保留一个等价按钮。两处读写同一份 editor store 状态，
+   * 不存在"两个开关不同步"的问题。
+   */
+  showRiverSurface?: boolean;
+  setShowRiverSurface?: (v: boolean) => void;
   satellite?: boolean;
   setSatellite?: (v: boolean) => void;
   handleStartAnalysis: () => void;
@@ -170,6 +180,8 @@ function EditorSidebar(props: EditorSidebarProps) {
     setShowCrossLines,
     showTiffBounds,
     setShowTiffBounds,
+    showRiverSurface,
+    setShowRiverSurface,
     // satellite, setSatellite, (unused)
     handleStartAnalysis,
     onClear,
@@ -720,6 +732,18 @@ function EditorSidebar(props: EditorSidebarProps) {
             <button type="button" className={styles.outlineButton} onClick={() => setShowTiffBounds(!showTiffBounds)} title={showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'} aria-label={showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'}>
               <Layers size={16} /> {showTiffBounds ? '隐藏 TIF 范围' : '显示 TIF 范围'}
             </button>
+            {setShowRiverSurface && (
+              <button
+                type="button"
+                className={`${styles.outlineButton} ${showRiverSurface ? styles.active : ''}`}
+                onClick={() => setShowRiverSurface(!showRiverSurface)}
+                title={showRiverSurface ? '隐藏长江范围' : '显示长江范围（规则「与长江河面相交」的判定边界）'}
+                aria-label={showRiverSurface ? '隐藏长江范围' : '显示长江范围'}
+                aria-pressed={!!showRiverSurface}
+              >
+                <Waves size={16} /> {showRiverSurface ? '隐藏长江范围' : '显示长江范围'}
+              </button>
+            )}
             <button type="button" className={`${styles.outlineButton} ${colorBanks ? styles.active : ''}`} onClick={() => setColorBanks?.(!colorBanks)} title="区分岸段颜色">
               <Eye size={14} /> 岸段着色
             </button>

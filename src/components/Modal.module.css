@@ -366,6 +366,75 @@
   background: rgba(59, 130, 246, 0.06);
 }
 
+/* 「补充岸段」的可滚动候选清单。
+   与上面的 .bankSelectList（120px，几行就够）不同：这里要能一次浏览上百条岸段，
+   所以给到 240px 并保留分组标题吸顶 —— 列表一长，滚动时看不到自己滚到哪个区域了。 */
+.bankPickList {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.45);
+  padding: 4px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+
+.bankPickGroup {
+  margin-bottom: 2px;
+}
+
+.bankPickGroupHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #475569;
+  background: rgba(248, 250, 252, 0.96);
+  backdrop-filter: blur(4px);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.bankPickCount {
+  margin-left: auto;
+  font-weight: 500;
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.bankCheckName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bankCheckId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bankCheckFlag {
+  flex: none;
+  font-size: 0.68rem;
+  color: #b45309;
+  background: rgba(251, 191, 36, 0.16);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
 /* param_id 这类"标识符"用等宽字体：下划线/短横线不会与字母糊在一起，方便逐字核对 */
 .monoInput {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

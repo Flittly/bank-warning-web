@@ -3,6 +3,7 @@ import { authHeaders } from '../../utils/apiClient';
 import * as turf from '@turf/turf';
 import { generatePerpendicularLines } from '../../utils/geometry';
 import { ensureTaskParamsId } from '../../services/basicParamsService';
+import { appendBanksToTask } from '../../services/taskBanksService';
 import type { SectionParams } from '../../types/sections';
 import { fetchSectionParams } from './sectionApi';
 import { getCurrentTaskId, setCurrentTaskId } from './taskState';
@@ -556,8 +557,186 @@ export async function generateComputeSectionsAndCreateTask(params: {
   });
 }
 
-export async function runCurrentTask(params: { 
-  perpendicularData: GeoJSON.FeatureCollection;
+// ============================================================
+// 「给已有任务补充岸段」
+// ============================================================
+//
+// 与上面的 generateSectionsAndCreateTaskCore 是两条**互不重叠**的路：
+//   · 那条是"整任务重来"：existingTaskId 非空时先 DELETE /tasks/{id}/clear，
+//     把该任务的全部断面与结果清掉，再按当前选中岸段重建。
+//   · 这条是"增量补充"：只为**新选的岸段**生成断面并追加，已有断面与其结果一条都不动。
+//
+// 所以这里刻意不调用 /clear，也不复用 `sec-${taskId}-${index}` 这套 id ——
+// 那套 id 与老断面同构，追加批次一旦从 0 重新编号就会撞上已存在的 section_id。
+
+export interface AppendBanksIntoTaskParams {
+  taskId: string;
+  /** 待补充的岸段（含 bank_geometry / reversed / region_code） */
+  banks: any[];
+  interval: number;
+  length: number;
+  sectionType: 'display' | 'compute';
+  /** 新断面的 segment_index 起点，一般取任务已有最大值 + 1（见 taskBanksService.resolveTaskBankScope） */
+  segmentIndexStart?: number;
+  /** 延长到对岸时用来求交的岸线集合（不传则用本次补充的岸段自身） */
+  shorelineScope?: GeoJSON.FeatureCollection | null;
+  onProgress?: (message: string) => void;
+}
+
+export interface AppendBanksIntoTaskResult {
+  sectionRecords: any[];
+  /** 本次要铺到地图上的岸段（含"本来就关联、只是补了断面"的） */
+  bankIds: string[];
+  /** 其中真正新并入任务关联的岸段（`tasks.bank_ids` 原本没有的） */
+  addedBankIds: string[];
+  sectionCount: number;
+}
+
+export async function generateSectionsForBanksIntoTask(
+  params: AppendBanksIntoTaskParams,
+): Promise<AppendBanksIntoTaskResult> {
+  const taskId = String(params.taskId || '').trim();
+  if (!taskId) throw new Error('缺少 task_id，无法补充岸段');
+
+  const banks = (params.banks || []).filter((b) => String(b?.bank_id ?? '').trim());
+  if (banks.length === 0) throw new Error('没有选中任何岸段');
+
+  const extend = params.sectionType === 'compute';
+
+  // 任务参数集：任务已存在 ⇒ 取它自己那一份（后端会复用，不会新建）。
+  // 不传 templateParamId：补岸段不该顺带把任务参数换成模板库里的某一份。
+  const basicParamId = await ensureTaskParamsId(taskId);
+  if (!basicParamId) {
+    throw new Error('初始化任务参数失败，请检查后端连接或先创建参数模板');
+  }
+
+  // 批次号进 section_id：同一个任务可以被补充多次，批次间不能撞。
+  const batch = Date.now().toString(36);
+  let segmentIndex = Number.isFinite(params.segmentIndexStart as number)
+    ? Number(params.segmentIndexStart)
+    : 0;
+
+  // 延长到对岸需要一张"所有岸线"的图；没给就退化成只用本批岸段（只能延到自己身上）。
+  const scope: GeoJSON.FeatureCollection = params.shorelineScope ?? {
+    type: 'FeatureCollection',
+    features: banks.map((b) => ({
+      type: 'Feature',
+      geometry: (b.bank_geometry || b.geometry) as any,
+      properties: { bank_id: b.bank_id },
+    })) as any,
+  };
+
+  const sectionRecords: any[] = [];
+  const createdBankIds: string[] = [];
+
+  for (const bank of banks) {
+    const bankId = String(bank.bank_id).trim();
+    const bankName = String(bank.bank_name || bank.bankName || bankId);
+    const regionCode = String(bank.region_code || 'Mzs');
+    const reversed = !!(bank.reversed === true || bank.reversed === 'true');
+    const geom = bank.bank_geometry || bank.geometry;
+    const parts = toLineStrings(geom);
+    if (parts.length === 0) {
+      console.warn('[append-banks] 岸段无有效几何，已跳过:', bankId);
+      continue;
+    }
+
+    params.onProgress?.(`正在为「${bankName}」生成断面…`);
+    createdBankIds.push(bankId);
+
+    parts.forEach((part, partIndex) => {
+      const line = turf.lineString(part.coordinates as any) as GeoJSON.Feature<GeoJSON.LineString>;
+      const lineLengthMeters = turf.length(line, { units: 'meters' });
+      const { featureCollection } = generatePerpendicularLines(
+        line,
+        0,
+        lineLengthMeters,
+        params.interval,
+        params.length,
+      );
+
+      // 反向岸段：与主流程保持一致，把断面左右端点对调，否则算出来的左右岸会反。
+      if (reversed) {
+        featureCollection.features.forEach((f: any) => {
+          if (f.geometry?.coordinates) f.geometry.coordinates = [...f.geometry.coordinates].reverse();
+          if (f.properties) {
+            const lp = f.properties.leftPoint;
+            f.properties.leftPoint = f.properties.rightPoint;
+            f.properties.rightPoint = lp;
+          }
+        });
+      }
+
+      (featureCollection.features as any[]).forEach((f) => {
+        let crossLine = f;
+        if (extend) {
+          crossLine = extendCrossLineToFirstShorelineIntersection({
+            crossLine,
+            uploadedData: scope,
+            maxRayLengthMeters: 10000,
+          });
+          // 延不到对岸就不用它：留着会让后续计算拿到一条长度不足的断面
+          if (!crossLine) return;
+        }
+
+        const props: any = crossLine.properties || {};
+        const vfp = getVerticalFootPointFromAny(props);
+        const bankIdOfPart = parts.length > 1 ? `${bankId}_part${partIndex + 1}` : bankId;
+
+        sectionRecords.push({
+          section_id: `sec-${taskId}-add${batch}-${sectionRecords.length}`,
+          section_name: `断面${segmentIndex + 1}`,
+          distance: Number(props.distance ?? 0),
+          bank_id: bankIdOfPart,
+          region_code: regionCode,
+          segment_index: segmentIndex,
+          geometry: crossLine.geometry,
+          section_geometry: crossLine.geometry,
+          ...(vfp ? { vertical_foot_point: vfp } : {}),
+          basic_param_id: basicParamId,
+        });
+        segmentIndex += 1;
+      });
+    });
+  }
+
+  if (sectionRecords.length === 0) {
+    throw new Error('所选岸段没有生成出任何可用断面（几何为空，或延长后仍未与岸线相交）');
+  }
+
+  params.onProgress?.(`正在保存 ${sectionRecords.length} 条断面…`);
+  const sectionsResponse = await fetch('/v0/bank/sections', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      task_id: taskId,
+      sections: sectionRecords,
+      inherit_from_basic_param: true,
+      overwrite: false,
+    }),
+  });
+
+  if (!sectionsResponse.ok) {
+    const errorText = await sectionsResponse.text();
+    throw new Error(`保存断面失败：${sectionsResponse.status} ${sectionsResponse.statusText} ${errorText}`);
+  }
+
+  // 断面落库成功后再写任务关联：反过来（先关联后建断面）一旦断面失败，
+  // 树上就会多出一个挂着 0 条断面的空岸段节点，比"断面存在但关联没写上"更难解释。
+  const merged = await appendBanksToTask(taskId, createdBankIds, 'merge');
+  if (!merged.ok) {
+    throw new Error(merged.message || '断面已保存，但把岸段并入任务失败，请重试一次补充');
+  }
+
+  return {
+    sectionRecords,
+    bankIds: merged.added.length > 0 ? merged.added : createdBankIds,
+    addedBankIds: merged.added,
+    sectionCount: sectionRecords.length,
+  };
+}
+
+export async function runCurrentTask(params: {   perpendicularData: GeoJSON.FeatureCollection;
   setPage?: (page: 'editor' | 'result', taskId?: string) => void;
 }) {
   const { perpendicularData, setPage } = params;

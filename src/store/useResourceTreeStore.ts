@@ -16,6 +16,8 @@ export interface ResourceTreeState {
   tasks: any[];
   sectionsByTask: Record<string, any[]>;
   toggleExpanded: (id: string) => void;
+  /** 幂等展开某个节点（补充岸段后要让用户"看得见"，不能靠 toggle 碰运气） */
+  expandNode: (id: string) => void;
   selectNode: (id: string | null) => void;
   /** 直接写入整个多选集合 + 锚点（范围选择逻辑在 tree/rangeSelect 里算好后调用） */
   setSelection: (ids: Set<string>, anchorIndex: number) => void;
@@ -62,7 +64,9 @@ export interface ResourceTreeState {
 }
 
 export const useResourceTreeStore = create<ResourceTreeState>((set) => ({
-  expanded: { 'group:resources': true, 'group:tasks': true, 'folder:banks': false, 'folder:sections': false, 'folder:params': false, 'folder:dems': false },
+  // 规则组默认展开：它只有三层、九个叶子，展开也不会淹没数据资源；
+  // 折叠起来反而会让"规则"这个新节点看起来像个空壳。
+  expanded: { 'group:resources': true, 'group:rules': true, 'group:tasks': true, 'folder:banks': false, 'folder:sections': false, 'folder:params': false, 'folder:dems': false },
   selectedId: null,
   selectedIds: new Set<string>(),
   anchorIndex: -1,
@@ -75,6 +79,7 @@ export const useResourceTreeStore = create<ResourceTreeState>((set) => ({
   tasks: [],
   sectionsByTask: {},
   toggleExpanded: (id) => set((s) => ({ expanded: { ...s.expanded, [id]: !s.expanded[id] } })),
+  expandNode: (id) => set((s) => (s.expanded[id] ? s : { expanded: { ...s.expanded, [id]: true } })),
   selectNode: (id) => set({ selectedId: id }),
   setSelection: (ids, anchorIndex) => set({ selectedIds: new Set(ids), anchorIndex }),
   clearSelection: () => set({ selectedIds: new Set<string>(), anchorIndex: -1 }),

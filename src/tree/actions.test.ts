@@ -10,13 +10,17 @@ describe('actions', () => {
     const list = getActions(['bank.smooth', 'bank.delete']);
     expect(list.map((a) => a.key)).toEqual(['bank.smooth', 'bank.delete']);
   });
+  // 63 = 61 + task.addBanks / task.runPending
+  //      （「给已有任务补充岸段」这对增量动作，2026-10-20）
+  // 61 = 57 + rule.toggle / rule.layer / rule.describe / rule.create
+  //      （资源树新增与「数据资源」「计算任务」并列的「规则」节点，2026-10-20）
   // 57 = 56 + task.loadMap（双击任务节点 / 右键「加载岸段与断面到地图」，2026-10-17 新增）
   // 56 = 55 + task.stop（终止运行中的任务，2026-10-15 新增）
   // 55 曾 = 53 + bank.loadAll / bank.removeAll（「岸段」文件夹右键 → 全部加载/移出地图，
   // 与断面文件夹的 section.loadAll / section.removeAll 对称，2026-10-14 新增）
-  it('registers 57 keys with matching key fields', () => {
+  it('registers 63 keys with matching key fields', () => {
     const entries = Object.entries(ACTION_META);
-    expect(entries.length).toBe(57);
+    expect(entries.length).toBe(63);
     for (const [k, v] of entries) expect(v.key).toBe(k);
   });
   it('exposes 终止运行 as a danger action next to 执行风险分析', () => {

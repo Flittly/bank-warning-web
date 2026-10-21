@@ -197,6 +197,10 @@ interface EditorMapProps {
   createCrossLineByEndpoints: (start: number[], end: number[]) => void;
   tiffBoundsData: GeoJSON.FeatureCollection | null;
   showTiffBounds: boolean;
+  /** 长江河面范围（4326，来自 river_yangtze）；没开启过图层时为 null */
+  riverSurfaceData?: GeoJSON.FeatureCollection | null;
+  /** 是否绘制长江河面参考图层（规则：与长江河面相交） */
+  showRiverSurface?: boolean;
   resizeTrigger: number;
   satellite?: boolean;
   colorBanks?: boolean;
@@ -231,6 +235,8 @@ function EditorMap(props: EditorMapProps) {
     createCrossLineByEndpoints,
     tiffBoundsData,
     showTiffBounds,
+    riverSurfaceData,
+    showRiverSurface = false,
     resizeTrigger,
   } = props;
 
@@ -245,8 +251,10 @@ function EditorMap(props: EditorMapProps) {
 
   const uploadedDataRef = useRef<GeoJSON.FeatureCollection | null>(uploadedData);
   const tiffBoundsDataRef = useRef<GeoJSON.FeatureCollection | null>(tiffBoundsData);
+  const riverSurfaceDataRef = useRef<GeoJSON.FeatureCollection | null>(riverSurfaceData ?? null);
   useEffect(() => { uploadedDataRef.current = uploadedData; }, [uploadedData]);
   useEffect(() => { tiffBoundsDataRef.current = tiffBoundsData; }, [tiffBoundsData]);
+  useEffect(() => { riverSurfaceDataRef.current = riverSurfaceData ?? null; }, [riverSurfaceData]);
 
   const selectedLinesRef = useRef<Set<string>>(selectedLines);
   useEffect(() => { selectedLinesRef.current = selectedLines; }, [selectedLines]);
@@ -419,6 +427,38 @@ function EditorMap(props: EditorMapProps) {
       map.off('idle', applyVisibility);
     };
   }, [showTiffBounds]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource('river-surface') as mapboxgl.GeoJSONSource;
+    if (source) {
+      source.setData(riverSurfaceData || turf.featureCollection([]));
+    }
+  }, [riverSurfaceData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const applyVisibility = () => {
+      if (!map.getLayer('river-surface-fill') || !map.getLayer('river-surface-line')) return;
+      const visibility = showRiverSurface ? 'visible' : 'none';
+      map.setLayoutProperty('river-surface-fill', 'visibility', visibility);
+      map.setLayoutProperty('river-surface-line', 'visibility', visibility);
+    };
+
+    // 同 tiff-bounds：`isStyleLoaded()` 为 false 时不能直接早退 —— 依赖只有
+    // [showRiverSurface]，值不再变化就不会重跑，可见性会永久停在初始值。
+    if (map.isStyleLoaded()) {
+      applyVisibility();
+      return undefined;
+    }
+    map.once('idle', applyVisibility);
+    return () => {
+      map.off('idle', applyVisibility);
+    };
+  }, [showRiverSurface]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -673,10 +713,15 @@ function EditorMap(props: EditorMapProps) {
       map.addSource('active-line', { type: 'geojson', data: turf.featureCollection([]), lineMetrics: true });
       map.addSource('selected-shore-lines', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('tiff-bounds', { type: 'geojson', data: turf.featureCollection([]) });
+      map.addSource('river-surface', { type: 'geojson', data: turf.featureCollection([]) });
       // 如果已有数据，立刻恢复
       if (tiffBoundsDataRef.current) {
         const src = map.getSource('tiff-bounds') as mapboxgl.GeoJSONSource;
         if (src) src.setData(tiffBoundsDataRef.current);
+      }
+      if (riverSurfaceDataRef.current) {
+        const src = map.getSource('river-surface') as mapboxgl.GeoJSONSource;
+        if (src) src.setData(riverSurfaceDataRef.current);
       }
       if (uploadedDataRef.current) {
         const src = map.getSource('uploaded-data') as mapboxgl.GeoJSONSource;
@@ -733,6 +778,37 @@ function EditorMap(props: EditorMapProps) {
           activeLineSource.setData(turf.featureCollection(segments));
         }
       }
+
+      // 长江河面参考图层：**第一个** addLayer，所以永远压在岸段/断面/其余参考层下面。
+      // 只做底衬，不注册任何 click/hover 处理器 —— 断面拾取、拖拽、自由绘制都不受影响。
+      // 这里刻意不加 `$type` 过滤器：source 里只放 Polygon/MultiPolygon，而 `$type`
+      // 对两者返回的字符串不同（'Polygon' / 'MultiPolygon'），加过滤反而会在
+      // 哪天后端回 MultiPolygon 时把整层藏掉。
+      map.addLayer({
+        id: 'river-surface-fill',
+        type: 'fill',
+        source: 'river-surface',
+        paint: {
+          'fill-color': '#22d3ee',
+          'fill-opacity': 0.22,
+        },
+        layout: {
+          'visibility': showRiverSurface ? 'visible' : 'none',
+        },
+      });
+      map.addLayer({
+        id: 'river-surface-line',
+        type: 'line',
+        source: 'river-surface',
+        paint: {
+          'line-color': '#0891b2',
+          'line-width': 1.4,
+          'line-opacity': 0.9,
+        },
+        layout: {
+          'visibility': showRiverSurface ? 'visible' : 'none',
+        },
+      });
 
       map.addLayer({
         id: 'uploaded-lines-hit-target',

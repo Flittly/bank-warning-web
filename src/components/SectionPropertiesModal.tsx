@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SectionParams } from '../types/sections';
 import TiffResourcePicker from './TiffResourcePicker';
 import styles from './Modal.module.css';
+import { commitJsonDraft, createJsonDraft, formatJsonDraft, updateJsonDraft } from '../utils/jsonDraft';
 
 const TIDE_LABELS: Record<string, string> = { xc: '小潮', zc: '中潮', dc: '大潮' };
 
@@ -50,6 +51,15 @@ function SectionPropertiesModal({
   const [isSaving, setIsSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [hydroOptions, setHydroOptions] = useState<Array<{ water_qs: string; tidal_level: string }>>([]);
+  /**
+   * 两个 JSON 字段走「草稿」而不是直接写进 params：
+   * 直接把 `JSON.stringify(params.risk_thresholds)` 当受控 value、onChange 里 parse 成功才回写，
+   * 会让任何非法中间态（删掉一个字符、数字打到一半）被静默丢弃 —— 表现就是这两个框根本改不动。
+   * 详见 utils/jsonDraft.ts 的注释。
+   */
+  const [riskDraft, setRiskDraft] = useState(() => createJsonDraft(config?.risk_thresholds ?? {}));
+  const [weightsDraft, setWeightsDraft] = useState(() => createJsonDraft(config?.weights ?? {}));
+  const [saveError, setSaveError] = useState('');
 
   const hydroValue =
     params.water_qs || params.tidal_level ? `${params.water_qs || ''}|${params.tidal_level || ''}` : '';
@@ -103,9 +113,36 @@ function SectionPropertiesModal({
     return base.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '_').slice(0, 120);
   };
 
+  /**
+   * 把两个 JSON 草稿合进 params。
+   * 任一 JSON 语法不合法就返回失败 —— 绝不「静默用旧值保存」，那会让用户以为改成功了。
+   * 留空（提交值为 undefined）表示使用内置默认值，字段随 JSON.stringify 一起略过，后端存 NULL。
+   */
+  const buildPayload = ():
+    | { ok: true; params: SectionParams }
+    | { ok: false; message: string } => {
+    const risk = commitJsonDraft(riskDraft);
+    if (!risk.ok) return { ok: false, message: `风险阈值 JSON 有语法错误：${risk.message}` };
+    const weight = commitJsonDraft(weightsDraft);
+    if (!weight.ok) return { ok: false, message: `权重参数 JSON 有语法错误：${weight.message}` };
+    return {
+      ok: true,
+      params: {
+        ...params,
+        risk_thresholds: risk.value as SectionParams['risk_thresholds'],
+        weights: weight.value as SectionParams['weights'],
+      },
+    };
+  };
+
   const handleExport = () => {
+    const payload = buildPayload();
+    if (!payload.ok) {
+      setSaveError(payload.message);
+      return;
+    }
     try {
-      const jsonText = JSON.stringify(params ?? {}, null, 2);
+      const jsonText = JSON.stringify(payload.params ?? {}, null, 2);
       const blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
 
@@ -126,15 +163,20 @@ function SectionPropertiesModal({
   };
 
   const handleCopy = async () => {
+    const payload = buildPayload();
+    if (!payload.ok) {
+      setSaveError(payload.message);
+      return;
+    }
     const newName = window.prompt('复制为（参数名称）：', (params.param_name || '') + '_副本');
     if (!newName) return;
     const newParamId = (params.param_name || 'param') + '_copy_' + Date.now();
     try {
-      const payload = { ...params, param_id: newParamId, param_name: newName };
+      const body = { ...payload.params, param_id: newParamId, param_name: newName };
       await fetch('/v0/bank/basic-params', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ params: [payload], overwrite: false }),
+        body: JSON.stringify({ params: [body], overwrite: false }),
       });
       alert('模板已复制：' + newName);
       onClose();
@@ -144,9 +186,15 @@ function SectionPropertiesModal({
   };
 
   const handleSave = async () => {
+    const payload = buildPayload();
+    if (!payload.ok) {
+      setSaveError(payload.message);
+      return;
+    }
+    setSaveError('');
     setIsSaving(true);
     try {
-      await Promise.resolve(onSave(params));
+      await Promise.resolve(onSave(payload.params));
       onClose();
     } catch (err: any) {
       console.error('保存参数失败:', err);
@@ -345,43 +393,57 @@ function SectionPropertiesModal({
         <fieldset className={styles.fieldset}>
           <legend className={styles.legend}>风险阈值 (JSON格式)</legend>
           <textarea
-            value={JSON.stringify(params.risk_thresholds || {}, null, 2)}
+            value={riskDraft.text}
             onChange={(e) => {
-              try {
-                const parsed = JSON.parse(e.target.value);
-                setParams({ ...params, risk_thresholds: parsed });
-              } catch {
-                // ignore parse error while typing
-              }
+              // 只更新文本，不做「parse 成功才回写」——那样会把非法中间态整个吞掉
+              setRiskDraft(updateJsonDraft(e.target.value));
+              if (saveError) setSaveError('');
             }}
+            onBlur={() => setRiskDraft(formatJsonDraft(riskDraft))}
             rows={8}
+            spellCheck={false}
             className={styles.textarea}
+            aria-label="风险阈值 JSON"
           />
-          <small className={styles.smallText}>
-            示例: {`{"Dsed": [0.3, 0.5, 0.7], "Zb": [2.0, 4.0, 6.0], ...}`}
-          </small>
+          {riskDraft.error ? (
+            <div className={riskDraft.incomplete ? styles.hint : styles.errorText}>
+              {riskDraft.incomplete ? 'JSON 还没写完，可继续输入：' : 'JSON 语法错误：'}
+              {riskDraft.error}
+            </div>
+          ) : (
+            <small className={styles.smallText}>
+              示例: {`{"Dsed": [0.3, 0.5, 0.7], "Zb": [2.0, 4.0, 6.0], ...}`}
+            </small>
+          )}
         </fieldset>
 
         {/* 权重参数 */}
         <fieldset className={styles.fieldset}>
           <legend className={styles.legend}>权重参数 (JSON格式)</legend>
           <textarea
-            value={JSON.stringify(params.weights || {}, null, 2)}
+            value={weightsDraft.text}
             onChange={(e) => {
-              try {
-                const parsed = JSON.parse(e.target.value);
-                setParams({ ...params, weights: parsed });
-              } catch {
-                // ignore parse error while typing
-              }
+              setWeightsDraft(updateJsonDraft(e.target.value));
+              if (saveError) setSaveError('');
             }}
+            onBlur={() => setWeightsDraft(formatJsonDraft(weightsDraft))}
             rows={5}
+            spellCheck={false}
             className={styles.textarea}
+            aria-label="权重参数 JSON"
           />
-          <small className={styles.smallText}>
-            示例: {`{"wRE": [0.3, 0.4, 0.3], "wNM": [0.4, 0.3, 0.3], ...}`}
-          </small>
+          {weightsDraft.error ? (
+            <div className={weightsDraft.incomplete ? styles.hint : styles.errorText}>
+              {weightsDraft.incomplete ? 'JSON 还没写完，可继续输入：' : 'JSON 语法错误：'}
+              {weightsDraft.error}
+            </div>
+          ) : (
+            <small className={styles.smallText}>
+              示例: {`{"wRE": [0.3, 0.4, 0.3], "wNM": [0.4, 0.3, 0.3], ...}`}
+            </small>
+          )}
         </fieldset>
+        {saveError && <div className={styles.errorText}>{saveError}</div>}
         <div className={styles.actions}>
           {onImportTemplate && templateOptions && templateOptions.length > 0 && (
             <select

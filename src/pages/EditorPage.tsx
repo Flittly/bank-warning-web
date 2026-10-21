@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as turf from '@turf/turf';
 import { Dropdown, message } from 'antd';
 import '../App.css';
@@ -6,6 +6,7 @@ import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
 import TaskNameModal from '../components/TaskNameModal';
 import CreateTaskModal, { type CreateTaskForm } from '../components/CreateTaskModal';
+import AddBanksToTaskModal, { type AddBanksForm } from '../components/AddBanksToTaskModal';
 import CreateParamTemplateModal, {
   type CreateParamTemplateForm,
   type ParamTemplateOption,
@@ -20,6 +21,9 @@ import EditorMap from '../components/EditorMap';
 import TiffResourcePicker from '../components/TiffResourcePicker';
 import type { TreeNode } from '../tree/types';
 import { useResourceTreeStore } from '../store/useResourceTreeStore';
+import { useRuleStore } from '../store/useRuleStore';
+import { RULE_CATALOG, disabledRuleIds, isMutedFailCode, isRuleOn, ruleById, rulesetKeyOf } from '../rules/catalog';
+import type { RuleId } from '../rules/types';
 import { authHeaders } from '../utils/apiClient';
 import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
@@ -27,6 +31,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { invalidateTaskParamsCache, setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
+import { fetchRiverSurface, invalidateRiverSurfaceCache } from '../services/riverSurfaceApi';
 import { resolveVisibleTiffBounds, toggleDemBounds } from '../map/tiffBoundsView';
 import { cancelTask } from '../services/taskRunControl';
 import { stripZFromGeoJSON } from '../utils/geojson';
@@ -52,8 +57,19 @@ import {
 import {
   generateComputeSectionsAndCreateTask,
   generateSectionsAndCreateTask,
+  generateSectionsForBanksIntoTask,
   runCurrentTask,
 } from './editor/sectionsGeneration';
+import {
+  mergeBankIdsIntoTasksStore,
+  pickCandidateBanks,
+  refreshTaskSectionsIntoStore,
+  resolveBankIdsForTaskLoading,
+  resolveTaskBankScope,
+  runTaskPendingSections,
+  syncTaskBanksFromSections,
+  type TaskBankScope,
+} from '../services/taskBanksService';
 import {
   fetchBasicParamDetailAsSectionParams,
   fetchBasicParamsList,
@@ -119,6 +135,18 @@ function EditorPage(props: EditorPageProps) {
   const [resizeTrigger, setResizeTrigger] = useState(0);
   const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
   const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
+
+  // === 长江范围参考图层（规则：与长江河面相交）===
+  // 开关状态放 store（两种侧栏模式共用 + 持久化），图层数据放这里（请求/缓存由服务层管）。
+  const showRiverSurface = useEditorStore((s) => s.showRiverSurface);
+  const setShowRiverSurface = useEditorStore((s) => s.setShowRiverSurface);
+  const [riverSurfaceData, setRiverSurfaceData] = useState<GeoJSON.FeatureCollection | null>(null);
+  // 只保留 status（不存 error 文案）：错误通过 toast 一次性告知，
+  // status 用来决定"眼睛再点一次是重试还是关闭"（见 handleRuleAction）。
+  const [riverSurfaceStatus, setRiverSurfaceStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle');
+  // 请求去重：StrictMode 下 effect 会跑两遍，不能用 loading 状态当哨兵（见 useEditorStore 的坑记录）
+  const riverSurfaceLoadingRef = useRef(false);
   // 「TIF 范围」当前聚焦的 DEM：null / 空数组 = 不限（显示全部，侧栏那个全局开关的语义）；
   // 非空数组 = 只显示这几条（点资源树里某条 DEM、或它的「显示范围」图标时置入）。
   const [focusedDemKeys, setFocusedDemKeys] = useState<string[] | null>(null);
@@ -146,6 +174,14 @@ function EditorPage(props: EditorPageProps) {
   const sidebarMode = useEditorStore((s) => s.sidebarMode);
   const [demPickerOpen, setDemPickerOpen] = useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
+  // 「补充岸段到已有任务」弹窗。候选清单在打开时算好（全库岸段 − 该任务已有），
+  // 弹窗本身只负责勾选与参数，不再请求后端。
+  const [addBanksModal, setAddBanksModal] = useState<{
+    taskId: string;
+    taskName: string;
+    candidates: any[];
+    scope: TaskBankScope;
+  } | null>(null);
   // 「参数模板」文件夹右键 → 新建参数模板
   const [createParamModalOpen, setCreateParamModalOpen] = useState(false);
   const [infoModal, setInfoModal] = useState<{ title: string; groups: InfoGroup[] } | null>(null);
@@ -334,6 +370,43 @@ function EditorPage(props: EditorPageProps) {
     });
   }, [showTiffBounds, tiffBoundsData]);
 
+  /**
+   * 拉长江河面图层。
+   *
+   * <p>`force` 只给「重试」用：正常路径靠 riverSurfaceApi 的模块级缓存，
+   * 开关来回切一次不会重复走网络。
+   */
+  const loadRiverSurface = useCallback(async (force = false) => {
+    if (riverSurfaceLoadingRef.current) return;
+    if (!force && riverSurfaceData) return;
+    if (force) invalidateRiverSurfaceCache();
+
+    riverSurfaceLoadingRef.current = true;
+    setRiverSurfaceStatus('loading');
+    try {
+      const layer = await fetchRiverSurface();
+      setRiverSurfaceData(layer.collection);
+      setRiverSurfaceStatus(layer.collection.features.length > 0 ? 'ready' : 'empty');
+      if (layer.collection.features.length === 0) {
+        message.warning('后端未返回长江河面几何（river_yangtze 为空？）');
+      }
+    } catch (e: any) {
+      setRiverSurfaceStatus('error');
+      // 规则行不再有独立的"重试"按钮：错误在这里说清楚，眼睛再点一次即重试（见 handleRuleAction）
+      message.error({
+        content: `长江范围图层加载失败：${e?.message ? String(e.message) : '未知错误'}（再点一次规则行眼睛重试）`,
+        duration: 6,
+      });
+    } finally {
+      riverSurfaceLoadingRef.current = false;
+    }
+  }, [riverSurfaceData]);
+
+  // 开启即加载；关闭时保留已取到的数据，再打开直接复用（不闪白、不重复请求）
+  useEffect(() => {
+    if (showRiverSurface) void loadRiverSurface();
+  }, [showRiverSurface, loadRiverSurface]);
+
   const filteredTiffBoundsData = useMemo(() => {
     // 用当前面板里的参数（任务参数 / 模板库参数都行）取 DEM key。
     // 不能再去 basicParamsList 里按 param_id 找：任务参数不在模板库列表里，会永远找不到。
@@ -473,9 +546,13 @@ function EditorPage(props: EditorPageProps) {
    * 成功返回映射后的状态；网络层失败或 HTTP 非 2xx 一律抛错，交给上层决定是否重试。
    */
   const validateSectionOnce = async (sectionId: string): Promise<'valid' | 'invalid' | 'pending'> => {
+    // 规则开关随请求下发：被停用的规则由后端跳过判定（不传 = 全部启用 = 与改动前完全一致）。
+    // 读 getState() 而不是闭包里的值：批量校验可能跨越一次规则切换，每条请求都该拿到当下的规则集。
+    const disabledRules = disabledRuleIds(useRuleStore.getState().enabled);
     const res = await fetch(`/v0/bank/sections/${sectionId}/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disabled_rules: disabledRules }),
     });
 
     if (!res.ok) {
@@ -883,6 +960,12 @@ function EditorPage(props: EditorPageProps) {
     if (!sid) return null;
     const bankId = s?.bank_id ?? s?.bankId;
     const vf = getVerticalFootPointFromAny(s) ?? undefined;
+    // 库里存的是"最后一次按**当时**规则集算出来的结论"，不带规则集指纹。
+    // 用户停用某条规则后刷新页面，这里会把旧的 invalid_no_river 之类照样读出来 → 断面标红，
+    // 看着像"规则没关掉"。凡是失败码属于当前已停用规则的，一律降级成 pending（待重算），
+    // 原始失败码仍保留在 validation_status_raw 里供详情/排障查看。
+    const rawStatus = s?.validation_status ?? s?.validationStatus;
+    const muted = isMutedFailCode(rawStatus, useRuleStore.getState().enabled);
     return {
       type: 'Feature',
       geometry: geom,
@@ -895,8 +978,11 @@ function EditorPage(props: EditorPageProps) {
         distance: s?.distance,
         bank_id: bankId,
         shoreLineId: bankId,
-        validation_status: s?.validation_status,
-        is_valid: s?.is_valid,
+        validation_status: muted ? 'pending' : rawStatus,
+        validation_status_raw: muted
+          ? String(rawStatus).toLowerCase()
+          : s?.validation_status_raw,
+        is_valid: muted ? undefined : s?.is_valid,
         ...(vf ? { vertical_foot_point: vf } : {}),
       },
     };
@@ -1047,9 +1133,16 @@ function EditorPage(props: EditorPageProps) {
       }
 
       setUploadedData((prev) => {
-        if (!prev) return { type: 'FeatureCollection', features: [newFeature] } as any;
-        const next = { ...prev, features: [...prev.features, newFeature] } as any;
-        return next;
+        // index 必须在 updater 里按"当前实际长度"分配：批量加载是 6 路并发，
+        // 每条都在外面算 currentBanks.length 会拿到同一个数 ⇒ index 重复，
+        // 点选岸段时 getShoreLineId 的兜底下标就会指到别的岸段上。
+        const prevFeatures = ((prev?.features || []) as any[]);
+        const feature = {
+          ...newFeature,
+          properties: { ...newFeature.properties, index: prevFeatures.length },
+        };
+        if (!prev) return { type: 'FeatureCollection', features: [feature] } as any;
+        return { ...prev, features: [...prevFeatures, feature] } as any;
       });
 
       // 添加到已加载岸段列表
@@ -1407,6 +1500,35 @@ function EditorPage(props: EditorPageProps) {
     return { beforeBanks, beforeSections };
   };
 
+  /**
+   * 任务登记的岸段清单（`tasks.bank_ids`）。
+   *
+   * <p>为什么需要它：断面只覆盖"生成过断面的岸段"，任务可以关联岸段但还没有断面
+   * （补岸段时断面生成失败、或历史数据本来就没断面）。只按断面反推岸段，
+   * 就一定会少几条 —— 用户看到的现象是"双击任务加载的岸段比树里少"。
+   * 接口失败不阻断加载：退回 store 里的任务快照，再不行就空数组（等价于老行为）。
+   */
+  const fetchTaskBankIds = async (taskId: string): Promise<string[]> => {
+    const norm = (v: any): string[] =>
+      Array.isArray(v) ? v.map((b: any) => String(b ?? '').trim()).filter(Boolean) : [];
+    try {
+      const res = await fetch(`/v0/bank/tasks/${encodeURIComponent(taskId)}`, { headers: { ...authHeaders() } });
+      if (res.ok) {
+        const body = await res.json();
+        const t = body?.task ?? body?.data ?? body;
+        // 接口成功就以接口为准（哪怕返回空数组）：库里确实没有关联时，
+        // 不能拿本地快照顶上 —— 那会让"补充岸段"的候选漏掉本该能补的岸段。
+        if (t && typeof t === 'object' && 'bank_ids' in t) return norm(t.bank_ids);
+      }
+    } catch (e) {
+      console.warn('[task-load] 读取任务岸段关联失败，退回本地快照:', e);
+    }
+    const fromStore = ((useResourceTreeStore.getState().tasks || []) as any[]).find(
+      (t: any) => String(t?.task_id ?? t?.id) === taskId,
+    );
+    return norm(fromStore?.bank_ids);
+  };
+
   const loadTaskOntoMap = async (taskId: string, taskName?: string) => {
     const tid = String(taskId || '');
     if (!tid) return;
@@ -1419,8 +1541,9 @@ function EditorPage(props: EditorPageProps) {
     try {
       const { beforeBanks, beforeSections } = clearMapForTaskSwitch();
 
-      // 1) 一次取全该任务的断面（响应里带 section_geometry / vertical_foot_point），
-      //    顺带拿到这个任务实际涉及哪些岸段 —— 比 task.bank_ids 更可靠（那里可能为空）。
+      // 1) 一次取全该任务的断面（响应里带 section_geometry / vertical_foot_point）。
+      //    断面只回答"图上要画哪些线"，**不代表任务的全部岸段** —— 岸段清单另取
+      //    tasks.bank_ids 求并集，见下面的 sectionBankIds / taskBankIds。
       const res = await fetch(
         `/v0/bank/sections?task_id=${encodeURIComponent(tid)}`,
         { headers: { ...authHeaders() } },
@@ -1429,19 +1552,54 @@ function EditorPage(props: EditorPageProps) {
       const data = await res.json();
       const list: any[] = Array.isArray(data?.sections) ? data.sections : [];
 
-      const bankIds = [...new Set(list.map((s) => String(s?.bank_id || '')).filter(Boolean))];
+      // 岸段清单 = 任务登记的 bank_ids ∪ 断面里出现过的真实 bank_id（剔除 line-N 占位 id）。
+      // 两个数据源都要读：只按断面反推会漏掉「已关联、但还没有断面」的岸段；
+      // 只按 bank_ids 又会漏掉「有断面、但当年没登记成功」的岸段（补充岸段写关联失败的历史数据），
+      // 后者正是"树里 17 条、地图上 19 条"的来源。
+      const sectionBankIds = [...new Set(list.map((s) => String(s?.bank_id || '')).filter(Boolean))];
+      const taskBankIds = await fetchTaskBankIds(tid);
+      const {
+        bankIds,
+        withoutSection: bankIdsWithoutSection,
+        unregistered: bankIdsUnregistered,
+      } = resolveBankIdsForTaskLoading(taskBankIds, sectionBankIds);
+
+      // 树与地图必须报同一个数：先把并集写回本地任务快照。
+      // 即便下面的 sync 接口不可用（后端没重启 / 老版本），树也不会继续显示 17 条。
+      mergeBankIdsIntoTasksStore(tid, bankIds);
+
+      // 断面里有、关联里没有 ⇒ 任务自身数据不一致。趁加载顺手回写一次（幂等、只增不减），
+      // 否则以后任何以 bank_ids 为准的路径（整任务重建）都会把这几天岸段静默丢掉。
+      // 失败不阻断加载：这次只是"少记了一笔账"，岸段照样画得出来。
+      let healedNote = '';
+      if (bankIdsUnregistered.length > 0) {
+        try {
+          const healed = await syncTaskBanksFromSections(tid);
+          if (healed.added.length > 0) {
+            mergeBankIdsIntoTasksStore(tid, healed.added);
+            healedNote = `（已补登记 ${healed.added.length} 条漏记的岸段）`;
+          }
+        } catch (e) {
+          console.warn('[task-load] 修复任务岸段关联失败（不影响本次加载）:', e);
+        }
+      }
+
       const clearedNote = beforeBanks + beforeSections > 0
         ? `（已先移出原有 ${beforeBanks} 条岸段、${beforeSections} 条断面）`
         : '';
 
-      if (list.length === 0) {
-        message.warning({ content: `任务「${label}」下没有断面，地图已清空${clearedNote}`, key: toastKey, duration: 5 });
+      if (list.length === 0 && bankIds.length === 0) {
+        message.warning({ content: `任务「${label}」下没有岸段与断面，地图已清空${clearedNote}`, key: toastKey, duration: 5 });
         return;
       }
 
       // 2) 先铺岸段：断面是挂在岸段上的，岸段不在图上时断面会显得悬空。
       //    走统一限流（6 并发）：岸段可能上百条，逐条串行在远程部署下会很慢。
-      toast(`正在加载任务「${label}」：${bankIds.length} 条岸段、${list.length} 条断面…`);
+      toast(
+        list.length === 0
+          ? `正在加载任务「${label}」：${bankIds.length} 条岸段（该任务还没有断面）…`
+          : `正在加载任务「${label}」：${bankIds.length} 条岸段、${list.length} 条断面…`,
+      );
       const bankResults = await mapWithConcurrency(
         bankIds,
         DEFAULT_REQUEST_CONCURRENCY,
@@ -1462,7 +1620,11 @@ function EditorPage(props: EditorPageProps) {
       message.success({
         content:
           `已加载任务「${label}」：${bankOk} 条岸段、${added} 条断面` +
+          (bankIdsWithoutSection.length > 0
+            ? `（其中 ${bankIdsWithoutSection.length} 条岸段该任务还没有断面）`
+            : '') +
           (bankFail > 0 ? `（${bankFail} 条岸段缺几何未画上）` : '') +
+          healedNote +
           clearedNote,
         key: toastKey,
         duration: 5,
@@ -3143,6 +3305,219 @@ function EditorPage(props: EditorPageProps) {
     fetchBankGroups();
   };
 
+  // ——— 「补充岸段到已有任务」 ———
+  //
+  // 与「新建任务」的区别：不新建任务、不清空既有断面、不覆盖任何结果。
+  // 候选 = 全库岸段 − 该任务已有关联（bank_ids ∪ 断面里出现过的 bank_id）。
+  const collectAllBankFeatures = (): GeoJSON.FeatureCollection => {
+    const features = (bankList || [])
+      .map((b: any) => {
+        const geom = b?.bank_geometry || b?.geometry;
+        if (!geom) return null;
+        return {
+          type: 'Feature' as const,
+          geometry: geom,
+          properties: { bank_id: b.bank_id },
+        } as any;
+      })
+      .filter(Boolean);
+    return { type: 'FeatureCollection', features } as any;
+  };
+
+  const openAddBanksModal = async (taskId: string, taskName?: string) => {
+    const tid = String(taskId || '').trim();
+    if (!tid) return;
+    // 入口有两个（任务节点 / 该任务下的「岸段」文件夹），文件夹的 label 是「岸段」而不是任务名，
+    // 所以任务名一律以库里那份为准，传进来的 label 只做兜底。
+    const fromStore = ((useResourceTreeStore.getState().tasks || []) as any[]).find(
+      (t: any) => String(t?.task_id ?? t?.id) === tid,
+    );
+    const label = String(fromStore?.task_name || taskName || tid);
+    const key = `add-banks:${tid}`;
+    message.loading({ content: `正在读取任务「${label}」已有岸段与断面…`, key, duration: 0 });
+    try {
+      // 已有岸段取「库里的 tasks.bank_ids」而不是 store 里的任务快照：
+      // 补完岸段后 store 可能还没被 bumpData 重拉刷新，用旧快照算候选，
+      // 会把刚补上的岸段又列一遍（用户就会重复补同一批）。
+      const scope = await resolveTaskBankScope(tid, await fetchTaskBankIds(tid));
+
+      // 岸段库：优先用已经拉过的那份，没有就现拉 —— 否则弹窗里的候选会是空的，
+      // 看起来像"库里没有岸段"，而实际只是这个页面还没请求过。
+      let all: any[] = Array.isArray(bankList) ? bankList : [];
+      if (all.length === 0) {
+        const res = await fetch('/v0/bank/banks', { headers: { ...authHeaders() } });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const data = await res.json();
+        all = (data?.banks || data?.data || []) as any[];
+        setBankList(Array.isArray(all) ? all : []);
+      }
+
+      const candidates = pickCandidateBanks(all, scope.existingBankIds);
+      message.destroy(key);
+      setAddBanksModal({ taskId: tid, taskName: label, candidates, scope });
+    } catch (e: any) {
+      console.error('打开补充岸段弹窗失败:', e);
+      message.error({ content: `读取任务「${label}」的岸段范围失败：${e?.message || String(e)}`, key, duration: 6 });
+    }
+  };
+
+  const handleAddBanksConfirm = async (form: AddBanksForm) => {
+    const ctx = addBanksModal;
+    if (!ctx) return;
+    setAddBanksModal(null);
+
+    const chosen = ctx.candidates.filter((b: any) => form.bankIds.includes(String(b.bank_id)));
+    if (chosen.length === 0) {
+      message.warning('没有可用的岸段（选择的岸段已不在候选清单里，请重新打开）');
+      return;
+    }
+
+    const key = `add-banks:${ctx.taskId}`;
+    const progress = (content: string) =>
+      message.loading({ content, key, duration: 0 });
+
+    try {
+      progress(`正在为 ${chosen.length} 条岸段生成断面…`);
+      const result = await generateSectionsForBanksIntoTask({
+        taskId: ctx.taskId,
+        banks: chosen,
+        interval: form.interval,
+        length: form.length,
+        sectionType: form.sectionType,
+        segmentIndexStart: ctx.scope.nextSegmentIndex,
+        shorelineScope: collectAllBankFeatures(),
+        onProgress: progress,
+      });
+
+      // 地图上同步追加：新断面直接画出来，新岸段也铺上去（否则断面看着是悬空的）
+      const addedSections = appendSectionsToMap(result.sectionRecords);
+      if (addedSections > 0) setShowCrossLines(true);
+      for (const bid of result.bankIds) {
+        await loadBankById(bid, { silent: true });
+      }
+
+      // 补充成功后要让用户**当场看得见**，分三步：
+      //  1) 本地先把新岸段并进 store 的任务快照 —— 树立刻能画出岸段节点，
+      //     不必等 bumpData 触发的 /tasks 回包（那个请求失败时树会停在旧快照上）。
+      //  2) 幂等展开该任务节点 —— 折叠着的话用户根本看不到新加的岸段。
+      //  3) 主动重拉并写回断面缓存 —— 只 invalidate 不够：ResourceSidebar 只会给
+      //     「当前任务 / 已展开任务」补拉，折叠状态下缓存删了就永远不回来。
+      mergeBankIdsIntoTasksStore(ctx.taskId, result.bankIds);
+      useResourceTreeStore.getState().expandNode(`task:${ctx.taskId}`);
+      try {
+        await refreshTaskSectionsIntoStore(ctx.taskId);
+      } catch (e) {
+        console.warn('刷新任务断面缓存失败，退回作废缓存:', e);
+        useResourceTreeStore.getState().invalidateSections(ctx.taskId);
+      }
+      bumpTreeData();
+      fetchBankGroups();
+
+      message.success({
+        content:
+          `已为任务「${ctx.taskName}」生成 ${result.sectionCount} 条断面（原有断面与结果未改动）；` +
+          (result.addedBankIds.length > 0
+            ? `新增关联岸段 ${result.addedBankIds.length} 条`
+            : `这 ${result.bankIds.length} 条岸段本来就关联在该任务上，本次只补了断面`) +
+          '。已同步展开资源树中的该任务。',
+        key,
+        duration: 6,
+      });
+
+      // 到这里「岸段 + 断面」已经真正落库成功。后面的计算失败**不能**再报成
+      // "补充岸段失败" —— 那会让用户以为没补上，于是重复去点补充（候选里当然没有，
+      // 因为关联已经写进去了），最后只看到"补了却不出图"。所以计算单独 try。
+      if (!form.runNow) {
+        message.info({
+          content:
+            `已保存 ${result.sectionCount} 条断面，但它们还没有计算结果；` +
+            '结果页对「没有风险值」的岸段按透明处理，所以暂时不会着色。' +
+            '需要时右键该任务 →「只算未计算断面」。',
+          key,
+          duration: 10,
+        });
+        return;
+      }
+
+      try {
+        // 只算本次新增的这一批：不传 section_ids 就是"整个任务所有没结果的断面"，
+        // 在一个 300 条断面只出 40 条结果的任务上会连带重算 275 条老断面。
+        const newSectionIds = result.sectionRecords
+          .map((s: any) => String(s?.section_id ?? ''))
+          .filter(Boolean);
+        progress(`正在计算本次新增的 ${newSectionIds.length} 条断面…`);
+        const run = await runTaskPendingSections(ctx.taskId, newSectionIds);
+        if (run.status === 'nothing_pending') {
+          message.info({ content: '这批断面已经都有结果了，无需再算', key, duration: 6 });
+        } else if (run.ok) {
+          message.success({
+            content:
+              `新增断面计算完成：成功 ${run.computed} 条、失败 ${run.failed} 条` +
+              (run.skippedExisting > 0 ? `（已有结果跳过 ${run.skippedExisting} 条）` : ''),
+            key,
+            duration: 6,
+          });
+        } else {
+          message.warning({
+            content: `这 ${result.sectionCount} 条断面已保存，但计算未全部成功：成功 ${run.computed} 条、失败 ${run.failed} 条`,
+            key,
+            duration: 8,
+          });
+        }
+      } catch (runErr: any) {
+        console.error('新增断面计算失败（岸段与断面已保存）:', runErr);
+        message.warning({
+          content:
+            `岸段与 ${result.sectionCount} 条断面已保存成功，但这批断面的计算没跑成：` +
+            `${runErr?.message || String(runErr)}。可稍后右键该任务 →「只算未计算断面」重试。`,
+          key,
+          duration: 10,
+        });
+      }
+      bumpTreeData();
+    } catch (e: any) {
+      console.error('补充岸段失败:', e);
+      message.error({ content: `补充岸段失败：${e?.message || String(e)}`, key, duration: 8 });
+    }
+  };
+
+  /** 只算「还没有结果」的断面：补完岸段后不想全量重跑时用。 */
+  const runPendingForTask = async (taskId: string, label: string) => {
+    const tid = String(taskId || '');
+    if (!tid) return;
+    const ok = await requestConfirm({
+      title: '只算未计算断面',
+      content:
+        `将执行「${label}」中还没有结果的断面；已有结果的断面不会被重算，也不会被删除。\n` +
+        '如果只想算刚补充的岸段，这就是对的入口。',
+    });
+    if (!ok) return;
+
+    const key = `add-banks:${tid}`;
+    message.loading({ content: `正在计算「${label}」中未计算的断面…`, key, duration: 0 });
+    try {
+      const run = await runTaskPendingSections(tid);
+      if (run.status === 'nothing_pending') {
+        message.info({ content: `「${label}」没有待计算的断面`, key, duration: 5 });
+      } else if (run.ok) {
+        message.success({
+          content: `「${label}」计算完成：成功 ${run.computed} 条、失败 ${run.failed} 条（跳过已有 ${run.skippedExisting} 条）`,
+          key,
+          duration: 6,
+        });
+      } else {
+        message.warning({
+          content: `「${label}」未全部成功：成功 ${run.computed} 条、失败 ${run.failed} 条`,
+          key,
+          duration: 6,
+        });
+      }
+      bumpTreeData();
+    } catch (e: any) {
+      message.error({ content: `执行失败：${e?.message || String(e)}`, key, duration: 8 });
+    }
+  };
+
   const handleTreeNodeAction = async (node: TreeNode, actionKey: string) => {
     const key = node.ref?.key || '';
 
@@ -3217,7 +3592,112 @@ function EditorPage(props: EditorPageProps) {
       }
     };
 
+    // —— 校验规则（树里与「数据资源」「计算任务」并列的「规则」节点）——
+    /**
+     * 切换一条规则。
+     *
+     * <p>只有**规则集**真的变了才把断面打回 pending；单纯切换图层（眼睛）不改判定，
+     * 不该让一整个任务的几千条断面重跑一遍校验（每条一次 HTTP）。
+     *
+     * <p>为什么必须打回：`cross_sections.validation_status` 只保存"最后一次按当时规则集算出来的结论"，
+     * 规则集一变它就开始骗人 —— 而分析前的门禁读的正是它。
+     */
+    const applyRuleToggle = (id: RuleId) => {
+      const before = rulesetKeyOf(useRuleStore.getState().enabled);
+      useRuleStore.getState().toggle(id);
+      const after = rulesetKeyOf(useRuleStore.getState().enabled);
+      if (before === after) return; // 锁定规则被 toggle 忽略（store 里已兜底）
+
+      const def = ruleById(id);
+      const nowOn = isRuleOn(useRuleStore.getState().enabled, id);
+      message.info({
+        content: `${nowOn ? '已启用' : '已停用'}规则「${def?.label || id}」，历史校验结论已作废；执行分析前会自动重新校验全部断面。`,
+        duration: 5,
+      });
+
+      const ids = (perpendicularData?.features || [])
+        .map((f: any) => f?.properties?.sectionId as string | undefined)
+        .filter(Boolean) as string[];
+      ids.forEach((sid) => patchSectionValidationProps(sid, {
+        validation_status: 'pending',
+        is_valid: undefined,
+        validation_status_raw: undefined,
+        validation_message: undefined,
+        validated_at: undefined,
+      }));
+    };
+
+    /**
+     * 规则行尾的「眼睛」：只控制判定范围的显示，与"规则是否执行"正交。
+     * 长江范围已开但上次加载失败时，这次点击当作重试 —— 否则用户只能关一次再开一次。
+     */
+    const toggleRuleLayer = (rule: NonNullable<TreeNode['rule']>) => {
+      if (rule.layer === 'river') {
+        if (!showRiverSurface) { setShowRiverSurface(true); return; }
+        if (riverSurfaceStatus === 'error') { void loadRiverSurface(true); return; }
+        setShowRiverSurface(false);
+        return;
+      }
+      if (rule.layer === 'tiff') setShowTiffBounds((v) => !v);
+    };
+
+    const openRuleInfo = (id: RuleId) => {
+      const def = ruleById(id);
+      if (!def) return;
+      const on = isRuleOn(useRuleStore.getState().enabled, id);
+      setInfoModal({
+        title: `规则说明 · ${def.label}`,
+        groups: [
+          {
+            heading: '判定',
+            rows: [
+              ['规则 ID', def.id],
+              ['依据', def.desc],
+              ['失败码', def.failCode || '—'],
+            ],
+          },
+          {
+            heading: '开关',
+            rows: def.locked
+              ? [
+                  ['可关闭', '否（固定）'],
+                  ['原因', '模型采样 / 参数合法性必需；关掉不会算出结果，只会产出不可用数据'],
+                ]
+              : [
+                  ['当前状态', on ? '启用' : '已停用'],
+                  ['停用后果', def.offWarning || '不再拦截该条件，交给后续校验或模型自行报错'],
+                ],
+          },
+        ],
+      });
+    };
+
+    const openRuleCreateInfo = () => {
+      setInfoModal({
+        title: '新增规则',
+        groups: [
+          {
+            heading: '如何新增',
+            rows: [
+              ['①', '前端 src/rules/catalog.ts 的 RULE_CATALOG 登记 id / 分类 / 名称 / 是否可关 / 关联图层'],
+              ['②', '后端 SectionValidationService 实现判定，并使用同名常量'],
+              ['③', '重启后端；未登记或未实现的 id 会被忽略并打 warn，不会让整批校验失败'],
+            ],
+          },
+          {
+            heading: '当前已登记',
+            rows: RULE_CATALOG.map((r) => [r.id, `${r.label}${r.locked ? '（固定）' : ''}`]),
+          },
+        ],
+      });
+    };
+
     switch (actionKey) {
+      // 规则节点：开关 / 图层 / 说明（新增入口挂在「规则」组行上）
+      case 'rule.toggle': if (node.rule) applyRuleToggle(node.rule.id); break;
+      case 'rule.layer': if (node.rule) toggleRuleLayer(node.rule); break;
+      case 'rule.describe': if (node.rule) openRuleInfo(node.rule.id); break;
+      case 'rule.create': openRuleCreateInfo(); break;
       case 'bank.upload': bankUploadInputRef.current?.click(); break;
       case 'bank.colorToggle': setColorBanks(!colorBanks); break;
       case 'bank.loadMap':
@@ -3371,6 +3851,8 @@ function EditorPage(props: EditorPageProps) {
       case 'task.run': useResourceTreeStore.getState().setCurrentTask(key); await handleStartAnalysis(); break;
       case 'task.stop': await handleStopTask(key, node.label); break;
       case 'task.generateCompute': useResourceTreeStore.getState().setCurrentTask(key); await handleGenerateComputeSections(); bumpTreeData(); break;
+      case 'task.addBanks': await openAddBanksModal(key, node.label); break;
+      case 'task.runPending': await runPendingForTask(key, node.label); break;
       case 'task.setParam': useResourceTreeStore.getState().setCurrentTask(key); await openGlobalPropertiesModal({ scope: 'task', taskId: key }); break;
       case 'task.loadMap': await loadTaskOntoMap(key, node.label); break;
       case 'task.viewResult': setPage?.('result', key); break;
@@ -3549,6 +4031,7 @@ function EditorPage(props: EditorPageProps) {
             <ResourceSidebar
               demKeys={demKeysOnMap}
               activeSectionId={activeSectionIdOnMap}
+              tiffBoundsVisible={showTiffBounds}
               handlers={{
                 onAction: handleTreeNodeAction,
                 onNodeSelect: handleTreeNodeSelect,
@@ -3669,6 +4152,8 @@ function EditorPage(props: EditorPageProps) {
             setShowTiffBounds(v);
             if (v) setFocusedDemKeys(null);
           }}
+          showRiverSurface={showRiverSurface}
+          setShowRiverSurface={setShowRiverSurface}
           satellite={satellite}
           setSatellite={setSatellite}
           handleStartAnalysis={handleStartAnalysis}
@@ -3716,6 +4201,8 @@ function EditorPage(props: EditorPageProps) {
           createCrossLineByEndpoints={createCrossLineByEndpoints}
           tiffBoundsData={visibleTiffBoundsData}
           showTiffBounds={showTiffBounds}
+          riverSurfaceData={riverSurfaceData}
+          showRiverSurface={showRiverSurface}
           resizeTrigger={resizeTrigger}
           satellite={satellite}
           colorBanks={colorBanks}
@@ -3869,6 +4356,21 @@ function EditorPage(props: EditorPageProps) {
           bankCount={selectedLines.size}
           onConfirm={handleCreateTaskConfirm}
           onCancel={() => setCreateTaskModalOpen(false)}
+        />
+      )}
+
+      {/* 补充岸段到已有任务（资源树任务节点右键 → 补充岸段…） */}
+      {addBanksModal && (
+        <AddBanksToTaskModal
+          taskId={addBanksModal.taskId}
+          taskName={addBanksModal.taskName}
+          candidates={addBanksModal.candidates}
+          existingBankCount={addBanksModal.scope.existingBankIds.size}
+          existingSectionCount={addBanksModal.scope.sectionCount}
+          defaultInterval={globalInterval}
+          defaultLength={globalLength}
+          onConfirm={handleAddBanksConfirm}
+          onCancel={() => setAddBanksModal(null)}
         />
       )}
 

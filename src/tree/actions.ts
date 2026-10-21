@@ -77,10 +77,24 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
   // 所以这里不需要再做条件判断；danger 是为了让它在右键菜单里就是红色的。
   'task.stop': { key: 'task.stop', label: '终止运行', icon: 'stop', danger: true },
   'task.generateCompute': { key: 'task.generateCompute', label: '生成计算断面…', icon: 'ruler' },
+  // 「补充岸段」是"增量"动作：只往该任务追加新岸段与断面，已有断面/结果不动。
+  // 与 task.generateCompute（整任务清空重建）语义相反，所以文案上必须能一眼分开。
+  'task.addBanks': { key: 'task.addBanks', label: '补充岸段…', icon: 'plus' },
+  // 只算「还没有结果」的断面：补完岸段不想等全量重跑时用。
+  'task.runPending': { key: 'task.runPending', label: '只算未计算断面', icon: 'play' },
   // 打开的是「本任务」自己的参数集（basic_params.task_id = 该任务），不是模板库那份。
   'task.setParam': { key: 'task.setParam', label: '编辑本任务参数…', icon: 'settings' },
   'task.viewResult': { key: 'task.viewResult', label: '查看结果', icon: 'chart' },
   'task.delete': { key: 'task.delete', label: '删除任务', icon: 'trash', danger: true, separatorBefore: true },
+
+  // —— 校验规则（树里与「数据资源」「计算任务」并列的「规则」节点）——
+  // `rule.toggle` / `rule.layer` 只挂在**可关**规则上（见 buildRulesGroup 的 actions 拼装），
+  // 锁定规则只有 rule.describe：菜单里出现"停用"而点了没反应，比没有这个菜单项更糟。
+  'rule.toggle': { key: 'rule.toggle', label: '启用 / 停用', icon: 'check' },
+  // 图层开关与规则开关正交：可以启用规则但不画边界（省 942KB），也可以停用规则仍看边界。
+  'rule.layer': { key: 'rule.layer', label: '显示 / 隐藏判定范围', icon: 'eye' },
+  'rule.describe': { key: 'rule.describe', label: '规则说明', icon: 'settings' },
+  'rule.create': { key: 'rule.create', label: '新增规则…', icon: 'plus' },
 
   'global.clear': { key: 'global.clear', label: '清空', icon: 'eraser' },
   'global.satellite': { key: 'global.satellite', label: '卫星图', icon: 'globe' },

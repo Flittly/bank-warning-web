@@ -4,6 +4,7 @@ import { authHeaders } from '../../utils/apiClient';
 import type { SectionParams } from '../../types/sections';
 import { ensureTaskParamsId } from '../../services/basicParamsService';
 import { fetchSectionParams } from './sectionApi';
+import { scheduleSectionRecompute } from './sectionRecompute';
 import { getCurrentTaskId } from './taskState';
 import {
   coordsToVerticalFootPoint,
@@ -699,6 +700,10 @@ export async function translateSelectedCrossLineAction(params: {
       throw new Error(`更新断面几何失败: ${response.statusText}`);
     }
 
+    // 沿岸线平移同样改了几何：旧结论已在后端作废，按需重算这一条。
+    const savePayload = await response.json().catch(() => null as any);
+    scheduleSectionRecompute(sectionId, Boolean(savePayload?.had_result));
+
     const updatedFeatures = [...perpendicularData.features];
     updatedFeatures[selectedCrossLineIndex] = {
       ...selectedLine,
@@ -784,6 +789,10 @@ export async function persistCrossLineGeometryAction(params: {
     if (!response.ok) {
       throw new Error(`更新断面几何失败: ${response.statusText}`);
     }
+    // 后端在保存几何的同时把这条断面的旧结论作废了（否则颜色会留在旧位置）。
+    // had_result 为真说明刚才作废掉了一份真结果，必须立刻算回来、覆盖成新位置的结论。
+    const payload = await response.json().catch(() => null as any);
+    scheduleSectionRecompute(sectionId, Boolean(payload?.had_result));
   } catch (err: any) {
     console.error('同步断面几何到后端失败:', err);
     alert(`同步断面几何到后端失败: ${err.message}`);

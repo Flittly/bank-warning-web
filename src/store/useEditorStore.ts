@@ -17,6 +17,13 @@ interface EditorData {
   showCrossLines: boolean;
   satellite: boolean;
   colorBanks: boolean;
+  /**
+   * 是否在地图上显示「长江范围」参考图层（规则：与长江河面相交）。
+   *
+   * <p>默认 **开启**：断面校验的前两条规则（是否与长江面相交、是否完全落在长江面内部）
+   * 都围绕这条河面判定，编辑断面时它是必要背景；用户关掉后会持久化，不会反复弹回。
+   */
+  showRiverSurface: boolean;
   loadedBanks: any[];
   crossLineControlMode: 'shoreline' | 'free';
   selectedBasicParamIdState: string | number | null;
@@ -44,6 +51,7 @@ interface EditorActions {
   setShowCrossLines: (v: boolean) => void;
   setSatellite: (v: boolean) => void;
   setColorBanks: (v: boolean) => void;
+  setShowRiverSurface: (v: boolean) => void;
   setLoadedBanks: (v: any[] | ((prev: any[]) => any[])) => void;
   setCrossLineControlMode: (v: 'shoreline' | 'free') => void;
   setSelectedBasicParamIdState: (v: string | number | null) => void;
@@ -73,6 +81,7 @@ const initialData: EditorData = {
   showCrossLines: true,
   satellite: false,
   colorBanks: false,
+  showRiverSurface: true,
   loadedBanks: [],
   crossLineControlMode: 'shoreline',
   selectedBasicParamIdState: null,
@@ -99,6 +108,7 @@ export const useEditorStore = create<EditorState>()(
       setShowCrossLines: setter(set, 'showCrossLines'),
       setSatellite: setter(set, 'satellite'),
       setColorBanks: setter(set, 'colorBanks'),
+      setShowRiverSurface: setter(set, 'showRiverSurface'),
       setLoadedBanks: setter(set, 'loadedBanks'),
       setCrossLineControlMode: setter(set, 'crossLineControlMode'),
       setSelectedBasicParamIdState: setter(set, 'selectedBasicParamIdState'),
@@ -120,6 +130,7 @@ export const useEditorStore = create<EditorState>()(
         showCrossLines: state.showCrossLines,
         satellite: state.satellite,
         colorBanks: state.colorBanks,
+        showRiverSurface: state.showRiverSurface,
         loadedBanks: state.loadedBanks,
         crossLineControlMode: state.crossLineControlMode,
         selectedBasicParamIdState: state.selectedBasicParamIdState,

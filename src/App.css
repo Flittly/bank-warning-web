@@ -1157,10 +1157,25 @@
   border-radius: 50%;
 }
 
+/* 结果页图例。色值必须与 utils/riskScoring.ts 的 RISK_COLORS 一致：
+   high=一级风险(level 3) / medium=二级风险(level 2) / low=三级风险(level 1) / no=低风险(level 0)。
+   2026-10-20：低风险与「无风险值」不再着色（见 map/sectionRenderVisibility.ts），
+   no 改成虚线空心点，让图例自己说明「这一档不画」。 */
 .dot.high { background: #ef4444; }
 .dot.medium { background: #f97316; }
-.dot.low { background: #facc15; }
-.dot.no { background: #10b981; }
+.dot.low { background: #3b82f6; }
+.dot.no {
+  background: transparent;
+  border: 1px dashed #94a3b8;
+  box-sizing: border-box;
+}
+
+.legend-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
 
 /* 结果页：任务计算进度弹窗 */
 
@@ -1720,6 +1735,51 @@
 .matrix-assessment-table tbody tr:hover td,
 .matrix-assessment-table tbody tr:hover th {
   background: #bfdbfe;
+}
+
+/* 单指标风险等级列：只描述「这一个指标按自身阈值落在哪一档」，
+   与右侧分组图表的行索引同义，不是断面综合等级。 */
+.matrix-assessment-level-col {
+  width: 104px;
+  white-space: nowrap;
+}
+
+.indicator-tier-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 700;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.indicator-tier-badge.is-unknown {
+  color: #64748b;
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  font-weight: 600;
+}
+
+/* 反向指标（目前只有抗冲流速 Ky）：阈值降序 ⇒ 值越大越安全。
+   不标这一句，看到 Ky 小却标红会以为分档反了。 */
+.matrix-row-reverse {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: #b45309;
+  letter-spacing: 0;
+}
+
+.matrix-section-hint {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #64748b;
 }
 
 /* 结果页：断面剖面折线 */

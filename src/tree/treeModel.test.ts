@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBanksFolder, buildParamsFolder, buildDemFolder, buildSectionsFolder, buildTasksGroup, resolveTaskRefs, buildResourceTree, flattenTree } from './treeModel';
+import { buildBanksFolder, buildParamsFolder, buildDemFolder, buildSectionsFolder, buildTasksGroup, buildRulesGroup, resolveTaskRefs, buildResourceTree, flattenTree } from './treeModel';
 
 describe('buildBanksFolder', () => {
   it('maps banks to nodes, skips clipped', () => {
@@ -79,12 +79,18 @@ describe('buildTasksGroup', () => {
 
     expect(running.actions).toEqual([
       'task.props', 'task.run', 'task.stop',
+      'task.runPending', 'task.addBanks',
       'task.generateCompute', 'task.setParam', 'task.loadMap', 'task.viewResult', 'task.delete',
     ]);
     // 非 running 一个都不该有：pending/已结束的任务没有可终止的线程
     expect(pending.actions).not.toContain('task.stop');
     expect(failed.actions).not.toContain('task.stop');
     expect(pending.actions).toContain('task.run');
+    // 「补充岸段」与运行状态无关：任务是 pending 还是已跑完，都能往里追加岸段
+    for (const n of [running, pending, failed]) {
+      expect(n.actions).toContain('task.addBanks');
+      expect(n.actions).toContain('task.runPending');
+    }
     // 「加载岸段与断面到地图」与运行状态无关：任何任务都能把自己的岸段/断面铺到图上
     for (const n of [running, pending, failed]) expect(n.actions).toContain('task.loadMap');
   });
@@ -92,6 +98,66 @@ describe('buildTasksGroup', () => {
   it('status 的大小写与首尾空格不影响终止入口的出现', () => {
     const group = buildTasksGroup([{ task_id: 't9', status: ' RUNNING ' }]);
     expect(group.children?.[0].actions).toContain('task.stop');
+  });
+
+  // 回归：补充岸段成功后 `invalidateSections` 会把断面缓存删掉，
+  // 而此时任务节点多半是折叠的 ⇒ ResourceSidebar 不会去重拉。
+  // 老逻辑要求 `sectionsByTask[tid]` 为真才建子节点，于是整棵子树退化成
+  // 一行「展开以加载…」，用户看到的就是"岸段没补上"。
+  // 岸段归属只认 tasks.bank_ids，与断面缓存是否就绪无关。
+  it('断面缓存缺失时仍按 tasks.bank_ids 画出岸段节点', () => {
+    const group = buildTasksGroup(
+      [{ task_id: 't1', task_name: '任务', bank_ids: ['b1', 'b2', 'b3'] }],
+      { sectionsByTask: {}, banksById: { b1: { bank_name: '一岸' } } },
+    );
+    const kids = group.children?.[0].children || [];
+    const banksFolder = kids.find((k) => k.id === 'task-banks:t1');
+    expect(banksFolder?.children?.map((n) => n.ref?.key)).toEqual(['b1', 'b2', 'b3']);
+    expect(banksFolder?.meta).toBe('3');
+    // 库里查不到名字的岸段退回显示 bank_id，而不是消失
+    expect(banksFolder?.children?.[0].label).toBe('一岸');
+    expect(banksFolder?.children?.[2].label).toBe('b3');
+    expect(kids).not.toContainEqual(expect.objectContaining({ id: 'task-loading:t1' }));
+  });
+
+  it('断面缓存缺失时「断面」文件夹显示 … 而不是 0，避免被读成"没有断面"', () => {
+    const group = buildTasksGroup([{ task_id: 't1', bank_ids: ['b1'] }], { sectionsByTask: {} });
+    const kids = group.children?.[0].children || [];
+    expect(kids.find((k) => k.id === 'task-sections:t1')?.meta).toBe('…');
+  });
+
+  it('既无缓存也无 bank_ids 时才退化成「展开以加载…」', () => {
+    const group = buildTasksGroup([{ task_id: 't1' }], { sectionsByTask: {} });
+    expect(group.children?.[0].children?.[0].id).toBe('task-loading:t1');
+  });
+
+  // 回归：线上真实数据 —— tasks.bank_ids 17 条，断面里还多出 2 条真实岸段
+  // （当年"补充岸段"写关联失败留下的），外加 2 条自由断面的 line-N 占位 id。
+  // 地图侧取并集并剔除占位 id ⇒ 19 条；树若只读 bank_ids 就是 17 条，
+  // 同一个任务两个数字，用户无从判断。
+  it('岸段节点 = bank_ids ∪ 断面引用（剔除 line-N 占位 id），与地图同口径', () => {
+    const sections = [
+      { section_id: 's1', bank_id: 'bankwgs84_5' },
+      { section_id: 's2', bank_id: 'bankwgs84_11' },
+      { section_id: 's3', bank_id: 'line-9' },
+    ];
+    const group = buildTasksGroup(
+      [{ task_id: 't1', bank_ids: ['bankwgs84_5', 'bankwgs84_4'] }],
+      { sectionsByTask: { t1: sections } },
+    );
+    const kids = group.children?.[0].children || [];
+    const banksFolder = kids.find((k) => k.id === 'task-banks:t1');
+    // 任务顺序在前，未登记的追加在后；line-9 不是岸段
+    expect(banksFolder?.children?.map((n) => n.ref?.key)).toEqual([
+      'bankwgs84_5',
+      'bankwgs84_4',
+      'bankwgs84_11',
+    ]);
+    expect(banksFolder?.meta).toBe('3');
+    // 自由断面依旧留在「断面」文件夹里，只是分组名不再叫 line-9
+    const sectionFolders = kids.find((k) => k.id === 'task-sections:t1')?.children || [];
+    expect(sectionFolders.map((f) => f.label)).toContain('自由断面');
+    expect(sectionFolders.map((f) => f.meta)).toEqual(['1', '1', '1']);
   });
 });
 
@@ -129,6 +195,62 @@ describe('buildResourceTree', () => {
     // 断面侧保持原样，两侧都要有同一对语义
     expect(sectionsFolder?.actions).toContain('section.loadAll');
     expect(sectionsFolder?.actions).toContain('section.removeAll');
+  });
+});
+
+describe('buildRulesGroup', () => {
+  it('夹在「数据资源」与「计算任务」之间', () => {
+    const root = buildResourceTree({ banks: [], params: [], tiffs: [], tasks: [], sections: [] });
+    expect((root.children || []).map((c) => c.id)).toEqual(['group:resources', 'group:rules', 'group:tasks']);
+  });
+
+  it('三层结构：group → 三个分类 → 九个规则叶子', () => {
+    const group = buildRulesGroup({ enabled: {}, layers: { river: false, tiff: false } });
+    expect(group.kind).toBe('group');
+    expect(group.children?.map((c) => c.id)).toEqual([
+      'rules-cat:space', 'rules-cat:quality', 'rules-cat:param',
+    ]);
+    const leaves = group.children?.flatMap((c) => c.children || []) || [];
+    expect(leaves.length).toBe(9);
+    expect(leaves.every((n) => n.kind === 'rule' && n.selectable === false)).toBe(true);
+    // 规则不是数据资产：不可选中，避免污染多选与批量操作条
+    expect(leaves.some((n) => n.selectable)).toBe(false);
+  });
+
+  it('锁定规则没有 rule.toggle，可关规则带开关与图层', () => {
+    const group = buildRulesGroup({ enabled: {}, layers: { river: true, tiff: false } });
+    const leaves = group.children?.flatMap((c) => c.children || []) || [];
+    const byId = new Map(leaves.map((n) => [n.id, n]));
+
+    const river = byId.get('rule:R-SPACE-01');
+    expect(river?.actions).toEqual(['rule.toggle', 'rule.layer', 'rule.describe']);
+    expect(river?.rule).toMatchObject({ enabled: true, locked: false, layer: 'river', layerOn: true });
+    expect(river?.meta).toBe('启用');
+
+    // R-SPACE-02 共用长江图层，不重复给眼睛
+    expect(byId.get('rule:R-SPACE-02')?.actions).toEqual(['rule.toggle', 'rule.describe']);
+
+    const bench = byId.get('rule:R-SPACE-03');
+    expect(bench?.actions).toEqual(['rule.describe']);
+    expect(bench?.rule?.locked).toBe(true);
+    // 锁定行不写 meta：行尾的锁 + 「固定」已经说明白了
+    expect(bench?.meta).toBeUndefined();
+
+    const qual = byId.get('rule:R-QUAL-01');
+    expect(qual?.actions).toEqual(['rule.describe']);
+  });
+
+  it('停用后行状态与分类计数同步变化', () => {
+    const group = buildRulesGroup({
+      enabled: { 'R-SPACE-01': false },
+      layers: { river: false, tiff: false },
+    });
+    const space = group.children?.find((c) => c.id === 'rules-cat:space');
+    const rivers = space?.children?.find((c) => c.id === 'rule:R-SPACE-01');
+    expect(rivers?.meta).toBe('已停用');
+    expect(space?.meta).toBe('2/3');
+    // 组头只统计可关规则（3 条），锁定规则不计入分母
+    expect(group.meta).toBe('2/3');
   });
 });
 

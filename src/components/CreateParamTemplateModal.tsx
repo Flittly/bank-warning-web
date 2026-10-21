@@ -3,6 +3,7 @@ import type { SectionParams } from '../types/sections';
 import TiffResourcePicker from './TiffResourcePicker';
 import styles from './Modal.module.css';
 import { fetchBasicParamDetailAsSectionParams } from '../pages/editor/basicParamsApi';
+import { commitJsonDraft, createJsonDraft, formatJsonDraft, updateJsonDraft } from '../utils/jsonDraft';
 
 const TIDE_LABELS: Record<string, string> = { xc: '小潮', zc: '中潮', dc: '大潮' };
 
@@ -118,8 +119,13 @@ export default function CreateParamTemplateModal({
   const [hc, setHc] = useState<number>(2);
   const [protectionLevel, setProtectionLevel] = useState('systemic');
   const [controlLevel, setControlLevel] = useState('strict');
-  const [riskThresholds, setRiskThresholds] = useState<Record<string, unknown>>(DEFAULT_RISK_THRESHOLDS);
-  const [weights, setWeights] = useState<Record<string, unknown>>(DEFAULT_WEIGHTS);
+  /**
+   * 阈值 / 权重用「草稿」保存用户正在编辑的原始文本，而不是把它 parse 进 state 再 stringify 回去。
+   * 后者的后果是：任何非法中间态都会被静默丢弃、光标跳到末尾，表现为这两个 JSON 框完全改不动。
+   * 详见 utils/jsonDraft.ts。
+   */
+  const [riskDraft, setRiskDraft] = useState(() => createJsonDraft(DEFAULT_RISK_THRESHOLDS));
+  const [weightsDraft, setWeightsDraft] = useState(() => createJsonDraft(DEFAULT_WEIGHTS));
   const [otherParams, setOtherParams] = useState<Record<string, unknown>>({});
 
   const [hydroOptions, setHydroOptions] = useState<Array<{ water_qs: string; tidal_level: string }>>([]);
@@ -145,7 +151,15 @@ export default function CreateParamTemplateModal({
       try {
         const res = await fetch('/v0/bank/hydro-conditions');
         const data = await res.json();
-        if (!cancelled && Array.isArray(data?.conditions)) setHydroOptions(data.conditions);
+        if (cancelled || !Array.isArray(data?.conditions)) return;
+        const conditions = data.conditions as Array<{ water_qs: string; tidal_level: string }>;
+        setHydroOptions(conditions);
+        // 后端已把下拉收口到只剩一项（84000 m³/s · 1998-2023）。只剩一项时直接预选，
+        // 免得新建模板要为一个"没得选"的下拉多点一次；用户已经选过（含「复制模板」带过来的值）就不覆盖。
+        if (conditions.length === 1) {
+          const only = conditions[0];
+          setHydroValue((prev) => prev || `${only.water_qs}|${only.tidal_level}`);
+        }
       } catch (err) {
         console.error('获取水文条件失败:', err);
         if (!cancelled) setHydroOptions([]);
@@ -176,10 +190,10 @@ export default function CreateParamTemplateModal({
     if (sp.protection_level != null) setProtectionLevel(String(sp.protection_level));
     if (sp.control_level != null) setControlLevel(String(sp.control_level));
     if (sp.risk_thresholds && Object.keys(sp.risk_thresholds).length > 0) {
-      setRiskThresholds(sp.risk_thresholds as Record<string, unknown>);
+      setRiskDraft(createJsonDraft(sp.risk_thresholds));
     }
     if (sp.weights && Object.keys(sp.weights).length > 0) {
-      setWeights(sp.weights as Record<string, unknown>);
+      setWeightsDraft(createJsonDraft(sp.weights));
     }
     if (sp.other_params && typeof sp.other_params === 'object') {
       // 复制时必须摘掉 is_default —— 否则会凭空多出一个"默认"模板
@@ -205,8 +219,8 @@ export default function CreateParamTemplateModal({
       setHc(2);
       setProtectionLevel('systemic');
       setControlLevel('strict');
-      setRiskThresholds(DEFAULT_RISK_THRESHOLDS);
-      setWeights(DEFAULT_WEIGHTS);
+      setRiskDraft(createJsonDraft(DEFAULT_RISK_THRESHOLDS));
+      setWeightsDraft(createJsonDraft(DEFAULT_WEIGHTS));
       setOtherParams({});
       return;
     }
@@ -242,6 +256,18 @@ export default function CreateParamTemplateModal({
       return;
     }
 
+    // JSON 草稿是唯一真源：不合法就阻止创建，不能把用户改了一半的内容静默换成默认值
+    const risk = commitJsonDraft(riskDraft);
+    if (!risk.ok) {
+      setError(`风险阈值 JSON 有语法错误：${risk.message}`);
+      return;
+    }
+    const weight = commitJsonDraft(weightsDraft);
+    if (!weight.ok) {
+      setError(`权重参数 JSON 有语法错误：${weight.message}`);
+      return;
+    }
+
     const [waterQs = '', tidalLevel = ''] = hydroValue.split('|');
 
     const form: CreateParamTemplateForm = {
@@ -259,8 +285,8 @@ export default function CreateParamTemplateModal({
       hc,
       protection_level: protectionLevel,
       control_level: controlLevel,
-      risk_thresholds: riskThresholds,
-      weights,
+      risk_thresholds: risk.value as Record<string, unknown>,
+      weights: weight.value as Record<string, unknown>,
       other_params: { ...otherParams, is_default: false },
     };
 
@@ -504,16 +530,22 @@ export default function CreateParamTemplateModal({
             <textarea
               className={styles.textarea}
               rows={6}
-              value={JSON.stringify(riskThresholds, null, 2)}
+              spellCheck={false}
+              aria-label="风险阈值 JSON"
+              value={riskDraft.text}
               onChange={(e) => {
-                try {
-                  setRiskThresholds(JSON.parse(e.target.value));
-                  if (error) setError('');
-                } catch {
-                  // 输入过程中 JSON 还不完整，先不覆盖 state
-                }
+                // 只留文本，不解析回 state（否则非法中间态会被吞掉、光标跳走）
+                setRiskDraft(updateJsonDraft(e.target.value));
+                if (error) setError('');
               }}
+              onBlur={() => setRiskDraft(formatJsonDraft(riskDraft))}
             />
+            {riskDraft.error && (
+              <div className={riskDraft.incomplete ? styles.hint : styles.errorText}>
+                {riskDraft.incomplete ? 'JSON 还没写完，可继续输入：' : 'JSON 语法错误：'}
+                {riskDraft.error}
+              </div>
+            )}
           </div>
 
           <div>
@@ -521,16 +553,21 @@ export default function CreateParamTemplateModal({
             <textarea
               className={styles.textarea}
               rows={5}
-              value={JSON.stringify(weights, null, 2)}
+              spellCheck={false}
+              aria-label="权重参数 JSON"
+              value={weightsDraft.text}
               onChange={(e) => {
-                try {
-                  setWeights(JSON.parse(e.target.value));
-                  if (error) setError('');
-                } catch {
-                  // 同上
-                }
+                setWeightsDraft(updateJsonDraft(e.target.value));
+                if (error) setError('');
               }}
+              onBlur={() => setWeightsDraft(formatJsonDraft(weightsDraft))}
             />
+            {weightsDraft.error && (
+              <div className={weightsDraft.incomplete ? styles.hint : styles.errorText}>
+                {weightsDraft.incomplete ? 'JSON 还没写完，可继续输入：' : 'JSON 语法错误：'}
+                {weightsDraft.error}
+              </div>
+            )}
           </div>
 
           <div className={styles.hint}>

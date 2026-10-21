@@ -3,16 +3,20 @@ import {
   ChevronRight, ChevronDown, Folder, Database, ListTodo, FileText, Map as MapIcon,
   Layers, Settings, Zap, Scissors, Trash2, Eye, EyeOff, Target, Ruler,
   CircleCheck, Download, RotateCw, Move, Plus, Play, ChartColumn, Upload,
-  Eraser, Globe, Palette, Check, Square,
+  Eraser, Globe, Palette, Check, Square, ShieldCheck,
 } from 'lucide-react';
 import type { TreeNode } from '../../tree/types';
 import { getActions } from '../../tree/actions';
 import { splitHighlight } from '../../utils/highlight';
+import RuleSwitch from './RuleSwitch';
+import ruleStyles from './RuleSwitch.module.css';
 import styles from './ResourceSidebar.module.css';
 
 const ICONS: Record<string, any> = {
   folder: Folder, bank: MapIcon, section: FileText, param: Settings,
   dem: Layers, task: ChartColumn, resources: Database, tasks: ListTodo,
+  // 规则组用盾牌、规则叶子用对勾：与"数据/任务"的图标语言区分开
+  rules: ShieldCheck, rule: CircleCheck,
 };
 const ACTION_ICONS: Record<string, any> = {
   upload: Upload, palette: Palette, eye: Eye, eyeOff: EyeOff, target: Target,
@@ -83,6 +87,12 @@ export default function ResourceTreeNode({
 
   const handleClick = (e: MouseEvent) => {
     e.stopPropagation();
+    // 规则行不是数据资产：点整行＝看这条规则在拦什么（开关与眼睛各自 stopPropagation，
+    // 不会走到这里）。不给它选中/展开，避免多选锚点落在一个没有 ref 的节点上。
+    if (node.kind === 'rule') {
+      onAction(node, 'rule.describe');
+      return;
+    }
     const shift = e.shiftKey;
     const ctrlOrMeta = e.ctrlKey || e.metaKey;
     onSelect(node, { shift, ctrlOrMeta });
@@ -99,7 +109,7 @@ export default function ResourceTreeNode({
         onClick={handleClick}
         onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(node); }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e.clientX, e.clientY); }}
-        title={node.label}
+        title={node.title || node.label}
       >
         <span className={styles.chevron}>
           {hasChildren ? (expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : null}
@@ -117,6 +127,31 @@ export default function ResourceTreeNode({
               )}
         </span>
         {node.meta ? <span className={styles.meta}>{node.meta}</span> : null}
+
+        {/* 规则行：眼睛（图层）+ 开关（判定是否执行）常驻显示。
+            这两个控件是**状态**而不是"对行做一件事"，所以不走 hoverActions 通道。 */}
+        {node.kind === 'rule' && node.rule && (
+          <span className={styles.ruleControls}>
+            {node.rule.layer && (
+              <button
+                type="button"
+                className={`${ruleStyles.eye} ${node.rule.layerOn ? ruleStyles.eyeOn : ''}`}
+                title={`${node.rule.layerOn ? '隐藏' : '显示'}判定范围${node.rule.layer === 'river' ? '（长江河面）' : '（DEM 覆盖范围）'}`}
+                aria-label={`${node.rule.layerOn ? '隐藏' : '显示'}判定范围`}
+                onClick={(e) => { e.stopPropagation(); onAction(node, 'rule.layer'); }}
+              >
+                {node.rule.layerOn ? <Eye size={12} /> : <EyeOff size={12} />}
+              </button>
+            )}
+            <RuleSwitch
+              checked={node.rule.enabled}
+              locked={node.rule.locked}
+              title={node.rule.locked ? '模型必需，不可关闭' : undefined}
+              onToggle={() => onAction(node, 'rule.toggle')}
+            />
+          </span>
+        )}
+
         {hoverKeys.length > 0 && (
           <span className={styles.hoverActions}>
             {getActions(hoverKeys).map((a) => {

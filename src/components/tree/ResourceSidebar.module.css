@@ -350,3 +350,14 @@
   background: var(--tree-hover);
   color: #64748b;
 }
+
+/* 规则行尾：眼睛 + 开关，常驻显示、靠右。
+   与 .hoverActions 的区别是它不依赖 :hover —— 开关表达"这条判定现在生效吗"，
+   必须一眼可见，不能靠 hover 才出现（DEM 范围开关曾因为只在 hover 出现而被误读）。 */
+.ruleControls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
