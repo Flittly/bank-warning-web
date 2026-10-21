@@ -16,6 +16,15 @@ import { useSearchParams } from 'react-router-dom';
 import { cancelTask } from '../services/taskRunControl';
 import { FlowFieldLayer, FLOW_FIELD_LAYER_ID, type FlowFieldStatus } from '../map/flowFieldLayer';
 import { bankShadeWidthExpr } from '../map/bankShadeWidth';
+import { sectionProgressAlongBank } from '../map/sectionBandProgress';
+import {
+  TRANSPARENT_RISK_COLOR,
+  buildRiskBandSpans,
+  buildRiskGradientStops,
+  emptyRiskGradientStops,
+  shouldRenderRisk,
+  type RiskGradientPoint,
+} from '../map/sectionRenderVisibility';
 import {
   DEFAULT_FLOW_COLOR_SCHEME,
   FLOW_COLOR_SCHEMES,
@@ -49,8 +58,10 @@ import {
   RISK_MATRIX_GROUPS,
   bucketRiskValue,
   displayLevelOfResult,
+  resolveIndicatorTier,
   resolveRiskParams,
   toDisplayLevel,
+  type RiskIndicatorKey,
   type RiskMatrixGroup,
 } from '../utils/riskScoring';
 
@@ -107,6 +118,22 @@ function buildSplitTilesJson(cols: number, edges: TileEdges[]): string | undefin
     return out;
   }).filter(t => Object.keys(t).length > 2); // 至少自定义了一条边
   return custom.length > 0 ? JSON.stringify(custom) : undefined;
+}
+
+/**
+ * 阈值方向：`阈值1 > 阈值3` ⇒ 该指标的阈值是**降序**，也就是「反向指标」。
+ *
+ * 全库 9 个指标里只有抗冲流速(Ky) 属于这种：后端 `antiImpactSpeed.py` 用 `Ky > 阈值[0]` 落第 1 档，
+ * 其余 8 个（Zb/Sa/Ln/PQ/Zd/Dsed）都是 `X < 阈值[0]` 落第 1 档、阈值升序。
+ * 两边的「第 N 档」语义完全一致（1 档最安全），只是**原始数值的方向相反** ——
+ * 所以 Ky 偏小才会是红，不标一句「值越大越安全」会被读成「分档反了」。
+ */
+function thresholdDirectionOf(thresholds: any): 'asc' | 'desc' | null {
+  if (!Array.isArray(thresholds) || thresholds.length < 3) return null;
+  const first = Number(thresholds[0]);
+  const last = Number(thresholds[2]);
+  if (!Number.isFinite(first) || !Number.isFinite(last) || first === last) return null;
+  return first > last ? 'desc' : 'asc';
 }
 
 /**
@@ -326,6 +353,24 @@ function ResultPage(props: ResultPageProps) {
   const activePopupRef = useRef<mapboxgl.Popup | null>(null);
   const activePopupSectionIdRef = useRef<string | null>(null);
   const bankGeometryCacheRef = useRef<Record<string, GeoJSON.LineString | null>>({});
+  /**
+   * 断面→色带位置的缓存。值是 `签名 + 位置`：签名由断面几何与岸段长度组成，
+   * 断面没动就直接复用，动了签名变、自然重算。
+   * 必要性：投影是 O(断面数 × 岸段顶点数)，而色带跟着轮询每几秒重绘一次，
+   * 不缓存的话整条岸线的重绘会被这一步拖到秒级。
+   */
+  const bandProgressCacheRef = useRef<Map<string, { signature: string; progress: number | null }>>(new Map());
+  /**
+   * 每条岸段「只剩可见区间」的几何切片，供 `uploaded-data` 的灰色底线使用。
+   *
+   * 为什么需要：色带（`bankline-result-*`）用 line-gradient 局部透明就够了，但底下那条
+   * 贯穿全程的 2px 灰线不会断开，视觉上仍然读作「岸段还在」。这里按与色带完全相同的
+   * 区间口径把它切成碎片，不可见的区间直接不输出 —— 于是岸段看起来真的是断的。
+   *
+   * 按 bank 分开存是为了支持 `onlyBankId` 的单岸段局部刷新：只替换该岸段那一条，
+   * 再整体合并 setData，不会把其它岸段刷掉。
+   */
+  const bankVisibleSegmentsRef = useRef<Record<string, GeoJSON.Feature[]>>({});
 
   const sectionClickHandlerRef = useRef<((e: any) => void) | null>(null);
   const sectionEnterHandlerRef = useRef<(() => void) | null>(null);
@@ -768,6 +813,32 @@ function ResultPage(props: ResultPageProps) {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+
+      // 同一次导出再取一份「风险段汇总」（连续同类风险段的位置 / 长度 km / 占比）。
+      // 计算口径只在后端 RiskSegmentSummaryService 里有一份，前端不重算 ——
+      // 否则两套实现迟早对不上，而且「长度/占比」这类数字对不上最难解释。
+      // 汇总失败不影响已经下载成功的明细表，只提示一句。
+      try {
+        const segRes = await fetch(`/v0/bank/risk-segments/export?task_id=${encodeURIComponent(taskId)}`);
+        if (!segRes.ok) throw new Error(`HTTP ${segRes.status}`);
+        const segBlob = await segRes.blob();
+        const segUrl = URL.createObjectURL(segBlob);
+        const segLink = document.createElement('a');
+        segLink.href = segUrl;
+        const disposition = segRes.headers.get('Content-Disposition');
+        const utf8Name = disposition && /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+        segLink.download = utf8Name
+          ? decodeURIComponent(utf8Name[1].trim())
+          : `风险段汇总_${taskName}_${new Date().toISOString().slice(0, 10)}.csv`;
+        segLink.style.visibility = 'hidden';
+        document.body.appendChild(segLink);
+        segLink.click();
+        document.body.removeChild(segLink);
+        URL.revokeObjectURL(segUrl);
+      } catch (segErr) {
+        console.warn('导出风险段汇总失败（断面明细已下载）:', segErr);
+        alert('断面明细已下载，但「风险段汇总」导出失败，请稍后重试。');
+      }
     } catch (err: any) {
       console.error('导出断面详情失败:', err);
       alert(`导出失败: ${err.message || err}`);
@@ -973,6 +1044,11 @@ function ResultPage(props: ResultPageProps) {
 
     const matrixPromise = (async () => {
       const payload = await fetchJSON(`/v0/bank/results/${encodeURIComponent(sectionId)}`);
+      // 断面存在但没算出结果：后端返回 200 + status=not_computed（不再用 404）。
+      // 这里必须显式中断：否则 result 为 null，下面会摊出一张全空矩阵，看着像数据丢了。
+      if (payload?.status === 'not_computed') {
+        throw new Error(payload?.reason || '该断面尚无计算结果');
+      }
       const result = payload?.result ?? payload?.data?.result ?? payload?.data ?? payload;
       const indicators = result?.indicators ?? payload?.indicators ?? {};
       const matrices = indicators?.matrices ?? result?.matrices ?? payload?.matrices ?? {};
@@ -1125,6 +1201,40 @@ function ResultPage(props: ResultPageProps) {
     setToast({ tone: 'ok', text: `已恢复模型原值：风险等级 ${label}` });
   };
 
+  // — 单指标风险等级
+  // 公式只认 riskScoring.resolveIndicatorTier（① 库内 indicator_tiers → ② 按本记录阈值现算
+  // → ③ PL/LC 从矩阵列反推），这里只负责把它翻成与地图图例同一套的文案与配色。
+  const indicatorTierOf = (key: RiskIndicatorKey, rawValues: any, matrices: any) =>
+    resolveIndicatorTier(key, {
+      indicators: matrixDetail?.indicators ?? matrixDetail,
+      rawValues,
+      matrices,
+    });
+
+  /** 1..4 档 → 与地图/图例同一套文案与配色（4 档 = 一级风险 = 红）。 */
+  const renderIndicatorTierBadge = (tier: number | null, direction: 'asc' | 'desc' | null = null) => {
+    if (tier === null) {
+      return <span className="indicator-tier-badge is-unknown" title="该指标缺值或缺阈值，无法判定档位">未判定</span>;
+    }
+    const level = tier - 1;
+    const label = RISK_LABELS[level] ?? `第${tier}档`;
+    const color = RISK_COLORS[String(level)] ?? RISK_COLORS.default;
+    // Ky 这种反向指标必须在 tooltip 里说清方向，否则「0.7 → 一级风险」看着像算反了。
+    const tip = [
+      `单指标分档：第 ${tier} 档（1 档最安全、4 档最危险）→ ${label}`,
+      direction === 'desc' ? '该指标阈值降序：数值越大越安全，数值偏小才是高等级。' : '',
+    ].filter(Boolean).join('\n');
+    return (
+      <span
+        className="indicator-tier-badge"
+        style={{ color, borderColor: color, background: `${color}1f` }}
+        title={tip}
+      >
+        {label}
+      </span>
+    );
+  };
+
   const generateMatrixCSV = () => {
     if (!matrixDetail) return '';
 
@@ -1136,13 +1246,7 @@ function ResultPage(props: ResultPageProps) {
     rows.push(['字段', '值']);
     rows.push(['断面名称', String(matrixSectionName || '-')]);
     rows.push(['断面ID', String(matrixSectionId || '-')]);
-    rows.push(['Task ID', formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId)]);
-    rows.push(['Case ID', formatCellValue(matrixDetail['case-id'] ?? matrixDetail.case_id ?? matrixDetail.caseId)]);
-    rows.push(['区域代码', formatCellValue(matrixDetail.region_code ?? matrixDetail.regionCode)]);
     rows.push(['岸段ID', formatCellValue(matrixDetail.bank_id ?? matrixDetail.bankId)]);
-    rows.push(['运行时间', formatCellValue(matrixDetail.run_time ?? matrixDetail.runTime)]);
-    rows.push(['水流量', formatCellValue(matrixDetail.water_qs ?? matrixDetail?.indicators?.water_qs ?? matrixDetail?.water_qs)]);
-    rows.push(['潮差', formatCellValue(matrixDetail.tidal_level ?? matrixDetail?.indicators?.tidal_level ?? matrixDetail?.tidal_level)]);
     rows.push(['风险等级', formatCellValue(matrixDetail.risk_level ?? matrixDetail.riskLevel)]);
     rows.push([]);
     
@@ -1163,7 +1267,7 @@ function ResultPage(props: ResultPageProps) {
       rows.push([]);
       
       // 表头
-      rows.push(['指标', '阈值1', '阈值2', '阈值3', '权重', '结果']);
+      rows.push(['指标', '阈值1', '阈值2', '阈值3', '权重', '结果', '风险等级']);
       
       // 数据行
       group.indicatorKeys.forEach(({ label, key }, idx) => {
@@ -1172,13 +1276,19 @@ function ResultPage(props: ResultPageProps) {
         const displayWeight = Array.isArray(weightValues) ? formatCellValue(weightValues[idx]) : formatCellValue(weightValues);
         const rawValues = matrixDetail?.raw_values || {};
         const resultValue = formatIndicatorResult(key, rawValues, matrices);
+        const tier = indicatorTierOf(key, rawValues, matrices);
+        const reverse = thresholdDirectionOf(displayThresholds) === 'desc';
+        const tierText = tier === null
+          ? '未判定'
+          : `${RISK_LABELS[tier - 1] ?? `第${tier}档`}（第 ${tier} 档${reverse ? '｜该指标反向：值越大越安全' : ''}）`;
         rows.push([
           label,
           displayThresholds[0] !== undefined ? formatCellValue(displayThresholds[0]) : 'N/A',
           displayThresholds[1] !== undefined ? formatCellValue(displayThresholds[1]) : 'N/A',
           displayThresholds[2] !== undefined ? formatCellValue(displayThresholds[2]) : 'N/A',
           displayWeight !== undefined ? displayWeight : 'N/A',
-          resultValue
+          resultValue,
+          tierText,
         ]);
       });
     });
@@ -1247,6 +1357,7 @@ function ResultPage(props: ResultPageProps) {
                 <th colSpan={3}>风险阈值</th>
                 <th>权重</th>
                 <th>结果</th>
+                <th className="matrix-assessment-level-col">风险等级</th>
               </tr>
             </thead>
             <tbody>
@@ -1255,15 +1366,29 @@ function ResultPage(props: ResultPageProps) {
                 const displayThresholds = Array.isArray(thresholdRow) ? thresholdRow : [];
                 const displayWeight = Array.isArray(weightValues) ? weightValues[idx] : weightValues;
                 const resultValue = formatIndicatorResult(key, rawValues, matrices);
+                const direction = thresholdDirectionOf(displayThresholds);
                 
                 return (
                   <tr key={key}>
-                    <th scope="row" className="matrix-assessment-row-name">{label}</th>
+                    <th scope="row" className="matrix-assessment-row-name">
+                      {label}
+                      {direction === 'desc' && (
+                        <span
+                          className="matrix-row-reverse"
+                          title="反向指标：阈值降序（1.7 → 1.35 → 1.0），数值越大越安全。坑：Ky 偏小才会被判成一级风险，这不是分档反了。"
+                        >
+                          值越大越安全
+                        </span>
+                      )}
+                    </th>
                     <td>{displayThresholds[0] !== undefined ? formatCellValue(displayThresholds[0]) : 'N/A'}</td>
                     <td>{displayThresholds[1] !== undefined ? formatCellValue(displayThresholds[1]) : 'N/A'}</td>
                     <td>{displayThresholds[2] !== undefined ? formatCellValue(displayThresholds[2]) : 'N/A'}</td>
                     <td>{displayWeight !== undefined ? formatCellValue(displayWeight) : '-'}</td>
                     <td>{resultValue}</td>
+                    <td className="matrix-assessment-level-col">
+                      {renderIndicatorTierBadge(indicatorTierOf(key, rawValues, matrices), direction)}
+                    </td>
                   </tr>
                 );
               })}
@@ -1319,6 +1444,7 @@ function ResultPage(props: ResultPageProps) {
 
     // 清空岸段几何缓存和基底图层，防止跨任务污染
     bankGeometryCacheRef.current = {};
+    bankVisibleSegmentsRef.current = {};
     const uploadedSrc = map.getSource('uploaded-data') as mapboxgl.GeoJSONSource | undefined;
     if (uploadedSrc) {
       uploadedSrc.setData(turf.featureCollection([]));
@@ -1377,6 +1503,30 @@ function ResultPage(props: ResultPageProps) {
   // 不同等级之间的过渡（岸线/中线）仍由 Mapbox 的 line-gradient 插值完成
   const computeColorWithMatrix = (indicatorResult: any, thresholds?: number[] | null) => {
     return getRiskInfo(indicatorResult, thresholds);
+  };
+
+  /**
+   * 断面 / 岸段着色的**唯一**入口（2026-10-20 起）。
+   *
+   * 相比 `computeColorWithMatrix` 多做一件事：`indicators.result` 还没拿到、但结果行里
+   * `risk_level` 已经落库时，按 `risk_level` 推出等级与配色，而不是一律涂成灰色 ——
+   * 灰线会被当成「一种等级」，而它其实是「没数」。两者都没有才返回 `valid:false`。
+   *
+   * 注意 `risk_level` 是库里的 1..4（1 最安全），显示等级要减 1（`toDisplayLevel`）。
+   */
+  const resolveSectionRisk = (section: SectionResult) => {
+    const info = computeColorWithMatrix(section.indicator_result, section.risk_thresholds);
+    if (info.valid) return info;
+
+    const fallbackLevel = toDisplayLevel(section.risk_level);
+    if (fallbackLevel === null) return info;
+
+    return {
+      valid: true,
+      level: fallbackLevel,
+      color: RISK_COLORS[String(fallbackLevel)] ?? RISK_COLORS.default,
+      label: fallbackLevel,
+    };
   };
 
   const ensureSectionIndicatorResultLoaded = async (taskId: string, sectionId: string): Promise<number | null> => {
@@ -1457,13 +1607,13 @@ function ResultPage(props: ResultPageProps) {
     return () => window.removeEventListener('report-saved', handler);
   }, []);
 
-  // 报告导出成功后（分幅报告会打包各分区断面详情 CSV）给一句明确回执，
+  // 报告导出成功后（报告会打包分区断面详情 CSV 与风险段汇总 CSV）给一句明确回执，
   // 否则浏览器只是静默下载一个 zip，用户不知道里面多了什么。
   useEffect(() => {
     const handler = (e: Event) => {
       const csvCount = Number((e as CustomEvent).detail?.csvCount || 0);
       if (csvCount > 0) {
-        alert(`已导出报告压缩包：报告.docx + ${csvCount} 个分区断面详情 CSV。`);
+        alert(`已导出报告压缩包：报告.docx + ${csvCount} 个 CSV（分区断面详情、风险段汇总）。`);
       }
     };
     window.addEventListener('report-exports-saved', handler);
@@ -1509,6 +1659,11 @@ function ResultPage(props: ResultPageProps) {
           if (e.section_id !== sectionId) return e;
           if (!res.ok) {
             return { ...e, detailError: `HTTP ${res.status}: ${text?.slice(0, 500)}` };
+          }
+          if (json?.status === 'not_computed') {
+            // 断面还在、只是没有结果（新建或上次算失败了）：这是状态不是错误，
+            // 用中性文本展示，不要再套一层 HTTP 错误吓人。
+            return { ...e, detail: { status: json.status, reason: json.reason } };
           }
           return { ...e, detail: json ?? text };
         });
@@ -1862,16 +2017,29 @@ function ResultPage(props: ResultPageProps) {
   // ============================================================
 
   // 渲染断面集合几何并在地图显示
+  //
+  // 【可见性口径】2026-10-20 起：**低风险（显示等级 0）与「无风险值」（未计算 / 计算失败）
+  // 不出实色**，颜色给 `rgba(0,0,0,0)`，并在命中层里过滤掉，避免出现「看不见却能点」的隐形靶子。
+  // 判定只走 map/sectionRenderVisibility，别在这里就地写 level !== 0 —— 否则规则会分裂成两份。
   const renderSections = (sections: SectionResult[]) => {
     const map = mapRef.current;
     if (!map) return;
 
     // 转换断面数据为 GeoJSON
     const features = sections.filter(s => s.geometry).map(s => {
-      const info = computeColorWithMatrix(s.indicator_result, s.risk_thresholds);
-      const color = info.color;
+      const info = resolveSectionRisk(s);
+      const renderable = shouldRenderRisk(info);
+      const color = renderable ? info.color : TRANSPARENT_RISK_COLOR;
       const displayRisk = info.valid ? info.level : info.label;
-      const riskLabel = info.valid && info.level !== null ? RISK_LABELS[info.level] : '未知';
+      // 不渲染的断面也保留一句准确文案：弹窗/日志里「低风险」和「无结果」必须能分开，
+      // 不能都写成「未知」—— 前者是有效结果，后者是没数。
+      const riskLabel = !info.valid
+        ? '无风险值（不渲染）'
+        : info.level === null
+          ? '未知'
+          : renderable
+            ? RISK_LABELS[info.level]
+            : `${RISK_LABELS[info.level]}（不渲染）`;
 
       return {
         type: 'Feature',
@@ -1881,7 +2049,9 @@ function ResultPage(props: ResultPageProps) {
           name: s.section_name || s.section_id,
           risk_level: displayRisk,
           risk_label: riskLabel,
-          color: color
+          color: color,
+          /** 命中层据此过滤：不可见的断面不该还能被点开。 */
+          hidden: !renderable
         }
       };
     });
@@ -1918,11 +2088,15 @@ function ResultPage(props: ResultPageProps) {
       });
     }
 
+    // 命中层的过滤条件每次都要刷：断面从「低风险」被人工改成高等级后必须重新可点。
+    const hitFilter = ['!=', ['get', 'hidden'], true] as any;
+
     if (!map.getLayer('sections-line-hit')) {
       map.addLayer({
         id: 'sections-line-hit',
         type: 'line',
         source: 'sections-source',
+        filter: hitFilter,
         paint: {
           'line-width': 12,
           'line-opacity': 0
@@ -1931,6 +2105,8 @@ function ResultPage(props: ResultPageProps) {
           'visibility': showSections ? 'visible' : 'none'
         }
       });
+    } else {
+      map.setFilter('sections-line-hit', hitFilter);
     }
 
     // 事件只绑定一次（防止轮询刷新导致重复绑定）
@@ -2035,7 +2211,20 @@ function ResultPage(props: ResultPageProps) {
    */
   const applyShorelineGradient = (sections: SectionResult[], onlyBankId?: string | null) => {
     const map = mapRef.current;
-    if (!map || !sections || sections.length === 0) return;
+    if (!map) return;
+
+    // 没有任何断面：把已存在的岸段色带全部藏掉，避免上一个任务的配色残留在地图上
+    // （clearMapLayers 会删图层，但它只在切任务时调用，这里的防线针对「同任务内结果被清空」）。
+    if (!sections || sections.length === 0) {
+      const style = map.getStyle();
+      (style?.layers ?? []).forEach((layer: any) => {
+        const id = String(layer.id ?? '');
+        if (id.startsWith('bankline-result-') && map.getLayer(id)) {
+          map.setLayoutProperty(id, 'visibility', 'none');
+        }
+      });
+      return;
+    }
 
     // 1. 按 bank_id 分组
     const groups: Record<string, SectionResult[]> = {};
@@ -2044,6 +2233,11 @@ function ResultPage(props: ResultPageProps) {
       if (!groups[bid]) groups[bid] = [];
       groups[bid].push(s);
     });
+
+    // 全局是否至少有一条「值得画」的断面。全否 = 任务还在算 / 全部失败，
+    // 此时色带本来就是空的，灰色底线要保持完整，否则地图整片空白、像加载失败。
+    const anyRenderable = sections.some(s => shouldRenderRisk(resolveSectionRisk(s)));
+    let bankSegmentsDirty = false;
 
     // 2. 遍历每个岸段组
     Object.keys(groups).forEach(bankId => {
@@ -2062,28 +2256,71 @@ function ResultPage(props: ResultPageProps) {
       const totalDist = turf.length(bankLine, { units: 'meters' });
       if (totalDist <= 0) return;
 
-      // 按断面 distance 排序，计算归一化位置并取颜色
-      const validSections = bankSections
-        .filter(s => s && s.geometry && s.geometry.type === 'LineString')
-        .sort((a, b) => a.distance - b.distance);
+      /** 断面→沿线位置，按「岸段 + 断面 + 几何签名」缓存；断面被拖动后签名变化自动失效。 */
+      const progressOf = (section: SectionResult): number | null => {
+        const cache = bandProgressCacheRef.current;
+        const key = `${bankId}|${section.section_id}`;
+        const coords = (section.geometry?.coordinates ?? []) as number[][];
+        const signature = `${coords.length}|${coords[0]?.join(',') ?? ''}|${coords[coords.length - 1]?.join(',') ?? ''}|${Math.round(totalDist)}`;
+        const cached = cache.get(key);
+        if (cached && cached.signature === signature) return cached.progress;
+        const progress = sectionProgressAlongBank(section, bankLine, totalDist);
+        if (cache.size > 5000) cache.clear();
+        cache.set(key, { signature, progress });
+        return progress;
+      };
 
-      const riskStops: { val: number; color: string }[] = [];
-      validSections.forEach(s => {
-        const progress = Math.max(0, Math.min(1, s.distance / totalDist));
-        const info = computeColorWithMatrix(s.indicator_result, s.risk_thresholds);
-        if (info.valid) {
-          riskStops.push({ val: progress, color: info.color });
-        }
+      // 每条断面按几何投影求沿线位置（见 sectionProgressAlongBank），再按位置升序排：
+      // Mapbox 的 interpolate 要求 stop 单调递增，用桩号排序而用投影定位会乱序。
+      const placedSections = bankSections
+        .filter(s => s && s.geometry && s.geometry.type === 'LineString')
+        .map(s => ({ section: s, progress: progressOf(s) }))
+        .filter(item => item.progress !== null)
+        .sort((a, b) => (a.progress as number) - (b.progress as number));
+
+      // 【可见性口径】低风险与无风险值的断面不参与实色着色（见 map/sectionRenderVisibility）：
+      //   * 整条岸段一条可渲染断面都没有 → stops 为 null → 直接把图层 visibility 关掉；
+      //   * 部分断面不渲染 → 岸段按「最近断面」切成区间（Voronoi 式），不渲染的那条断面
+      //     把它管辖的整段（前后各半个间距）填透明。第一版只在该断面位置插一个透明点，
+      //     结果两侧实色跨过它插值，透明点不到 1 像素，肉眼完全看不出来 —— 这是本次修复的根因。
+      const riskPoints: RiskGradientPoint[] = placedSections.map(({ section: s, progress }) => {
+        const info = resolveSectionRisk(s);
+        return {
+          val: progress as number,
+          level: info.valid ? (info.level ?? null) : null,
+          color: info.color,
+        };
       });
 
-      // 构建 Mapbox interpolate 表达式
-      const stops: any[] = ['interpolate', ['linear'], ['line-progress']];
-      if (riskStops.length === 0) {
-        stops.push(0, RISK_COLORS.default, 1, RISK_COLORS.default);
-      } else if (riskStops.length === 1) {
-        stops.push(0, riskStops[0].color, 1, riskStops[0].color);
-      } else {
-        riskStops.forEach(rs => stops.push(rs.val, rs.color));
+      const stops = buildRiskGradientStops(riskPoints);
+      const bankVisible = stops !== null;
+
+      // —— 灰色底线（uploaded-lines-base）按同一套区间口径切片 ——
+      // 色带能靠 line-gradient 局部透明，但底下那条贯穿全程的 2px 灰线不会断开，
+      // 视觉上仍然读作「岸段还在」。这里只输出可见区间，不可见区间直接不生成几何。
+      {
+        const spans = anyRenderable ? buildRiskBandSpans(riskPoints) : [];
+        const minLen = Math.max(1, totalDist * 1e-4); // 亚米级碎片不画，避免生成一堆退化线段
+        const feats: GeoJSON.Feature[] = [];
+        if (!anyRenderable) {
+          // 计算中 / 全无结果：保留完整岸段，作为「这里有一条岸段」的参考
+          feats.push({ type: 'Feature', properties: { bank_id: bankId }, geometry: bankLine.geometry });
+        } else {
+          spans.forEach(span => {
+            if (!span.visible) return;
+            const from = span.start * totalDist;
+            const to = span.end * totalDist;
+            if (to - from < minLen) return;
+            try {
+              const slice = turf.lineSliceAlong(bankLine, from, to, { units: 'meters' });
+              feats.push({ type: 'Feature', properties: { bank_id: bankId }, geometry: slice.geometry });
+            } catch {
+              // 单段切片失败（几何退化）时跳过，不影响其它段
+            }
+          });
+        }
+        bankVisibleSegmentsRef.current[bankId] = feats;
+        bankSegmentsDirty = true;
       }
 
       // 渲染到岸段线上
@@ -2102,21 +2339,36 @@ function ResultPage(props: ResultPageProps) {
           id: layerId,
           type: 'line',
           source: sourceId,
+          layout: {
+            // 整条岸段无可渲染断面时，图层先建出来但直接不显示 —— 之后人工改成高风险
+            // 只需切 visibility，不必重建图层（重建会丢掉 lineMetrics 的缓存）。
+            'visibility': bankVisible ? 'visible' : 'none',
+          },
           paint: {
             // 线宽必须随比例尺变化，不能写死像素值：Mapbox 的 line-width 单位是屏幕
             // CSS 像素，定值 20 在小比例尺下折合地面几十公里、把整段岸线糊成一条粗带。
             // 具体曲线与取值理由见 map/bankShadeWidth.ts。
             'line-width': bankShadeWidthExpr(),
-            'line-gradient': stops as any,
+            'line-gradient': (stops ?? emptyRiskGradientStops()) as any,
             'line-opacity': 0.7,
           },
         });
       } else {
-        map.setPaintProperty(layerId, 'line-gradient', stops as any);
+        map.setPaintProperty(layerId, 'line-gradient', (stops ?? emptyRiskGradientStops()) as any);
         // 图层已存在时也把宽度表达式刷一遍：热更新之后旧图层上还留着上一版的定值宽度。
         map.setPaintProperty(layerId, 'line-width', bankShadeWidthExpr());
+        map.setLayoutProperty(layerId, 'visibility', bankVisible ? 'visible' : 'none');
       }
     });
+
+    // 所有岸段的可见切片合并成一次 setData（each bank 单独 setData 会互相覆盖）
+    if (bankSegmentsDirty) {
+      const segSrc = map.getSource('uploaded-data') as mapboxgl.GeoJSONSource | undefined;
+      if (segSrc) {
+        const all = Object.values(bankVisibleSegmentsRef.current).flat();
+        segSrc.setData(turf.featureCollection(all as any));
+      }
+    }
   };
 
   // 搜索命中跳转：等地图真正就绪再飞（mapReady 之前 mapRef 还是 null）。
@@ -2608,11 +2860,15 @@ function ResultPage(props: ResultPageProps) {
               {selectedTask && !loading && (
                 <div className="result-info">
                   <h5>当前分析结果</h5>
+                  {/* 文案直读 RISK_LABELS，别再写死中文：名称只有 riskScoring.ts 一处真源。 */}
                   <div className="legend">
-                    <div className="legend-item"><span className="dot high"></span>极高风险</div>
-                    <div className="legend-item"><span className="dot medium"></span>高风险</div>
-                    <div className="legend-item"><span className="dot low"></span>一般风险</div>
-                    <div className="legend-item"><span className="dot no"></span>低/无风险</div>
+                    <div className="legend-item"><span className="dot high"></span>{RISK_LABELS[3]}</div>
+                    <div className="legend-item"><span className="dot medium"></span>{RISK_LABELS[2]}</div>
+                    <div className="legend-item"><span className="dot low"></span>{RISK_LABELS[1]}</div>
+                    <div className="legend-item"><span className="dot no"></span>{RISK_LABELS[0]}（不渲染）</div>
+                  </div>
+                  <div className="legend-hint">
+                    低风险与「无风险值」（未计算 / 计算失败）的断面不再上色，岸段色带同样留空。
                   </div>
                 </div>
               )}
@@ -2901,23 +3157,19 @@ function ResultPage(props: ResultPageProps) {
                     />
                   ) : (<>
                     <div className="matrix-kv">
-                      <div className="matrix-kv-row"><span>case-id</span><span>{formatCellValue(matrixDetail['case-id'] ?? matrixDetail.case_id ?? matrixDetail.caseId)}</span></div>
-                      <div className="matrix-kv-row"><span>task_id</span><span>{formatCellValue(matrixDetail.task_id ?? matrixDetail.taskId)}</span></div>
                       <div className="matrix-kv-row"><span>section_id</span><span>{formatCellValue(matrixDetail.section_id ?? matrixDetail.sectionId)}</span></div>
                       <div className="matrix-kv-row"><span>section_name</span><span>{formatCellValue(matrixDetail.section_name ?? matrixDetail.sectionName ?? matrixDetail.section_name)}</span></div>
-                      <div className="matrix-kv-row"><span>region_code</span><span>{formatCellValue(matrixDetail.region_code ?? matrixDetail.regionCode ?? matrixDetail.region_code)}</span></div>
                       <div className="matrix-kv-row"><span>bank_id</span><span>{formatCellValue(matrixDetail.bank_id ?? matrixDetail.bankId ?? matrixDetail.bank_id)}</span></div>
-                      <div className="matrix-kv-row"><span>run_time</span><span>{formatCellValue(matrixDetail.run_time ?? matrixDetail.runTime ?? matrixDetail.run_time)}</span></div>
-                      <div className="matrix-kv-row"><span>流量 (water_qs)</span><span>{formatCellValue(matrixDetail.water_qs ?? matrixDetail?.indicators?.water_qs ?? matrixDetail?.water_qs)}</span></div>
-                      <div className="matrix-kv-row"><span>潮差 (tidal_level)</span><span>{formatCellValue(matrixDetail.tidal_level ?? matrixDetail?.indicators?.tidal_level ?? matrixDetail?.tidal_level)}</span></div>
                       <div className="matrix-kv-row">
                         <span>风险等级</span>
                         <span>
                           {(() => {
-                            // 库里存的是 1..4；这里翻译成与地图/图例一致的文案，避免"3"这种裸数字被误读
+                            // 库里存的是 1..4；这里翻译成与地图/图例一致的文案，避免"3"这种裸数字被误读。
+                            // ⚠ 文案已改为「一级/二级/三级风险」（一级最高），而 risk_level 是 1..4 升序，
+                            // 两者序号相反 —— 所以只能标 "risk_level N"，不能再写「第 N 档」，否则会自相矛盾。
                             const level = toDisplayLevel(matrixDetail.risk_level ?? matrixDetail.riskLevel)
                               ?? displayLevelOfResult(matrixDetail);
-                            return level === null ? '-' : `${RISK_LABELS[level]}（第 ${level + 1} 档）`;
+                            return level === null ? '-' : `${RISK_LABELS[level]}（risk_level ${level + 1}）`;
                           })()}
                         </span>
                       </div>
@@ -2925,6 +3177,13 @@ function ResultPage(props: ResultPageProps) {
                     </div>
 
                     <div className="matrix-section-title">指标矩阵</div>
+                    <div className="matrix-section-hint">
+                      风险等级 = 该指标按自身阈值单独分档（第 1~4 档，1 档最安全、4 档最危险）：
+                      4 档 → 一级风险（红）、3 档 → 二级风险（橙）、2 档 → 三级风险（蓝）、1 档 → 低风险（绿）。
+                      它只描述这单个指标，不是断面综合等级。
+                      <b>抗冲流速(Ky) 是唯一的反向指标</b>（阈值降序 1.7 → 1.35 → 1.0，值越大越安全），
+                      其余指标都是值越大越危险。
+                    </div>
                     <div className="matrix-assessment-list">
                       {(() => {
                         const indicators = matrixDetail?.indicators?.thresholds ?? matrixDetail?.thresholds ?? {};
@@ -3207,7 +3466,7 @@ function ResultPage(props: ResultPageProps) {
           </button>
           <button
             className="task-menu-item"
-            title="整表导出：该任务全部断面合并为一个 CSV，不按经纬度分区拆分。分区断面详情请用「AI 出报告」生成报告后在报告面板右上角导出。"
+            title="整表导出 2 个 CSV：① 断面详情（逐断面一行，含指标明细）；② 风险段汇总（连续同类风险段的位置、长度 km、占比）。均不按经纬度分区拆分；分区断面详情请用「AI 出报告」生成报告后在报告面板右上角导出。"
             onClick={() => { const t = taskMenu; setTaskMenu(null); handleExportSectionsDetail(t.taskId, t.taskName); }}
           >
             <Download size={13} />

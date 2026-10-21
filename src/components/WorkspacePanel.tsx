@@ -126,8 +126,8 @@ function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdat
                       const url = URL.createObjectURL(blob)
                       const a = document.createElement('a')
                       a.href = url
-                      // 分幅报告导出的是 zip（报告.docx + 各分区断面详情.csv），
-                      // 未分幅仍是 docx —— 文件名以服务端 Content-Disposition 为准。
+                      // 有 CSV 时导出的是 zip（报告.docx + 各分区断面详情.csv + 风险段汇总.csv），
+                      // 一份 CSV 都没有时仍是 docx —— 文件名以服务端 Content-Disposition 为准。
                       a.download = resolveExportName(res.headers.get('Content-Disposition'), filename)
                       a.click()
                       URL.revokeObjectURL(url)
@@ -154,7 +154,7 @@ function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdat
                   transition: 'all 0.15s',
                 }}
                 title={csvInfo.files > 0
-                  ? `下载报告压缩包：报告.docx + ${csvInfo.files} 个断面详情 CSV`
+                  ? `下载报告压缩包：报告.docx + ${csvInfo.files} 个 CSV（分区断面详情 / 风险段汇总）`
                   : '导出Word'}
               >
                 {csvInfo.files > 0

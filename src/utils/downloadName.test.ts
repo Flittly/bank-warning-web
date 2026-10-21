@@ -96,9 +96,28 @@ describe('partitionCsvInfoFromReport', () => {
     expect(partitionCsvInfoFromReport(text)).toEqual({ partitions: 1, files: 1 });
   });
 
-  it('表格里的其他文件名（非断面详情）不计数', () => {
+  it('表格里的其他文件名（非断面详情 / 非风险段汇总）不计数', () => {
     const text = '| 分区 1 | 位置 | 1 | `分区1_断面详情.csv` |\n' +
       '| 汇总 | 全部 | 99 | `全断面汇总.xlsx` |\n';
     expect(partitionCsvInfoFromReport(text)).toEqual({ partitions: 1, files: 1 });
+  });
+
+  it('风险段汇总计入文件数但不计入分区数', () => {
+    const text = [
+      '| 范围 | 说明 | 断面数 | CSV 文件 |',
+      '| --- | --- | --- | --- |',
+      '| 分区 1 | 位置 | 38 | `分区1_断面详情.csv` |',
+      '| 全任务 | 连续同类风险段汇总 | 302 | `风险段汇总.csv` |',
+    ].join('\n');
+    expect(partitionCsvInfoFromReport(text)).toEqual({ partitions: 1, files: 2 });
+  });
+
+  it('不分幅但只有风险段汇总时，仍要提示是压缩包（files>0）', () => {
+    const text = [
+      '| 范围 | 说明 | 断面数 | CSV 文件 |',
+      '| --- | --- | --- | --- |',
+      '| 全任务 | 连续同类风险段汇总 | 302 | `风险段汇总.csv` |',
+    ].join('\n');
+    expect(partitionCsvInfoFromReport(text)).toEqual({ partitions: 0, files: 1 });
   });
 });

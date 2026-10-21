@@ -38,32 +38,43 @@ export function sectionCsvCount(headerValue: string | null): number {
 }
 
 /**
- * 报告正文附录里列出的分区断面详情 CSV 信息。
+ * 报告正文附录里列出的导出 CSV 信息。
  *
  * 两个口径要分开，否则会把「5 个分区 + 1 个未落入分区文件」说成「6 个分区」。
  */
 export interface PartitionCsvInfo {
-  /** 附录里列出的**分区**个数（不含「未落入分区」行） */
+  /** 附录里列出的**分区**个数（不含「未落入分区」与「全任务」行） */
   partitions: number
-  /** 附录里列出的 CSV 文件总数（含「未落入分区」）——与导出压缩包内的 CSV 数一致 */
+  /** 附录里列出的 CSV 文件总数（含「未落入分区」与 `风险段汇总.csv`）——与导出压缩包内的 CSV 数一致 */
   files: number
 }
 
 const EMPTY_PARTITION_CSV_INFO: PartitionCsvInfo = { partitions: 0, files: 0 }
 
 /**
- * 从报告 Markdown 正文里解析「分区断面详情 CSV」。
+ * 附录里会随导出包一起给出的文件名。
+ *
+ * - `分区N_断面详情.csv` / `未落入分区_断面详情.csv`：逐断面明细，按经纬度分区；
+ * - `风险段汇总.csv`：全任务连续同类风险段的汇总（位置 / 长度 km / 占比），**不分幅**，
+ *   所以它在附录里以「全任务」一行出现，不能算进分区数。
+ */
+const isExportCsvName = (fileName: string): boolean =>
+  fileName.endsWith('_断面详情.csv') || fileName === '风险段汇总.csv'
+
+/**
+ * 从报告 Markdown 正文里解析导出 CSV 清单。
  *
  * 报告末尾的附录表格每行形如
  * ```
  * | 分区 1 | 第 1 行第 1 列（经度 …，纬度 …） | 38 | `分区1_断面详情.csv` |
  * | 未落入分区 | 坐标缺失或落在自定义边界之外 | 1 | `未落入分区_断面详情.csv` |
+ * | 全任务 | 连续同类风险段汇总（…） | 302 | `风险段汇总.csv` |
  * ```
  * 只认**表格行**（行首 `|`、末列是反引号文件名），避免把正文里顺带提到的名字算进来。
  *
  * <p>用途：点导出**之前**就能告诉用户「这次导出的是报告包，不是单个 docx」，
- * 而不是等下载完看到 `..._导出包.zip` 才发现。`files` 为 0 表示该报告没有分区
- * （不分幅），导出行为与历史版本一致。
+ * 而不是等下载完看到 `..._导出包.zip` 才发现。`files` 为 0 表示该报告没有任何 CSV，
+ * 导出行为与历史版本一致（直接给 docx）。
  */
 export function partitionCsvInfoFromReport(content: string | undefined | null): PartitionCsvInfo {
   if (!content) return EMPTY_PARTITION_CSV_INFO
@@ -74,7 +85,7 @@ export function partitionCsvInfoFromReport(content: string | undefined | null): 
   let match: RegExpExecArray | null
   while ((match = rowRe.exec(content)) !== null) {
     const fileName = match[4].trim()
-    if (!fileName.endsWith('_断面详情.csv')) continue
+    if (!isExportCsvName(fileName)) continue
     if (names.has(fileName)) continue
     names.add(fileName)
     if (/^分区\s*\d+$/.test(match[1].trim())) partitions++
