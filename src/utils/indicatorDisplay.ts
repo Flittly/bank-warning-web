@@ -53,24 +53,33 @@ export function isEnumIndicator(key: string): boolean {
 }
 
 /**
- * 枚举型指标的展示文案。
- * 优先用模型回带的原始枚举（新结果），否则从矩阵列反推档位（老结果，无需重跑）。
- * 两者都拿不到时明确写「未记录」，而不是 N/A —— N/A 会被误读成数据缺失。
+ * 从 `geology_engineering_matrix` 的枚举列反推档位（1..4）。
+ * 老结果的 `raw_values.PL/LC` 是 null，但矩阵列里仍留着那个 1 —— 这是唯一能不上重跑就拿到档位的通道。
+ * 矩阵缺失或该列全 0（= 未填报）时返回 null，不兜底成 1 档。
  */
-export function resolveEnumIndicatorText(matrices: any, key: string): string {
+export function resolveEnumIndicatorTier(matrices: any, key: string): number | null {
   const spec = ENUM_TIER_COLUMN[key];
-  if (!spec) return '未记录';
+  if (!spec) return null;
 
   const matrix = matrices?.[spec.matrix];
   if (Array.isArray(matrix)) {
     for (let tier = 0; tier < matrix.length; tier += 1) {
       const row = matrix[tier];
-      if (Array.isArray(row) && Number(row[spec.column]) > 0) {
-        return `${ENUM_TIER_TEXT[tier] ?? `第${tier + 1}档`}（第${tier + 1}档）`;
-      }
+      if (Array.isArray(row) && Number(row[spec.column]) > 0) return tier + 1;
     }
   }
-  return '未记录';
+  return null;
+}
+
+/**
+ * 枚举型指标的展示文案。
+ * 优先用模型回带的原始枚举（新结果），否则从矩阵列反推档位（老结果，无需重跑）。
+ * 两者都拿不到时明确写「未记录」，而不是 N/A —— N/A 会被误读成数据缺失。
+ */
+export function resolveEnumIndicatorText(matrices: any, key: string): string {
+  const tier = resolveEnumIndicatorTier(matrices, key);
+  if (tier === null) return '未记录';
+  return `${ENUM_TIER_TEXT[tier - 1] ?? `第${tier}档`}（第${tier}档）`;
 }
 
 /** 统一的指标「结果」列取值：连续量按原值，枚举量出中文档位，确实没有值才 N/A。 */

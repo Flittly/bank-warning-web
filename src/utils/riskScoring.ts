@@ -20,6 +20,10 @@
  * 公式一旦漂移，那条测试立刻红。
  */
 
+// ENUM_TIER_COLUMN（PL/LC 在 geology_engineering_matrix 里的列位）由展示层维护，
+// 这里只借它做「老结果没有 raw_values 时」的最后一级兜底，避免两处各抄一份列号。
+import { resolveEnumIndicatorTier } from './indicatorDisplay';
+
 // ============================================================
 //  指标定义
 // ============================================================
@@ -127,20 +131,28 @@ export const DEFAULT_WEIGHTS: Record<'wNM' | 'wRE' | 'wGE' | 'wRL', number[]> = 
 
 export const DEFAULT_RISK_THRESHOLDS: [number, number, number] = [0.25, 0.5, 0.75];
 
-/** 0..3 显示等级（0 最低）。三处消费：断面线、岸段色带、等级徽章。 */
+/**
+ * 0..3 显示等级（0 最低）。三处消费：断面线、岸段色带、等级徽章。
+ *
+ * 文案与库内 `risk_level`(1..4) 的对应：level 3 ↔ risk_level 4（最高），level 0 ↔ risk_level 1。
+ * 即「一级风险」= 原本的「极高风险」，序号按风险从高到低排，与 risk_level 的数值顺序相反 ——
+ * 界面上同时出现数字时请用 `risk_level N` 标注，别写「第 N 档」，否则会与一级/二级读起来打架。
+ *
+ * 配色语义（2026-10-20 定稿）：一级红、二级橙、三级蓝、低风险绿。
+ */
 export const RISK_COLORS: Record<string, string> = {
   '0': '#10b981',
-  '1': '#facc15',
+  '1': '#3b82f6',
   '2': '#f97316',
   '3': '#ef4444',
   'default': '#94a3b8',
 };
 
 export const RISK_LABELS: Record<number, string> = {
-  3: '极高风险',
-  2: '高风险',
-  1: '一般风险',
-  0: '低/无风险',
+  3: '一级风险',
+  2: '二级风险',
+  1: '三级风险',
+  0: '低风险',
 };
 
 // ============================================================
@@ -374,4 +386,29 @@ export function formatEditableValue(v: any): string {
     return String(Number(v.toFixed(6)));
   }
   return String(v);
+}
+
+/**
+ * 单指标风险等级（1..4，1 档最安全、4 档最危险）。
+ *
+ * 用途：指标矩阵里逐行标出「这个结果落在该指标的第几档」，而不是整条断面的综合等级。
+ * 判定顺序（越靠前越可信，绝不另造第二份公式）：
+ *   ① `matrices.indicator_tiers` —— 模型算分级时自己写下的档位，直接采用；
+ *   ② 缺失才用 `classifyIndicatorTier()` 按**该记录自带的** sub_thresholds 现算；
+ *   ③ PL/LC 老结果 `raw_values` 是 null，最后从 `geology_engineering_matrix` 的列反推。
+ * 三条都拿不到时返回 null（界面写「未判定」），不兜底成 1 档 ——
+ * 兜底会把「未填报」显示成「最安全」，这正是 2026-10 那批 4 级不可达问题的成因。
+ */
+export function resolveIndicatorTier(
+  key: RiskIndicatorKey,
+  source: { indicators?: any; rawValues?: any; matrices?: any },
+): number | null {
+  const recorded = Number(source?.matrices?.indicator_tiers?.[key]);
+  if (Number.isInteger(recorded) && recorded >= 1 && recorded <= 4) return recorded;
+
+  const params = resolveRiskParams(source?.indicators ?? source);
+  const computed = classifyIndicatorTier(key, source?.rawValues?.[key] ?? null, params.sub);
+  if (computed !== null) return computed;
+
+  return resolveEnumIndicatorTier(source?.matrices, key);
 }

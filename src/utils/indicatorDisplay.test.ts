@@ -4,6 +4,7 @@ import {
   formatIndicatorResult,
   isEnumIndicator,
   resolveEnumIndicatorText,
+  resolveEnumIndicatorTier,
 } from './indicatorDisplay';
 
 /** 真实结构：行 = 档位 1..4，列 = [Dsed, PL, LC]。 */
@@ -57,6 +58,22 @@ describe('resolveEnumIndicatorText —— 从矩阵反推档位', () => {
     expect(
       resolveEnumIndicatorText({ geology_engineering_matrix: [[0, 0, 0]] }, 'PL'),
     ).toBe('未记录');
+  });
+});
+
+describe('resolveEnumIndicatorTier —— 档位数字（1..4）', () => {
+  it('与文案同源：档位 + 1 就是矩阵行号', () => {
+    const matrices = { geology_engineering_matrix: geMatrix(1, 3, 4) };
+    expect(resolveEnumIndicatorTier(matrices, 'PL')).toBe(3);
+    expect(resolveEnumIndicatorTier(matrices, 'LC')).toBe(4);
+    expect(resolveEnumIndicatorText(matrices, 'PL')).toContain('第3档');
+  });
+
+  it('非枚举指标 / 矩阵缺失 / 全 0 都返回 null', () => {
+    expect(resolveEnumIndicatorTier({ geology_engineering_matrix: geMatrix(1, 1, 1) }, 'Zb')).toBeNull();
+    expect(resolveEnumIndicatorTier({}, 'PL')).toBeNull();
+    expect(resolveEnumIndicatorTier(null, 'PL')).toBeNull();
+    expect(resolveEnumIndicatorTier({ geology_engineering_matrix: [[0, 0, 0], [0, 0, 0]] }, 'LC')).toBeNull();
   });
 });
 

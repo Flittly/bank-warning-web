@@ -5,8 +5,10 @@ import {
   computeRisk,
   displayLevelOfResult,
   formatEditableValue,
+  resolveIndicatorTier,
   resolveRiskParams,
   toDisplayLevel,
+  type RiskIndicatorKey,
 } from './riskScoring';
 
 /**
@@ -130,6 +132,41 @@ describe('阈值为自定义值时不再写死 0.25/0.5/0.75', () => {
       },
     };
     expect(displayLevelOfResult(payload)).toBe(2);
+  });
+});
+
+describe('resolveIndicatorTier —— 指标矩阵逐行标「单指标风险等级」', () => {
+  const inputs = asIndicators(RECORD_6805);
+
+  it('优先采用结果自带的 indicator_tiers（模型原始判定，前端不重算）', () => {
+    // 故意把 Zd 写成一个与现算不一致的 2：库里写了什么就显示什么。
+    const matrices = { indicator_tiers: { ...RECORD_6805.expected.indicatorTiers, Zd: 2 } };
+    expect(resolveIndicatorTier('Zd', { ...inputs, rawValues: RECORD_6805.rawValues, matrices })).toBe(2);
+  });
+
+  it('没有 indicator_tiers 时按本记录阈值现算，9 个指标全部与模型一致', () => {
+    Object.entries(RECORD_6805.expected.indicatorTiers).forEach(([key, tier]) => {
+      expect(
+        resolveIndicatorTier(key as RiskIndicatorKey, {
+          ...inputs,
+          rawValues: RECORD_6805.rawValues,
+          matrices: {},
+        }),
+      ).toBe(tier);
+    });
+  });
+
+  it('PL/LC 老结果 raw_values 缺失时从 geology_engineering_matrix 反推', () => {
+    // 行 = 档位 1..4，列 = [Dsed, PL, LC]
+    const ge = [[1, 0, 0], [0, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const matrices = { geology_engineering_matrix: ge };
+    expect(resolveIndicatorTier('PL', { ...inputs, rawValues: { PL: null }, matrices })).toBe(3);
+    expect(resolveIndicatorTier('LC', { ...inputs, rawValues: {}, matrices })).toBe(4);
+  });
+
+  it('缺值又缺矩阵时返回 null，不兜底成 1 档（否则「未填报」会显示成最安全）', () => {
+    expect(resolveIndicatorTier('PL', { ...inputs, rawValues: { PL: null }, matrices: {} })).toBeNull();
+    expect(resolveIndicatorTier('Zb', { ...inputs, rawValues: {}, matrices: {} })).toBeNull();
   });
 });
 

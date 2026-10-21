@@ -1,0 +1,80 @@
+/* 规则行尾开关。
+   尺寸用固定 px：全局 `button { padding: .6em 1.2em }` 会把固定宽高的小控件压变形，
+   所以这里显式 padding:0 并给死宽高（与 index.css 里其它小按钮同一套处理）。 */
+.switch {
+  flex: 0 0 auto;
+  position: relative;
+  width: 28px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #cbd5e1;
+  cursor: pointer;
+  transition: background-color 0.18s;
+}
+.switch:hover {
+  background: #b6c2d1;
+}
+.on {
+  background: #0891b2;
+}
+.on:hover {
+  background: #0e7490;
+}
+.switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+  transition: transform 0.18s;
+}
+.on .knob {
+  transform: translateX(12px);
+}
+
+/* 锁定态：不用灰色 disabled 开关 —— 那会暗示"以后也许能开" */
+.locked {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  user-select: none;
+}
+.locked svg {
+  flex: 0 0 auto;
+}
+
+/* 眼睛：控制规则关联图层（与开关正交） */
+.eye {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.eye:hover {
+  background: rgba(8, 145, 178, 0.1);
+  color: #0891b2;
+}
+.eyeOn {
+  color: #0891b2;
+}
