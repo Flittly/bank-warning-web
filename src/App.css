@@ -503,6 +503,387 @@
   height: 100%;
 }
 
+/*
+ * 地图框选提示条。
+ *
+ * 只在地图上"等用户画框"时出现，所以固定贴在地图顶部居中：那里没有 Mapbox 控件
+ * （导航控件在左上），也不会挡住用户起手拖拽的区域。pointer-events: none 是关键 ——
+ * 一条横贯地图的提示条如果吃掉 mousedown，框就永远画不出来。
+ */
+.map-box-select-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.94);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(76, 29, 149, 0.35);
+  pointer-events: none;
+  animation: boxHintIn 0.16s ease-out;
+}
+
+@keyframes boxHintIn {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* 框选删除断面的提示条：与框选岸段（紫）刻意用不同颜色，
+   避免"我以为在筛选，其实在删东西"。 */
+.map-box-select-hint.is-danger {
+  background: rgba(220, 38, 38, 0.94);
+  box-shadow: 0 2px 10px rgba(127, 29, 29, 0.4);
+}
+
+/* 框选分析：青色。三种用途三种颜色，看提示条就知道现在点下去会发生什么。 */
+.map-box-select-hint.is-analytics {
+  background: rgba(2, 132, 199, 0.94);
+  box-shadow: 0 2px 10px rgba(7, 89, 133, 0.4);
+}
+
+/* ——— 框选分析结果面板（任务右键 → 分析）———
+   浮在地图左上角：用户要一边看地图上的选区一边看数，弹窗会把选区挡掉一半。
+   顶部留 56px 避让居中的画框提示条，底部留空间避让工具栏。 */
+.area-analysis-panel {
+  position: absolute;
+  top: 56px;
+  left: 12px;
+  z-index: 12;
+  width: 318px;
+  max-height: calc(100% - 170px);
+  overflow: auto;
+  padding: 11px 12px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  font-size: 12px;
+  color: #1f2937;
+  animation: areaPanelIn 0.16s ease-out;
+}
+
+@keyframes areaPanelIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.area-analysis-panel .aap-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.area-analysis-panel .aap-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.area-analysis-panel .aap-title > span:first-child {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.area-analysis-panel .aap-task {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.area-analysis-panel .aap-icon-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.area-analysis-panel .aap-icon-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.area-analysis-panel .aap-shape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.area-analysis-panel .aap-shape-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.area-analysis-panel .aap-seg {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 9px;
+  background: #f1f5f9;
+}
+
+.area-analysis-panel .aap-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #475569;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+
+.area-analysis-panel .aap-seg button.is-active {
+  background: #fff;
+  color: #0369a1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.area-analysis-panel .aap-hint {
+  margin-bottom: 8px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.area-analysis-panel .aap-empty {
+  margin-bottom: 8px;
+  padding: 10px;
+  border-radius: 9px;
+  border: 1px dashed #cbd5e1;
+  color: #64748b;
+  font-size: 11.5px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.area-analysis-panel .aap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.area-analysis-panel .aap-table th {
+  padding: 4px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #64748b;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.area-analysis-panel .aap-table td {
+  padding: 5px 2px;
+  border-bottom: 1px solid #f1f5f9;
+  white-space: nowrap;
+}
+
+.area-analysis-panel .aap-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.area-analysis-panel .aap-table tr.is-muted td {
+  color: #94a3b8;
+}
+
+.area-analysis-panel .aap-table tr.aap-total td {
+  font-weight: 700;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: none;
+}
+
+.area-analysis-panel .aap-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.area-analysis-panel .aap-tag {
+  margin-left: 4px;
+  padding: 0 3px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 9.5px;
+  color: #94a3b8;
+}
+
+.area-analysis-panel .aap-sub {
+  margin-left: 4px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.area-analysis-panel .aap-meta {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: #475569;
+}
+
+.area-analysis-panel .aap-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.area-analysis-panel .aap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s;
+}
+
+.area-analysis-panel .aap-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.area-analysis-panel .aap-shape-now {
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.area-analysis-panel .aap-notes {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #475569;
+}
+
+.area-analysis-panel .aap-notes summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: #64748b;
+  list-style: none;
+}
+
+.area-analysis-panel .aap-notes summary::-webkit-details-marker {
+  display: none;
+}
+
+.area-analysis-panel .aap-notes ul {
+  margin: 6px 0 0;
+  padding-left: 15px;
+  line-height: 1.6;
+}
+
+.area-analysis-panel .aap-notes li {
+  margin-bottom: 5px;
+}
+
+/* 框选删除的确认条：画完框后浮在底部工具条上方。
+   工具栏是 bottom 18 + 高约 62（≈80），这里留到 104px，与上面那条
+   「圆形新建按钮的外发光」也不打架。 */
+.map-box-delete-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 104px;
+  transform: translateX(-50%);
+  z-index: 11;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #f8fafc;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.32);
+  animation: boxDeleteBarIn 0.16s ease-out;
+}
+
+.map-box-delete-bar .mbdb-text b {
+  color: #fca5a5;
+  font-weight: 700;
+  padding: 0 1px;
+}
+
+.map-box-delete-bar .mbdb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s;
+}
+
+.map-box-delete-bar .mbdb-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 删除是这里唯一的破坏性动作：给实心红，和"取消"拉开层级 */
+.map-box-delete-bar .mbdb-btn.mbdb-danger {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.map-box-delete-bar .mbdb-btn.mbdb-danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+@keyframes boxDeleteBarIn {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .upload-control {
   position: absolute;
   top: 20px;
@@ -1158,7 +1539,7 @@
 }
 
 /* 结果页图例。色值必须与 utils/riskScoring.ts 的 RISK_COLORS 一致：
-   high=一级风险(level 3) / medium=二级风险(level 2) / low=三级风险(level 1) / no=低风险(level 0)。
+   high=高风险(level 3) / medium=较高风险(level 2) / low=中风险(level 1) / no=低风险(level 0)。
    2026-10-20：低风险与「无风险值」不再着色（见 map/sectionRenderVisibility.ts），
    no 改成虚线空心点，让图例自己说明「这一档不画」。 */
 .dot.high { background: #ef4444; }
@@ -1761,18 +2142,6 @@
   border-color: #cbd5e1;
   background: #f1f5f9;
   font-weight: 600;
-}
-
-/* 反向指标（目前只有抗冲流速 Ky）：阈值降序 ⇒ 值越大越安全。
-   不标这一句，看到 Ky 小却标红会以为分档反了。 */
-.matrix-row-reverse {
-  display: block;
-  margin-top: 1px;
-  font-size: 11px;
-  line-height: 1.4;
-  font-weight: 600;
-  color: #b45309;
-  letter-spacing: 0;
 }
 
 .matrix-section-hint {

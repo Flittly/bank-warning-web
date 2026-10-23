@@ -347,3 +347,113 @@
 .rowBtn:hover {
   background: rgba(37, 99, 235, 0.14);
 }
+
+/* ——— 框选 ——— */
+
+/* 命中项：紫色描边 + 淡紫底，与地图上的高亮层同色（#7c3aed），一眼能对上 */
+.tagInBox {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: #6d28d9;
+  background: rgba(124, 58, 237, 0.14);
+  border-radius: 6px;
+  padding: 0 5px;
+  line-height: 15px;
+}
+/* 未命中项淡出而不是隐藏：用户需要看到"这一条在图上，但不在框里" */
+.rowOutsideBox {
+  opacity: 0.42;
+}
+.boxNote {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 6px 4px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  background: rgba(124, 58, 237, 0.09);
+  border: 1px solid rgba(124, 58, 237, 0.22);
+  color: #5b21b6;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+.boxNoteText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.boxClear {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: #6d28d9;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.boxClear:hover {
+  background: rgba(124, 58, 237, 0.16);
+}
+.emptyBoxBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 6px 10px;
+  padding: 5px 10px;
+  border: 1px dashed rgba(124, 58, 237, 0.45);
+  background: rgba(124, 58, 237, 0.07);
+  color: #6d28d9;
+  font-size: 11.5px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.emptyBoxBtn:hover {
+  background: rgba(124, 58, 237, 0.14);
+}
+
+/* 右键菜单：与 ResourceSidebar.module.css 的 .ctx 同款（fixed 定位 + 毛玻璃），
+   两处各留一份而不是跨模块引用 —— CSS Module 的类名归各自的构建单元管，
+   互相 import 会变成隐式耦合，谁改了另一边都不知道。 */
+.ctx {
+  position: fixed;
+  z-index: 2000;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid var(--tree-border, #e2e8f0);
+  border-radius: 14px;
+  padding: 6px;
+  min-width: 196px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+.ctxItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: #334155;
+  white-space: nowrap;
+}
+.ctxItem:hover {
+  background: var(--tree-hover, #f1f5f9);
+  color: var(--tree-sel-fg, #1d4ed8);
+}
+.ctxDisabled {
+  color: #cbd5e1;
+  cursor: default;
+}
+.ctxDisabled:hover {
+  background: transparent;
+  color: #cbd5e1;
+}
+.ctxSep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--tree-border, #e2e8f0);
+}

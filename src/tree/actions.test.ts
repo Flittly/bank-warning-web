@@ -10,6 +10,7 @@ describe('actions', () => {
     const list = getActions(['bank.smooth', 'bank.delete']);
     expect(list.map((a) => a.key)).toEqual(['bank.smooth', 'bank.delete']);
   });
+  // 65 = 63 + task.copy / task.copyWithResults（任务复制，2026-10-21）
   // 63 = 61 + task.addBanks / task.runPending
   //      （「给已有任务补充岸段」这对增量动作，2026-10-20）
   // 61 = 57 + rule.toggle / rule.layer / rule.describe / rule.create
@@ -18,10 +19,18 @@ describe('actions', () => {
   // 56 = 55 + task.stop（终止运行中的任务，2026-10-15 新增）
   // 55 曾 = 53 + bank.loadAll / bank.removeAll（「岸段」文件夹右键 → 全部加载/移出地图，
   // 与断面文件夹的 section.loadAll / section.removeAll 对称，2026-10-14 新增）
-  it('registers 63 keys with matching key fields', () => {
+  it('registers 65 keys with matching key fields', () => {
     const entries = Object.entries(ACTION_META);
-    expect(entries.length).toBe(63);
+    expect(entries.length).toBe(65);
     for (const [k, v] of entries) expect(v.key).toBe(k);
+  });
+  it('exposes task copy as a non-danger pair', () => {
+    // 复制是只读源任务、只写新 id 的操作，不该用红色（danger）——
+    // 与删除/终止并列成红色会让用户以为它会动到原件。
+    expect(ACTION_META['task.copy'].label).toBe('复制任务');
+    expect(ACTION_META['task.copyWithResults'].label).toBe('复制任务（含计算结果）');
+    expect(ACTION_META['task.copy'].danger).toBeUndefined();
+    expect(ACTION_META['task.copyWithResults'].danger).toBeUndefined();
   });
   it('exposes 终止运行 as a danger action next to 执行风险分析', () => {
     expect(ACTION_META['task.stop'].label).toBe('终止运行');

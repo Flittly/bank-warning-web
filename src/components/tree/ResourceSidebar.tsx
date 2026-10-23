@@ -9,7 +9,7 @@ import { useRuleStore } from '../../store/useRuleStore';
 import ResourceTree from './ResourceTree';
 import LoadedOnMapPanel from './LoadedOnMapPanel';
 import BatchActionBar from './BatchActionBar';
-import type { LoadedOnMapActions } from './LoadedOnMapPanel';
+import type { LoadedBoxSelection, LoadedOnMapActions } from './LoadedOnMapPanel';
 import { buildLoadedGroups, pickRunningTasks } from './loadedOnMap';
 import VerticalResizeHandle from '../VerticalResizeHandle';
 import styles from './ResourceSidebar.module.css';
@@ -43,6 +43,8 @@ interface Props {
    * 要显示当前是开还是关，不能自己猜。
    */
   tiffBoundsVisible?: boolean;
+  /** 当前生效的矩形框选结果（判定在 `map/boxSelection.ts`，状态由 EditorPage 持有） */
+  boxSelection?: LoadedBoxSelection | null;
 }
 
 async function fetchJSON(path: string) {
@@ -74,7 +76,7 @@ function readStoredHeight(): number {
   }
 }
 
-export default function ResourceSidebar({ handlers, demKeys, activeSectionId, tiffBoundsVisible }: Props) {
+export default function ResourceSidebar({ handlers, demKeys, activeSectionId, tiffBoundsVisible, boxSelection }: Props) {
   const setData = useResourceTreeStore((s) => s.setData);
   const dataVersion = useResourceTreeStore((s) => s.dataVersion);
   const banks = useResourceTreeStore((s) => s.banks);
@@ -299,6 +301,7 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId, ti
           groups={loadedGroups}
           running={running}
           activeSectionId={activeSectionId}
+          boxSelection={boxSelection}
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed((v) => !v)}
           actions={handlers}

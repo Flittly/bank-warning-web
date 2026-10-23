@@ -28,11 +28,27 @@ import { authHeaders } from '../utils/apiClient';
 import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
-import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, ChevronDown, CheckCircle2, SquareDashedMousePointer, Trash2 } from 'lucide-react';
 import { invalidateTaskParamsCache, setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
 import { fetchRiverSurface, invalidateRiverSurfaceCache } from '../services/riverSurfaceApi';
 import { resolveVisibleTiffBounds, toggleDemBounds } from '../map/tiffBoundsView';
+import {
+  assessBoxAgainstDems,
+  bankCandidatesFromBanks,
+  bankCandidatesFromFeatures,
+  demBoundsOf,
+  pickBankIdsInBox,
+  summarizeBoxSelection,
+  type BoxBounds,
+  type BoxScope,
+} from '../map/boxSelection';
+import {
+  pickSectionIndicesInBox,
+  sectionBoxDeleteConfirmText,
+  sectionBoxDeleteEmptyHint,
+} from '../map/sectionBoxDelete';
+import type { BankAnchor } from '../map/sectionBankBinding';
 import { cancelTask } from '../services/taskRunControl';
 import { stripZFromGeoJSON } from '../utils/geojson';
 import {
@@ -40,6 +56,7 @@ import {
   createCrossLineAtPointAction,
   createCrossLineByEndpointsAction,
   deleteCrossLinesInGroupAction,
+  deleteSectionsByIdsAction,
   deleteSelectedCrossLinesAction,
   deleteSelectedCrossLineAction,
   persistCrossLineGeometryAction,
@@ -171,6 +188,26 @@ function EditorPage(props: EditorPageProps) {
   const [crossLineEditMode, setCrossLineEditMode] = useState<'none' | 'select' | 'add'>('none');
   const [selectedCrossLineIndex, setSelectedCrossLineIndex] = useState<number | null>(null);
   const [selectedCrossLineIndices, setSelectedCrossLineIndices] = useState<Set<number>>(new Set());
+  // —— 矩形框选岸段 ——
+  // `boxSelectMode` = 正在等用户在地图上拖框；`boxSelection` = 已生效的框（地图上会一直留着，
+  // 直到用户点「清除框选」）。两者刻意分开：前者是"输入中"，Esc 取消不该动上次的结果。
+  const [boxSelectMode, setBoxSelectMode] = useState(false);
+  const [boxScope, setBoxScope] = useState<BoxScope>('loaded');
+  // 本次画框是为了什么：框选岸段（默认）还是框选删除断面。
+  // 一个 purpose 而不是两个 mode 布尔 —— 画框监听器只有一份，两个布尔同时为 true 会互相抢事件。
+  const [boxSelectPurpose, setBoxSelectPurpose] = useState<'banks' | 'sections'>('banks');
+  // 框选删除的"待删预览"：画完框到点确认之间，地图上红色虚线的就是这批断面。
+  // 与 `boxSelection`（岸段框选结果，持久留着）分开存：预览是问句，不是结果。
+  const [sectionBoxPreview, setSectionBoxPreview] = useState<{
+    bounds: BoxBounds;
+    sectionIds: string[];
+  } | null>(null);
+  const [boxSelection, setBoxSelection] = useState<{
+    bounds: BoxBounds;
+    bankIds: string[];
+    candidates: number;
+    scope: BoxScope;
+  } | null>(null);
   const sidebarMode = useEditorStore((s) => s.sidebarMode);
   const [demPickerOpen, setDemPickerOpen] = useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
@@ -1303,8 +1340,9 @@ function EditorPage(props: EditorPageProps) {
   // 注意：这与岸段的「移出地图」不同 —— 它不写 removedBankSectionsRef，
   // 因为"再点一次全部加载"就能回来，不需要岸段落图来触发恢复。
   // 侧栏下半区「已加载到屏幕」的行级/组级移出也复用这里（单条就是长度为 1 的 ids）。
-  const removeSectionsByIds = (ids: string[]) => {
-    if (ids.length === 0) { message.info('这些断面本来就不在地图上'); return; }
+  const removeSectionsByIds = (ids: string[], opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    if (ids.length === 0) { if (!silent) message.info('这些断面本来就不在地图上'); return; }
     const want = new Set(ids);
 
     // 选中态是按 features 下标存的 → 删完必须按"断面身份"重新映射，
@@ -1324,7 +1362,7 @@ function EditorPage(props: EditorPageProps) {
       removed = b.length - features.length;
       return { ...prev, features } as any;
     });
-    if (removed === 0) { message.info('这些断面本来就不在地图上'); return; }
+    if (removed === 0) { if (!silent) message.info('这些断面本来就不在地图上'); return; }
 
     const after = ((useEditorStore.getState().perpendicularData?.features || []) as any[]);
     const idxOf = (sid: string) => (sid ? after.findIndex((f) => sectionIdOfFeature(f) === sid) : -1);
@@ -1335,7 +1373,7 @@ function EditorPage(props: EditorPageProps) {
       for (const sid of multiIds) { const j = idxOf(sid); if (j >= 0) next.add(j); }
       setSelectedCrossLineIndices(next);
     }
-    message.success(`已从地图移出 ${removed} 条断面`);
+    if (!silent) message.success(`已从地图移出 ${removed} 条断面`);
   };
 
   const removeAllSectionsUnder = (node: TreeNode) => {
@@ -1356,6 +1394,8 @@ function EditorPage(props: EditorPageProps) {
     if (ids.length === 0) { message.info('地图上没有岸段'); return; }
     if (!window.confirm(`将把地图上的 ${ids.length} 条岸段（及其断面）一起移出。确认继续？`)) return;
     ids.forEach((id) => removeBankFromMap(id));
+    // 岸段全移走了，框选结果就没有对象可标了：顺手清掉，避免面板上留一条"命中 12 条"却没行可看
+    setBoxSelection(null);
     message.success(`已从地图移出 ${ids.length} 条岸段`);
   };
 
@@ -1376,6 +1416,215 @@ function EditorPage(props: EditorPageProps) {
     if (!id) return;
     await loadBankById(id);
   };
+
+  // ——————————————————————————————————————————————————————————————
+  // 矩形框选岸段
+  //
+  // 与「按 DEM 范围筛选岸段」的关系：两件事正交，可以叠加。
+  //   · DEM 筛选是"把某个 DEM 范围内的岸段加载到地图"；
+  //   · 框选是在**候选集**上再收窄一层：默认就是"地图上已加载的岸段"，
+  //     所以先按 DEM 筛、再框选 = 交集；反过来先框选、再改 DEM 筛选，
+  //     框选结果也不会被清掉（本函数组从不碰 showTiffBounds / focusedDemKeys）。
+  // ——————————————————————————————————————————————————————————————
+
+  /** 岸段库：拿不到就拉一次（与 applyTiffRangeSelection 同一套兜底）。 */
+  const ensureBankList = async (): Promise<any[]> => {
+    if (bankList && bankList.length > 0) return bankList;
+    try {
+      const res = await fetch('/v0/bank/banks', { headers: { ...authHeaders() } });
+      const data = await res.json();
+      const list = (data?.banks || data?.data || data) as any[];
+      if (Array.isArray(list)) {
+        setBankList(list);
+        return list;
+      }
+    } catch (err) {
+      console.warn('岸段库加载失败，框选将只按已加载岸段判定', err);
+    }
+    return [];
+  };
+
+  /** 进入画框模式。先把其它"抢左键"的编辑模式关掉，避免从断面上起手时拖的是断面。 */
+  const startBoxSelect = (scope: BoxScope) => {
+    setIsSelectingShoreLines(false);
+    setIsSelectingStartEnd(false);
+    setIsSelectingCrossLines(false);
+    setIsFixingShoreLineReversed(false);
+    setCrossLineEditMode('none');
+    setBoxScope(scope);
+    setBoxSelectPurpose('banks');
+    setSectionBoxPreview(null);
+    setBoxSelectMode(true);
+    message.info(scope === 'library'
+      ? '在地图上按住鼠标拖出矩形：从全库岸段中框选，松开后命中项会自动加载到地图'
+      : '在地图上按住鼠标拖出矩形：在已加载的岸段中框选（Esc 或右键取消）');
+  };
+
+  const cancelBoxSelect = (reason: 'escape' | 'contextmenu' | 'too-small') => {
+    setBoxSelectMode(false);
+    // 取消后一律回到"画框=框选岸段"，否则下一次在地图上拖框会莫名其妙开始删断面
+    setBoxSelectPurpose('banks');
+    if (reason === 'too-small') {
+      message.warning('拖出的框太小（不足 4 像素），已忽略；可重新框选');
+    } else {
+      message.info('已取消框选');
+    }
+  };
+
+  const clearBoxSelection = () => {
+    setBoxSelection(null);
+    message.info('已清除框选');
+  };
+
+  /**
+   * 框画完了：算命中 → 必要时加载到地图 → 落状态。
+   *
+   * <p>三种"框范围不对"的情况在这里被处理掉，而不是丢给用户猜：
+   * <ol>
+   *   <li>框比 DEM 范围大/小/完全在外：照常按矩形选（相互独立），但提示里说明关系；</li>
+   *   <li>框里一条岸段都没有：不落状态（避免地图上留一个空框），只报警告；</li>
+   *   <li>候选集为空（地图空且库里也没有）：提示下一步该做什么。</li>
+   * </ol>
+   */
+  const applyBoxSelection = async (bounds: BoxBounds) => {
+    setBoxSelectMode(false);
+
+    const dem = assessBoxAgainstDems(bounds, demBoundsOf(visibleTiffBoundsData));
+
+    // 候选集：默认"已加载的岸段"。地图空着时自动退化成全库 ——
+    // 用户从"已加载到屏幕"里点框选却得到"没有可框选的岸段"是纯添堵。
+    let scope = boxScope;
+    let candidates = scope === 'loaded'
+      ? bankCandidatesFromFeatures(uploadedData)
+      : bankCandidatesFromBanks(await ensureBankList());
+    if (scope === 'loaded' && candidates.length === 0) {
+      scope = 'library';
+      candidates = bankCandidatesFromBanks(await ensureBankList());
+    }
+
+    const ids = pickBankIdsInBox(candidates, bounds);
+    const summary = summarizeBoxSelection({ matched: ids.length, candidates: candidates.length, scope, dem });
+    if (!summary.ok) {
+      setBoxSelection(null);
+      message.warning(summary.text);
+      return;
+    }
+
+    // 命中项若不在图上（全库框选 / 刚被移出过），补加载 —— 这就是"自动选中并显示到地图中"。
+    // 走 6 路并发而不是 Promise.all：几百条岸段同时发会把浏览器挂起请求打满（见 validateSection 上的注释）。
+    const onMapIds = new Set(
+      bankCandidatesFromFeatures(useEditorStore.getState().uploadedData).map((c) => c.id),
+    );
+    const missing = ids.filter((id) => !onMapIds.has(id));
+    if (missing.length > 0) {
+      await mapWithConcurrency(missing, DEFAULT_REQUEST_CONCURRENCY, (id) => loadBankById(id, { silent: true }));
+    }
+
+    setBoxSelection({ bounds, bankIds: ids, candidates: candidates.length, scope });
+    message.success(summary.text);
+  };
+
+  // ——————————————————————————————————————————————————————————————
+  // 矩形框选删除断面（地图底部「清除断面」右侧下拉）
+  //
+  // 与「清除断面」的关系：
+  //   · 清除断面 = 一键清空**地图上的全部**断面，不动后端（可再加载回来）；
+  //   · 框选删除 = 只删**框内**那批，并且同步删后端记录（否则重开任务它们又全回来，
+  //     "删了"变成功亏一篑）。所以入口放在同一个按钮的下拉里、确认框里写清后果。
+  //
+  // 交互三段：进入画框（十字光标 + 顶部提示）→ 松开算出命中并红色虚线预览 →
+  // 点预览条上的「删除」再确认一次。任何一步都能用 Esc / 右键 / 取消退出。
+  // ——————————————————————————————————————————————————————————————
+
+  /** 地图上现有的断面（真源是 store，不是闭包里的 perpendicularData） */
+  const loadedSectionsList = (): any[] =>
+    ((useEditorStore.getState().perpendicularData?.features || []) as any[]);
+
+  const startSectionBoxDelete = () => {
+    const list = loadedSectionsList();
+    if (list.length === 0) {
+      message.info('地图上没有断面，无法框选删除');
+      return;
+    }
+    // 与框选岸段同样的"先让出左键"：否则从断面起手时拖的是断面而不是框
+    setIsSelectingShoreLines(false);
+    setIsSelectingStartEnd(false);
+    setIsSelectingCrossLines(false);
+    setIsFixingShoreLineReversed(false);
+    setCrossLineEditMode('none');
+    setSectionBoxPreview(null);
+    setBoxSelectPurpose('sections');
+    setBoxSelectMode(true);
+    message.info(`按住鼠标拖出矩形：框内的断面将被删除（地图上共 ${list.length} 条，Esc 或右键取消）`);
+  };
+
+  /**
+   * 框画完了：算命中 → 落预览。
+   *
+   * <p>一条都没命中时**不退出画框模式**：用户十有八九是框偏了，此时把模式关掉，
+   * 他还得再点一次菜单才能重框；保持原样的话直接再拖一次就行。
+   */
+  const applySectionBoxDelete = (bounds: BoxBounds) => {
+    const list = loadedSectionsList();
+    const indices = pickSectionIndicesInBox(list, bounds);
+
+    if (indices.length === 0) {
+      message.warning(sectionBoxDeleteEmptyHint(list.length));
+      return;
+    }
+
+    setBoxSelectMode(false);
+    setSectionBoxPreview({
+      bounds,
+      sectionIds: indices.map((i) => sectionIdOfFeature(list[i])).filter(Boolean),
+    });
+  };
+
+  const cancelSectionBoxDelete = (opts?: { silent?: boolean }) => {
+    setSectionBoxPreview(null);
+    setBoxSelectMode(false);
+    setBoxSelectPurpose('banks');
+    if (!opts?.silent) message.info('已取消框选删除');
+  };
+
+  /** 确认并执行删除：本地移除复用 removeSectionsByIds（要做选中态重映射），再同步后端。 */
+  const confirmSectionBoxDelete = async () => {
+    const preview = sectionBoxPreview;
+    if (!preview || preview.sectionIds.length === 0) return;
+
+    // 二次确认按"删除"口径写：会写库、影响已算结果，与「清除断面」不是一回事
+    if (!window.confirm(sectionBoxDeleteConfirmText(preview.sectionIds.length))) return;
+
+    const ids = preview.sectionIds;
+    setSectionBoxPreview(null);
+    setBoxSelectPurpose('banks');
+
+    // 先本地（用户立刻看到反馈），再同步后端 —— 与「删除选中断面」一致
+    removeSectionsByIds(ids, { silent: true });
+    const { ok, failed } = await deleteSectionsByIdsAction({ sectionIds: ids });
+
+    if (failed > 0) {
+      message.warning(`已删除 ${ids.length} 条断面；后端同步成功 ${ok}，失败 ${failed}`);
+    } else {
+      message.success(`已删除 ${ids.length} 条断面（已同步到后端）`);
+    }
+  };
+
+  // 预览态下按 Esc 等同「取消」：此时画框监听器已经卸载，得单独接一次
+  useEffect(() => {
+    if (!sectionBoxPreview) return undefined;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      cancelSectionBoxDelete();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionBoxPreview]);
+
+  /** 工具栏下拉里显示"地图上还有几条断面"，0 条时把入口置灰（点了也只能得到一句提示） */
+  const sectionBoxCount = perpendicularData?.features?.length ?? 0;
 
   // —— 岸段的文件夹级批量动作（与断面那对完全对称）——
   //
@@ -2879,10 +3128,11 @@ function EditorPage(props: EditorPageProps) {
   };
 
   // 自由模式：点选起止点创建断面
-  const createCrossLineByEndpoints = async (start: number[], end: number[]) => {
+  const createCrossLineByEndpoints = async (start: number[], end: number[], anchor?: BankAnchor | null) => {
     await createCrossLineByEndpointsAction({
       start,
       end,
+      anchor,
       uploadedData,
       perpendicularData,
       setPerpendicularData,
@@ -3035,6 +3285,10 @@ function EditorPage(props: EditorPageProps) {
     setGroups([]);
     setPerpendicularData(null);
     setEditingGroupId(null);
+    // 顺手收掉框选删除的中间态：断面都没了，预览里的那批 id 已经没有对象，留着只会误导
+    setSectionBoxPreview(null);
+    setBoxSelectMode(false);
+    setBoxSelectPurpose('banks');
     message.success('已清除所有选择');
   };
 
@@ -3518,8 +3772,38 @@ function EditorPage(props: EditorPageProps) {
     }
   };
 
-  const handleTreeNodeAction = async (node: TreeNode, actionKey: string) => {
-    const key = node.ref?.key || '';
+  /**
+   * 复制任务：只问一个名字，要不要连结果一起搬由**入口**决定（右键菜单两个项）。
+   *
+   * 复制成功后刻意**不切** currentTaskId —— 用户多半是在整理任务列表时顺手复制，
+   * 切上下文会把他正在编辑的原任务关掉。只刷新列表 + 展开新节点，并给一条带「复制了什么」的回执。
+   */
+  const copyTaskFlow = async (taskId: string, label: string, withResults: boolean) => {
+    const tid = String(taskId || '');
+    if (!tid) return;
+    const defaultName = `${label} - 副本`.slice(0, 100);
+    const name = await requestTaskName(defaultName);
+    if (!name) return;
+
+    const key = `task-copy:${tid}`;
+    message.loading({ content: '正在复制任务…', key, duration: 0 });
+    try {
+      const { copyTask, describeCopyResult } = await import('../services/taskCopyService');
+      const result = await copyTask(tid, { task_name: name, include_results: withResults });
+      message.success({ content: describeCopyResult(result), key, duration: result.warnings.length ? 8 : 4 });
+
+      bumpTreeData();
+      // 任务列表是异步拉的：此刻新任务可能还没进 store，expandNode 会静默落空。
+      // 立刻展开一次（快路径）+ 稍后再展开一次（等列表回来），两次都失败也只是"没自动展开"。
+      const expandNew = () => useResourceTreeStore.getState().expandNode(`task:${result.task_id}`);
+      expandNew();
+      window.setTimeout(expandNew, 900);
+    } catch (e: any) {
+      message.error({ content: `复制任务失败：${e?.message || String(e)}`, key, duration: 8 });
+    }
+  };
+
+  const handleTreeNodeAction = async (node: TreeNode, actionKey: string) => {    const key = node.ref?.key || '';
 
     const fmtTime = (v: any) => {
       if (!v) return '-';
@@ -3854,6 +4138,8 @@ function EditorPage(props: EditorPageProps) {
       case 'task.addBanks': await openAddBanksModal(key, node.label); break;
       case 'task.runPending': await runPendingForTask(key, node.label); break;
       case 'task.setParam': useResourceTreeStore.getState().setCurrentTask(key); await openGlobalPropertiesModal({ scope: 'task', taskId: key }); break;
+      case 'task.copy': await copyTaskFlow(key, node.label, false); break;
+      case 'task.copyWithResults': await copyTaskFlow(key, node.label, true); break;
       case 'task.loadMap': await loadTaskOntoMap(key, node.label); break;
       case 'task.viewResult': setPage?.('result', key); break;
       case 'task.delete': {
@@ -4032,6 +4318,7 @@ function EditorPage(props: EditorPageProps) {
               demKeys={demKeysOnMap}
               activeSectionId={activeSectionIdOnMap}
               tiffBoundsVisible={showTiffBounds}
+              boxSelection={boxSelection}
               handlers={{
                 onAction: handleTreeNodeAction,
                 onNodeSelect: handleTreeNodeSelect,
@@ -4045,6 +4332,9 @@ function EditorPage(props: EditorPageProps) {
                 onFocusSection: (id) => { void focusSectionOfTreeNode(id); },
                 onRemoveSection: (id) => removeSectionsByIds([id]),
                 onRemoveAllSections: removeLoadedSectionsFromMap,
+          // —— 下半区「岸段」右键 / 组标题的框选入口 ——
+          onStartBoxSelect: (scope) => startBoxSelect(scope),
+          onClearBoxSelect: clearBoxSelection,
           onFocusDem: (key) => { setShowTiffBounds(true); setFocusedDemKeys([String(key)]); },
           onHideDems: () => { setShowTiffBounds(false); setFocusedDemKeys(null); },
           // —— 下半区运行横幅的「终止」：与资源树 task.stop 走同一条实现 ——
@@ -4200,6 +4490,18 @@ function EditorPage(props: EditorPageProps) {
           persistCrossLineGeometry={persistCrossLineGeometry}
           createCrossLineByEndpoints={createCrossLineByEndpoints}
           tiffBoundsData={visibleTiffBoundsData}
+          boxSelectMode={boxSelectMode}
+          boxSelectPurpose={boxSelectPurpose}
+          onBoxSelectDone={(bounds) => {
+            // 同一个画框交互，两种后果：岸段 → 筛选并加载；断面 → 算出待删预览等确认
+            if (boxSelectPurpose === 'sections') applySectionBoxDelete(bounds);
+            else void applyBoxSelection(bounds);
+          }}
+          onBoxSelectCancel={cancelBoxSelect}
+          boxSelectionBounds={boxSelection?.bounds ?? null}
+          boxSelectionBankIds={boxSelection?.bankIds ?? null}
+          sectionBoxDeleteBounds={sectionBoxPreview?.bounds ?? null}
+          sectionBoxDeleteIds={sectionBoxPreview?.sectionIds ?? null}
           showTiffBounds={showTiffBounds}
           riverSurfaceData={riverSurfaceData}
           showRiverSurface={showRiverSurface}
@@ -4207,6 +4509,21 @@ function EditorPage(props: EditorPageProps) {
           satellite={satellite}
           colorBanks={colorBanks}
         />
+        {/* 框选删除的确认条：画完框先看到"框里是哪几条"（地图上红色虚线），
+            再决定删不删。放在工具栏上方，不遮挡底部操作条。 */}
+        {sectionBoxPreview && (
+          <div className="map-box-delete-bar" data-tour="map-box-delete-bar">
+            <span className="mbdb-text">
+              框内命中 <b>{sectionBoxPreview.sectionIds.length}</b> 条断面
+            </span>
+            <button type="button" className="mbdb-btn mbdb-danger" onClick={() => { void confirmSectionBoxDelete(); }}>
+              <Trash2 size={13} /> 删除
+            </button>
+            <button type="button" className="mbdb-btn" onClick={() => cancelSectionBoxDelete()}>
+              取消
+            </button>
+          </div>
+        )}
         <button
           onClick={() => setSatellite(!satellite)}
           title={satellite ? '标准底图' : '卫星影像'}
@@ -4302,9 +4619,42 @@ function EditorPage(props: EditorPageProps) {
               </button>
             </Dropdown>
           </div>
-          <button type="button" className="emt-btn" onClick={onClear} title="清除断面">
-            <Eraser size={15} /> 清除断面
-          </button>
+          {/* 「清除断面」分裂按钮：主体保持原来的一键清空（不增加常用路径的点击次数），
+              右侧小箭头 = 框选删除。两者后果不同，所以放在同一个按钮下用文案区分：
+              主体只清地图（不写库，可重新加载回来），框选删除会同步删后端记录。 */}
+          <div className="emt-split" data-tour="map-section-clear">
+            <button
+              type="button"
+              className="emt-btn"
+              onClick={onClear}
+              title="清除断面：清空地图上的全部断面（不删除库中记录）"
+            >
+              <Eraser size={15} /> 清除断面
+            </button>
+            <Dropdown
+              trigger={['click']}
+              placement="topRight"
+              menu={{
+                items: [
+                  {
+                    key: 'boxDelete',
+                    icon: <SquareDashedMousePointer size={14} />,
+                    label: sectionBoxCount > 0
+                      ? `框选删除断面（地图上 ${sectionBoxCount} 条）`
+                      : '框选删除断面（地图上暂无断面）',
+                    disabled: sectionBoxCount === 0,
+                  },
+                ],
+                onClick: ({ key: k }) => {
+                  if (k === 'boxDelete') startSectionBoxDelete();
+                },
+              }}
+            >
+              <button type="button" className="emt-btn emt-caret" title="更多清除方式">
+                <ChevronDown size={13} />
+              </button>
+            </Dropdown>
+          </div>
         </div>
 
         {/* 断面精细调整浮栏（地图左下角）。

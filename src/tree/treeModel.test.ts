@@ -80,8 +80,15 @@ describe('buildTasksGroup', () => {
     expect(running.actions).toEqual([
       'task.props', 'task.run', 'task.stop',
       'task.runPending', 'task.addBanks',
-      'task.generateCompute', 'task.setParam', 'task.loadMap', 'task.viewResult', 'task.delete',
+      'task.generateCompute', 'task.setParam',
+      'task.copy', 'task.copyWithResults',
+      'task.loadMap', 'task.viewResult', 'task.delete',
     ]);
+    // 复制与运行状态无关：任何任务都能复制出一份配置（运行中的只是不带结果）
+    for (const n of [pending, failed]) {
+      expect(n.actions).toContain('task.copy');
+      expect(n.actions).toContain('task.copyWithResults');
+    }
     // 非 running 一个都不该有：pending/已结束的任务没有可终止的线程
     expect(pending.actions).not.toContain('task.stop');
     expect(failed.actions).not.toContain('task.stop');

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import {
   Upload, Palette, Eye, EyeOff, Target, Settings, Zap, Scissors, Check,
   Layers, RotateCw, Eraser, Ruler, CircleCheck, Download, Move, Plus,
-  Play, ChartColumn, Trash2, Globe,
+  Play, ChartColumn, Trash2, Globe, Copy,
 } from 'lucide-react';
 import type { TreeNode } from '../../tree/types';
 import { getActions } from '../../tree/actions';
@@ -13,7 +13,7 @@ const ACTION_ICONS: Record<string, any> = {
   settings: Settings, zap: Zap, scissors: Scissors, check: Check, layers: Layers,
   rotate: RotateCw, eraser: Eraser, ruler: Ruler, checkCircle: CircleCheck,
   download: Download, move: Move, plus: Plus, play: Play, chart: ChartColumn,
-  trash: Trash2, globe: Globe,
+  trash: Trash2, globe: Globe, copy: Copy,
 };
 
 interface Props {

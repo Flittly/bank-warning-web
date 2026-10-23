@@ -10,7 +10,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search, Waves, Play, Pause } from 'lucide-react';
+import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search, Waves, Play, Pause, ScanSearch } from 'lucide-react';
 import { ConfigProvider, Modal } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { cancelTask } from '../services/taskRunControl';
@@ -51,6 +51,22 @@ import {
   formatIndicatorResult,
 } from '../utils/indicatorDisplay';
 import SectionResultEditor from '../components/SectionResultEditor';
+import AreaRiskAnalysisPanel, {
+  type AreaAnalysisShape,
+} from '../components/AreaRiskAnalysisPanel';
+import {
+  computeAreaRiskStats,
+  type AreaAnalysisBank,
+  type AreaAnalysisSection,
+  type AreaRiskStats,
+} from '../map/areaRiskAnalysis';
+import {
+  attachAreaSelection,
+  ensureAreaSelectionLayers,
+  hasAreaSelectionLayers,
+  setAreaSelection,
+  type AreaSelectionCancelReason,
+} from '../map/areaSelection';
 import { useResourceTreeStore } from '../store/useResourceTreeStore';
 import {
   RISK_COLORS,
@@ -484,6 +500,41 @@ function ResultPage(props: ResultPageProps) {
   const [rptSplitCols, setRptSplitCols] = useState(1);
   const [rptTileEdges, setRptTileEdges] = useState<TileEdges[]>([]);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; taskId: string; taskName: string } | null>(null);
+
+  /**
+   * 任务 → 有效结果条数。右键菜单「分析」的前置条件靠它判断。
+   *
+   * 缺失（`undefined`）代表"还不知道"（接口没回来 / 老后端没有这个接口），
+   * 这时菜单项**可点**，点下去由 `startAreaAnalysis` 自己再确认真空 —— 不能因为
+   * 一次计数接口失败就把功能锁死。0 才是明确"没有结果"。
+   */
+  const [resultCountByTask, setResultCountByTask] = useState<Record<string, number>>({});
+  /**
+   * 计数是否已经成功取到过一次。
+   *
+   * <p>这一位决定"缺失"怎么解释：取到了 ⇒ 没出现在 map 里就是 0 条（`GROUP BY` 不会给
+   * 零结果的任务发一行）；没取到（接口 404 / 网络失败）⇒ 缺失只能算"不知道"，
+   * 这时不能把整列任务的「分析」都锁上。
+   */
+  const [resultCountsReady, setResultCountsReady] = useState(false);
+
+  /**
+   * 框选分析会话。null = 没在分析；`drawing` = 正在等用户画选区。
+   *
+   * `selection` 存的是已经画好的 Polygon（矩形也转成 Polygon），既用于地图上重绘，
+   * 也用于面板里"关掉再打开"时复用；`stats` 是它的统计结果，两者同时失效。
+   */
+  const [areaAnalysis, setAreaAnalysis] = useState<{
+    taskId: string;
+    taskName: string;
+    shape: AreaAnalysisShape;
+    drawing: boolean;
+    selection: GeoJSON.Feature<GeoJSON.Polygon> | null;
+    stats: AreaRiskStats | null;
+  } | null>(null);
+  /** 给绘制 effect 读的实时会话（effect 里不能闭包旧 state，否则画完一次就再也算不出新选区） */
+  const areaAnalysisRef = useRef<typeof areaAnalysis>(null);
+  areaAnalysisRef.current = areaAnalysis;
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -656,7 +707,7 @@ function ResultPage(props: ResultPageProps) {
       ];
       let rendered = 0;
       images.forEach((img: any) => {
-        const title = img.bankName || img.bankId || '任务风险分布图';
+        const title = img.bankName || img.bankId || '岸段风险分布图';
         // 分幅条目：images[] 为多幅子图（行优先），逐幅渲染
         if (img.success && Array.isArray(img.images) && img.images.length > 0) {
           lines.push(`### ${title}（分幅 ${img.images.length} 幅）`, '');
@@ -680,11 +731,26 @@ function ResultPage(props: ResultPageProps) {
         }
         lines.push('');
       });
+      const content = lines.join('\n');
+      // 持久化：出图结果原本只活在内存标签页里，关掉页面/窗口就找不回来了。
+      // 这里把**同一份** markdown 落盘到「报告查看」目录（kind=viz），
+      // 出图接口、分幅参数、返回结构全都不动 —— 生成流程本身没有任何改变，
+      // 只是在出图成功后多写一个索引文件。图片本身一直在 viz_ 目录里，不会丢。
+      try {
+        await fetch('/v0/bank/ai/reports/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: vizTarget.taskId, kind: 'viz', content }),
+        });
+        void fetchReportList();
+      } catch {
+        // 落盘失败不影响本次查看，也不该让已经出好的图打不开
+      }
       const prevLength = reportTabs.length;
       setReportTabs(prev => [...prev, {
         taskId: vizTarget.taskId,
         taskName: `出图 · ${vizTarget.taskName} (${ts})`,
-        content: lines.join('\n'),
+        content,
       }]);
       setActiveReportTab(prevLength);
       if (prevLength === 0) setWorkspaceHeight(300);
@@ -700,8 +766,11 @@ function ResultPage(props: ResultPageProps) {
   const openTaskMenu = (e: ReactMouseEvent<HTMLDivElement>, task: { task_id: string; task_name: string }) => {
     e.preventDefault();
     e.stopPropagation();
-    const MENU_W = 184;
-    const MENU_H = 150;
+    const MENU_W = 200;
+    // 三个操作项 + 标题 ≈ 190px；少估会让最后一行的菜单被视口底边裁掉
+    const MENU_H = 190;
+    // 顺手刷一次结果计数：刚在编辑器算完就切回来右键时，缓存的 0 会把「分析」错误置灰
+    void refreshResultCounts();
     setTaskMenu({
       x: Math.max(8, Math.min(e.clientX, window.innerWidth - MENU_W - 8)),
       y: Math.max(8, Math.min(e.clientY, window.innerHeight - MENU_H - 8)),
@@ -867,7 +936,8 @@ function ResultPage(props: ResultPageProps) {
       const data = await res.json();
       if (data.success && data.content) {
         const content = String(data.content).replace(/\.\/([^\s)]+\.png)/g, '/v0/bank/ai/viz-output/$1');
-        const taskId = filename.replace(/^report_/, '').replace(/_\d{8}_\d{6}\.md$/, '');
+        // 文件名两类：report_<taskId>_<ts>.md / viz_<taskId>_<ts>.md（AI 出图结果）
+        const taskId = filename.replace(/^(report|viz)_/, '').replace(/_\d{8}_\d{6}\.md$/, '');
         handleTaskClick(taskId);
         setReportTabs(prev => {
           const existing = prev.findIndex(t => t.filename === filename);
@@ -1211,7 +1281,7 @@ function ResultPage(props: ResultPageProps) {
       matrices,
     });
 
-  /** 1..4 档 → 与地图/图例同一套文案与配色（4 档 = 一级风险 = 红）。 */
+  /** 1..4 档 → 与地图/图例同一套文案与配色（4 档 = 高风险 = 红）。 */
   const renderIndicatorTierBadge = (tier: number | null, direction: 'asc' | 'desc' | null = null) => {
     if (tier === null) {
       return <span className="indicator-tier-badge is-unknown" title="该指标缺值或缺阈值，无法判定档位">未判定</span>;
@@ -1219,7 +1289,7 @@ function ResultPage(props: ResultPageProps) {
     const level = tier - 1;
     const label = RISK_LABELS[level] ?? `第${tier}档`;
     const color = RISK_COLORS[String(level)] ?? RISK_COLORS.default;
-    // Ky 这种反向指标必须在 tooltip 里说清方向，否则「0.7 → 一级风险」看着像算反了。
+    // Ky 这种反向指标必须在 tooltip 里说清方向，否则「0.7 → 高风险」看着像算反了。
     const tip = [
       `单指标分档：第 ${tier} 档（1 档最安全、4 档最危险）→ ${label}`,
       direction === 'desc' ? '该指标阈值降序：数值越大越安全，数值偏小才是高等级。' : '',
@@ -1267,7 +1337,7 @@ function ResultPage(props: ResultPageProps) {
       rows.push([]);
       
       // 表头
-      rows.push(['指标', '阈值1', '阈值2', '阈值3', '权重', '结果', '风险等级']);
+      rows.push(['指标', '阈值1', '阈值2', '阈值3', '权重', '统计值', '风险等级']);
       
       // 数据行
       group.indicatorKeys.forEach(({ label, key }, idx) => {
@@ -1356,7 +1426,7 @@ function ResultPage(props: ResultPageProps) {
                 <th className="matrix-assessment-row-header" />
                 <th colSpan={3}>风险阈值</th>
                 <th>权重</th>
-                <th>结果</th>
+                <th>统计值</th>
                 <th className="matrix-assessment-level-col">风险等级</th>
               </tr>
             </thead>
@@ -1372,14 +1442,6 @@ function ResultPage(props: ResultPageProps) {
                   <tr key={key}>
                     <th scope="row" className="matrix-assessment-row-name">
                       {label}
-                      {direction === 'desc' && (
-                        <span
-                          className="matrix-row-reverse"
-                          title="反向指标：阈值降序（1.7 → 1.35 → 1.0），数值越大越安全。坑：Ky 偏小才会被判成一级风险，这不是分档反了。"
-                        >
-                          值越大越安全
-                        </span>
-                      )}
                     </th>
                     <td>{displayThresholds[0] !== undefined ? formatCellValue(displayThresholds[0]) : 'N/A'}</td>
                     <td>{displayThresholds[1] !== undefined ? formatCellValue(displayThresholds[1]) : 'N/A'}</td>
@@ -1562,7 +1624,39 @@ function ResultPage(props: ResultPageProps) {
     try { return await promise; } finally { sectionIndicatorResultPromiseRef.current[taskId][sectionId] = null; }
   };
 
-  // 获取所有任务列表
+  /** 该任务的结果条数；`undefined` = 还不知道（计数接口没成功过）。 */
+  const resultCountOfTask = (taskId: string): number | undefined => (
+    resultCountsReady ? (resultCountByTask[taskId] ?? 0) : resultCountByTask[taskId]
+  );
+
+  /**
+   * 刷新「任务 → 结果条数」。
+   *
+   * <p>为什么单独一个函数而不是塞在任务列表 effect 里：任务刚在编辑器里算完、用户切回结果页
+   * 右键时，几十秒前取到的计数可能还是 0 —— 那样「分析」会被错误地置灰，用户只能刷新整页。
+   * 所以**每次右键都顺手刷一次**（一次 group by，很便宜），列表加载时也刷一次。
+   * 取不到就保持原样（老后端无此端点 ⇒ 一直"未知" ⇒ 按放行处理，点击后再确认）。
+   */
+  const refreshResultCounts = async () => {
+    try {
+      const res = await fetch('/v0/bank/tasks/result-counts');
+      if (!res.ok) return;
+      const data = await res.json();
+      const counts = data?.counts;
+      if (!counts || typeof counts !== 'object') return;
+      const normalized: Record<string, number> = {};
+      Object.entries(counts as Record<string, unknown>).forEach(([taskId, n]) => {
+        const value = Number(n);
+        if (taskId && Number.isFinite(value)) normalized[taskId] = value;
+      });
+      setResultCountByTask(normalized);
+      setResultCountsReady(true);
+    } catch {
+      /* 计数不可用：菜单保持"未知"，点击时再确认一次 */
+    }
+  };
+
+  // 获取所有任务列表（顺带取"每个任务有多少条结果"，供右键「分析」判前置条件）
   useEffect(() => {
     const fetchTasks = async () => {
       try {
@@ -1576,8 +1670,13 @@ function ResultPage(props: ResultPageProps) {
         console.error('获取任务列表失败:', err);
         setError('无法加载任务列表');
       }
+
+      // 结果计数与任务列表分开取：一个接口挂了不该让整个列表空着。
+      await refreshResultCounts();
     };
     fetchTasks();
+    // refreshResultCounts 每次渲染都是新引用，但它只发一次请求 + setState，捕获旧的也无副作用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTaskId]);
 
   useEffect(() => {
@@ -1865,6 +1964,10 @@ function ResultPage(props: ResultPageProps) {
   const handleTaskClick = async (taskId: string) => {
     stopPolling();
 
+    // 换任务 = 上一次的框选分析作废：选区是画在"上一个任务的岸段"上的，
+    // 数据换了还留着面板，统计口径就对不上了。
+    setAreaAnalysis(null);
+
     setSelectedTask(taskId);
     selectedTaskRef.current = taskId;
     setLoading(true);
@@ -1998,6 +2101,147 @@ function ResultPage(props: ResultPageProps) {
       setLoading(false);
     }
   };
+
+  // ============================================================
+  //  框选分析（任务列表右键 → 分析）
+  // ============================================================
+  //
+  // 入口只在**结果页的任务列表**：分析的对象是「任务已落库的结果在地图上画出的色带」，
+  // 断面编辑器里那份数据是"待计算/可编辑"的草稿，口径不同，不能混为一个入口。
+  // 前置条件 = 该任务已有结果（`resultCountByTask[taskId] > 0`），没有结果的任务菜单项置灰。
+
+  /** 把内存里的断面 + 岸段整理成统计输入（显示等级 0..3，与地图着色同一套解析）。 */
+  const buildAreaRiskInput = (taskId: string): { banks: AreaAnalysisBank[]; sections: AreaAnalysisSection[] } => {
+    const sections: AreaAnalysisSection[] = [];
+    for (const s of lastSectionsByTaskRef.current[taskId] ?? []) {
+      if (!s?.geometry) continue;
+      const info = resolveSectionRisk(s);
+      sections.push({
+        section_id: String(s.section_id ?? ''),
+        bank_id: s.bank_id ?? null,
+        geometry: s.geometry,
+        level: info.valid ? info.level : null,
+      });
+    }
+    const banks: AreaAnalysisBank[] = [];
+    Object.entries(bankGeometryCacheRef.current).forEach(([bankId, geom]) => {
+      if (geom && geom.type === 'LineString') banks.push({ bank_id: bankId, geometry: geom });
+    });
+    return { banks, sections };
+  };
+
+  /** 该任务有没有「至少一条有效风险值」—— 决定能不能开始分析，也用于兜底拦一次。 */
+  const taskHasRiskValue = (taskId: string): boolean => {
+    for (const s of lastSectionsByTaskRef.current[taskId] ?? []) {
+      const info = resolveSectionRisk(s);
+      if (info.valid && info.level !== null && info.level !== undefined) return true;
+    }
+    return false;
+  };
+
+  const startAreaAnalysis = async (taskId: string, taskName: string) => {
+    // 已经有明确计数且为 0：直接拒，不去加载地图（省一次整任务的断面+结果拉取）
+    if (resultCountOfTask(taskId) === 0) {
+      setToast({ text: `任务「${taskName}」还没有计算结果，无法框选分析`, tone: 'warn' });
+      return;
+    }
+
+    // 地图上不是这个任务（或该任务的数据还没铺上去）时先加载：分析必须对着"已加载结果的地图"
+    const loaded = selectedTaskRef.current === taskId
+      && (lastSectionsByTaskRef.current[taskId]?.length ?? 0) > 0;
+    if (!loaded) {
+      await handleTaskClick(taskId);
+    }
+
+    if (!taskHasRiskValue(taskId)) {
+      setToast({ text: `任务「${taskName}」暂无计算结果，无法框选分析`, tone: 'warn' });
+      return;
+    }
+
+    setAreaAnalysis({
+      taskId,
+      taskName,
+      shape: 'rect',
+      drawing: true,
+      selection: null,
+      stats: null,
+    });
+    setToast({ text: '在地图上框选范围，统计各风险等级的占比与长度', tone: 'ok' });
+  };
+
+  /** 画完一个选区：立刻按当前内存数据算一遍统计。 */
+  const applyAreaSelection = (taskId: string, polygon: GeoJSON.Feature<GeoJSON.Polygon>) => {
+    const { banks, sections } = buildAreaRiskInput(taskId);
+    const stats = computeAreaRiskStats({ selection: polygon.geometry, banks, sections });
+    setAreaAnalysis(prev => (prev && prev.taskId === taskId
+      ? { ...prev, drawing: false, selection: polygon, stats }
+      : prev));
+  };
+
+  const closeAreaAnalysis = () => setAreaAnalysis(null);
+
+  // 绘制监听：只在"等用户画选区"期间存在。依赖里只放真正决定监听行为的三个值，
+  // 别把整个 areaAnalysis 放进去 —— 每次 setState 都会重装监听，正在拖的矩形会被打断。
+  const areaDrawing = areaAnalysis?.drawing === true;
+  const areaShape = areaAnalysis?.shape ?? 'rect';
+  const areaTaskId = areaAnalysis?.taskId ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !areaDrawing || !areaTaskId) return;
+    ensureAreaSelectionLayers(map);
+    const detach = attachAreaSelection(map, {
+      shape: areaShape,
+      onDone: (polygon) => applyAreaSelection(areaTaskId, polygon),
+      onCancel: (reason: AreaSelectionCancelReason) => {
+        if (reason === 'too-small') {
+          // 误点不退出绘制：用户还要接着画，退出去反而要再点一次「重新绘制」
+          setToast({ text: '选区太小，已忽略；请拖出更大的范围或在多点几处', tone: 'warn' });
+          return;
+        }
+        setAreaAnalysis(prev => (prev ? { ...prev, drawing: false } : prev));
+      },
+    });
+    return detach;
+    // applyAreaSelection 每次渲染都是新引用，但只读 ref + setState，捕获旧的也无副作用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [areaDrawing, areaShape, areaTaskId, mapReady]);
+
+  // 选区重绘：换底图（setStyle）会把 source / 图层全部清空，所以既要补图层，也要把选区画回来。
+  //
+  // ⚠ 必须同时听 `styledata`：`map.setStyle()` 默认带 diff，**这种情况下 mapbox 只发
+  //    `styledata`，不发 `style.load`** —— 只听后者就会出现"切到卫星底图后选区消失"。
+  //    也不能只看 `isStyleLoaded()`，装载过程中它是 false 但 addLayer 往往已经可用。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    let retries = 0;
+    let timer: number | null = null;
+    const apply = () => {
+      ensureAreaSelectionLayers(map);
+      if (hasAreaSelectionLayers(map)) {
+        retries = 0;
+        setAreaSelection(map, areaAnalysisRef.current?.selection ?? null);
+        return;
+      }
+      // 样式还在换：短间隔重试几次（换底图是几百毫秒级的事）
+      if (retries < 10) {
+        retries += 1;
+        timer = window.setTimeout(apply, 150);
+      }
+    };
+    const onStyleEvent = () => {
+      retries = 0;
+      apply();
+    };
+    apply();
+    map.on('style.load', onStyleEvent);
+    map.on('styledata', onStyleEvent);
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      map.off('style.load', onStyleEvent);
+      map.off('styledata', onStyleEvent);
+    };
+  }, [mapReady, areaAnalysis?.selection, satellite]);
 
   // 注：原先这里还有一个 handleDeleteTask（删除"当前选中"的任务，约 40 行），
   // 但全仓库已无调用方 —— 实际在用的是列表行上的 handleDeleteTaskById。
@@ -2399,6 +2643,28 @@ function ResultPage(props: ResultPageProps) {
     const map = mapRef.current;
     if (!map) return;
     map.setStyle(getBasemapStyle(satellite ? 'satellite' : 'standard'));
+
+    // setStyle 会把**所有**自定义 source / 图层清掉（岸段色带、断面层、灰色底线）。
+    // 之前只在 load 里补了 `uploaded-data`，于是「切到卫星底图后风险色带整片消失」。
+    // 这里在样式重建后按内存里的断面快照把两套图层画回来；已经有图层就直接跳过，
+    // 避免 addLayer → styledata → 再 addLayer 的死循环。
+    const rehydrate = () => {
+      try {
+        const taskId = selectedTaskRef.current;
+        if (!taskId) return;
+        if (map.getLayer('sections-line-hit')) return;
+        const sections = lastSectionsByTaskRef.current[taskId];
+        if (!sections || sections.length === 0) return;
+        renderSections(sections);
+        applyShorelineGradient(sections);
+      } catch {
+        /* 样式还在换：下一次 styledata / 轮询会再试 */
+      }
+    };
+    map.on('styledata', rehydrate);
+    return () => {
+      map.off('styledata', rehydrate);
+    };
   }, [satellite]);
 
   // 初始化地图（沿用 EditorPage 的风格）
@@ -2883,7 +3149,7 @@ function ResultPage(props: ResultPageProps) {
                 <h4>报告查看</h4>
               </div>
               <div className="task-list-container" style={{ maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
-                {reportList.length === 0 && <p className="empty-hint">暂无报告</p>}
+                {reportList.length === 0 && <p className="empty-hint">暂无报告或出图记录</p>}
                 {reportList.map((r: any, i: number) => (
                   <div
                     key={r.filename || i}
@@ -2897,13 +3163,25 @@ function ResultPage(props: ResultPageProps) {
                     style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'grab' }}
                   >
                     <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => openReport(r.filename)}>
-                      <div className="task-title" style={{ fontSize: '0.8rem' }}>{r.taskId ? `任务 ${r.taskId}` : r.filename}</div>
+                      <div className="task-title" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {/* AI 出图结果与 AI 报告同目录同查看器，靠 kind 区分来源 */}
+                        <span style={{
+                          flexShrink: 0, fontSize: '0.62rem', lineHeight: '1.4', padding: '0 4px', borderRadius: 3,
+                          background: r.kind === 'viz' ? '#e0f2fe' : '#f1f5f9',
+                          color: r.kind === 'viz' ? '#0369a1' : '#475569',
+                        }}>{r.kind === 'viz' ? '出图' : '报告'}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {r.taskId ? `任务 ${r.taskId}` : r.filename}
+                        </span>
+                      </div>
                       <div className="task-meta" style={{ fontSize: '0.7rem' }}>{r.time || ''}</div>
                     </div>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!confirm('确定删除此报告？')) return;
+                        if (!confirm(r.kind === 'viz'
+                          ? '确定删除这条出图记录？它引用的图片文件会一并删除。'
+                          : '确定删除此报告？')) return;
                         fetch(`/v0/bank/ai/reports/${encodeURIComponent(r.filename)}`, { method: 'DELETE' })
                           .then(() => fetchReportList());
                       }}
@@ -3102,6 +3380,35 @@ function ResultPage(props: ResultPageProps) {
       <div className="editor-map-panel" data-tour="result-workspace" style={{ display: 'flex', flexDirection: 'column' }}>
         <div ref={mapContainer} className="map-full" style={{ flex: 1 }} />
 
+        {/* 框选分析：提示条 + 结果面板都浮在这张图上（不遮右侧报告区与左侧任务列表）。
+            颜色/文案与编辑器那套一致，只是这里统计的是「已落库结果」的色带。 */}
+        {areaAnalysis?.drawing && (
+          <div className="map-box-select-hint is-analytics" data-tour="map-box-select-hint">
+            {areaAnalysis.shape === 'polygon'
+              ? '单击逐点圈出分析范围，双击或回车闭合 · Esc 或右键取消'
+              : '按住鼠标拖出矩形，统计选区内的风险占比与长度 · Esc 或右键取消'}
+          </div>
+        )}
+        {areaAnalysis && (
+          <AreaRiskAnalysisPanel
+            state={{
+              taskId: areaAnalysis.taskId,
+              taskName: areaAnalysis.taskName,
+              shape: areaAnalysis.shape,
+              hasSelection: !!areaAnalysis.selection,
+              stats: areaAnalysis.stats,
+            }}
+            drawing={areaAnalysis.drawing}
+            onShapeChange={(shape) => setAreaAnalysis(prev => (prev
+              ? { ...prev, shape: shape as AreaAnalysisShape, drawing: true, selection: null, stats: null }
+              : prev))}
+            onRedraw={() => setAreaAnalysis(prev => (prev
+              ? { ...prev, drawing: true, selection: null, stats: null }
+              : prev))}
+            onClose={closeAreaAnalysis}
+          />
+        )}
+
         {matrixOpen && (
           <div className="matrix-modal-overlay" onClick={closeMatrixDetail}>
             <div className="matrix-modal" onClick={(e) => e.stopPropagation()}>
@@ -3165,8 +3472,9 @@ function ResultPage(props: ResultPageProps) {
                         <span>
                           {(() => {
                             // 库里存的是 1..4；这里翻译成与地图/图例一致的文案，避免"3"这种裸数字被误读。
-                            // ⚠ 文案已改为「一级/二级/三级风险」（一级最高），而 risk_level 是 1..4 升序，
-                            // 两者序号相反 —— 所以只能标 "risk_level N"，不能再写「第 N 档」，否则会自相矛盾。
+                            // ⚠ 文案（2026-10-21）已改为「高风险/较高风险/中风险/低风险」，不带序号，
+                            // 而 risk_level 是 1..4 升序 —— 所以只能标 "risk_level N"，不能再写「第 N 档」，
+                            // 否则会自相矛盾。名称唯一真源仍是 `RISK_LABELS`，别在这里写死中文。
                             const level = toDisplayLevel(matrixDetail.risk_level ?? matrixDetail.riskLevel)
                               ?? displayLevelOfResult(matrixDetail);
                             return level === null ? '-' : `${RISK_LABELS[level]}（risk_level ${level + 1}）`;
@@ -3179,10 +3487,9 @@ function ResultPage(props: ResultPageProps) {
                     <div className="matrix-section-title">指标矩阵</div>
                     <div className="matrix-section-hint">
                       风险等级 = 该指标按自身阈值单独分档（第 1~4 档，1 档最安全、4 档最危险）：
-                      4 档 → 一级风险（红）、3 档 → 二级风险（橙）、2 档 → 三级风险（蓝）、1 档 → 低风险（绿）。
-                      它只描述这单个指标，不是断面综合等级。
-                      <b>抗冲流速(Ky) 是唯一的反向指标</b>（阈值降序 1.7 → 1.35 → 1.0，值越大越安全），
-                      其余指标都是值越大越危险。
+                      4 档 → {RISK_LABELS[3]}（红）、3 档 → {RISK_LABELS[2]}（橙）、2 档 → {RISK_LABELS[1]}（蓝）、
+                      1 档 → {RISK_LABELS[0]}（绿）。它只描述这单个指标，不是断面综合等级。
+                      <b>抗冲流速(Ky) 是唯一的反向指标</b>（阈值降序 1.7 → 1.35 → 1.0），其余指标都是值越大越危险。
                     </div>
                     <div className="matrix-assessment-list">
                       {(() => {
@@ -3449,6 +3756,21 @@ function ResultPage(props: ResultPageProps) {
           onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
         >
           <div className="task-menu-title" title={taskMenu.taskName}>{taskMenu.taskName}</div>
+          {/* 框选分析：前置条件 = 该任务已有结果。counting 缺失（接口没回 / 老后端）时按"未知"放行，
+              点下去由 startAreaAnalysis 再确认一次；明确为 0 才置灰，并把原因写在按钮上。 */}
+          <button
+            className="task-menu-item"
+            disabled={resultCountOfTask(taskMenu.taskId) === 0}
+            title={
+              resultCountOfTask(taskMenu.taskId) === 0
+                ? '该任务还没有计算结果，框选分析不适用（先在编辑器里跑完任务再看）'
+                : '在地图上框选矩形或多边形，统计该范围内各风险等级的断面数与长度'
+            }
+            onClick={() => { const t = taskMenu; setTaskMenu(null); void startAreaAnalysis(t.taskId, t.taskName); }}
+          >
+            <ScanSearch size={13} />
+            {resultCountOfTask(taskMenu.taskId) === 0 ? '分析（暂无结果）' : '分析'}
+          </button>
           <button
             className="task-menu-item"
             disabled={generatingTaskId === taskMenu.taskId}

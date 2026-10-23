@@ -135,10 +135,13 @@ export const DEFAULT_RISK_THRESHOLDS: [number, number, number] = [0.25, 0.5, 0.7
  * 0..3 显示等级（0 最低）。三处消费：断面线、岸段色带、等级徽章。
  *
  * 文案与库内 `risk_level`(1..4) 的对应：level 3 ↔ risk_level 4（最高），level 0 ↔ risk_level 1。
- * 即「一级风险」= 原本的「极高风险」，序号按风险从高到低排，与 risk_level 的数值顺序相反 ——
- * 界面上同时出现数字时请用 `risk_level N` 标注，别写「第 N 档」，否则会与一级/二级读起来打架。
  *
- * 配色语义（2026-10-20 定稿）：一级红、二级橙、三级蓝、低风险绿。
+ * 文案（2026-10-21 定稿，原名「一级/二级/三级风险」）：level 3 = 高风险、level 2 = 较高风险、
+ * level 1 = 中风险、level 0 = 低风险。旧文案带序号且序号与 risk_level 相反（一级最高），
+ * 读起来与「第 N 档」打架，故统一改成不带数字的定性词 —— **别再改回带序号的写法**。
+ * 界面上同时出现数字时请用 `risk_level N` 标注，别写「第 N 档」。
+ *
+ * 配色语义（2026-10-20 定稿）：高风险红、较高风险橙、中风险蓝、低风险绿。
  */
 export const RISK_COLORS: Record<string, string> = {
   '0': '#10b981',
@@ -149,9 +152,9 @@ export const RISK_COLORS: Record<string, string> = {
 };
 
 export const RISK_LABELS: Record<number, string> = {
-  3: '一级风险',
-  2: '二级风险',
-  1: '三级风险',
+  3: '高风险',
+  2: '较高风险',
+  1: '中风险',
   0: '低风险',
 };
 

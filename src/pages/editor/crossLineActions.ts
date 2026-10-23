@@ -10,6 +10,13 @@ import {
   coordsToVerticalFootPoint,
   getVerticalFootCoordsFromAny,
 } from '../../utils/verticalFootPoint';
+import {
+  bankIdOfFeature,
+  describeUnbound,
+  resolveBankBinding,
+  type BankAnchor,
+  type LngLat,
+} from '../../map/sectionBankBinding';
 
 export type CrossLineControlMode = 'shoreline' | 'free';
 
@@ -358,9 +365,9 @@ export async function createCrossLineAtPointAction(params: {
   const leftCoords = leftEnd.geometry.coordinates;
   const rightCoords = rightEnd.geometry.coordinates;
 
+  // 与自由断面同一口径：只认真实 bank_id，**不兜底 line-N**（那是上传数组下标，写库即失联）
   const parentIndex = (line.properties as any)?.index;
-  const parentId =
-    (line.properties as any)?.bank_id || (line.properties as any)?.bankId || (parentIndex !== undefined ? `line-${parentIndex}` : undefined);
+  const parentId = bankIdOfFeature(line) ?? '';
 
   const newGeometry: GeoJSON.LineString = {
     type: 'LineString',
@@ -393,7 +400,7 @@ export async function createCrossLineAtPointAction(params: {
           section_id: sectionId,
           section_name: `新建断面${newSectionIndex + 1}`,
           distance: distanceOnLine,
-          bank_id: parentId || 'line-0',
+          bank_id: parentId,
           region_code: 'Mzs',
           segment_index: newSectionIndex,
           geometry: newGeometry,
@@ -605,6 +612,37 @@ export async function deleteSelectedCrossLinesAction(params: {
   } else {
     alert(`已删除 ${unique.length} 条断面（已同步到后端）`);
   }
+}
+
+/**
+ * 按 id 批量删除后端断面记录（框选删除用）。
+ *
+ * <p>只做"同步后端"这一件事：本地 `perpendicularData` 的移除由 `EditorPage.removeSectionsByIds`
+ * 完成 —— 那里还要做选中态按身份重映射，重复实现一份必然走偏。
+ *
+ * <p>逐条 `DELETE`（后端没有批量删除接口），与「删除选中断面」「删除段落内断面」同一路径，
+ * 单条失败不影响其余（`allSettled`），把成败数量交回调用方决定文案。
+ */
+export async function deleteSectionsByIdsAction(params: {
+  sectionIds: string[];
+}): Promise<{ requested: number; ok: number; failed: number }> {
+  const ids = Array.from(new Set((params.sectionIds || []).map((s) => String(s || '')).filter(Boolean)));
+  if (ids.length === 0) return { requested: 0, ok: 0, failed: 0 };
+
+  const results = await Promise.allSettled(
+    ids.map((sectionId) =>
+      fetch(`/v0/bank/sections/${encodeURIComponent(sectionId)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
+      }).then((res) => {
+        if (!res.ok) throw new Error(res.statusText);
+        return true;
+      }),
+    ),
+  );
+
+  const failed = results.filter((r) => r.status === 'rejected').length;
+  return { requested: ids.length, ok: ids.length - failed, failed };
 }
 
 export async function translateSelectedCrossLineAction(params: {
@@ -855,11 +893,13 @@ export function scaleCrossLineGeometry(params: {
 export async function createCrossLineByEndpointsAction(params: {
   start: number[];
   end: number[];
+  /** 地图上首点吸附到的岸段；有它就最高优先，不再靠几何去猜 */
+  anchor?: BankAnchor | null;
   uploadedData: GeoJSON.FeatureCollection | null;
   perpendicularData: GeoJSON.FeatureCollection | null;
   setPerpendicularData: Dispatch<SetStateAction<GeoJSON.FeatureCollection | null>>;
 }) {
-  const { start, end, uploadedData, perpendicularData, setPerpendicularData } = params;
+  const { start, end, anchor, uploadedData, perpendicularData, setPerpendicularData } = params;
 
   const taskId = getCurrentTaskId();
   // 只有任务存在时才有「任务参数」；没有任务时下面会走纯前端绘制分支
@@ -870,22 +910,22 @@ export async function createCrossLineByEndpointsAction(params: {
     coordinates: [start, end],
   };
 
-  // 尝试根据上传岸线推断 bank_id 与 distance（自由模式也可在无岸线情况下工作）
-  let bankId = 'line-0';
-  let distance = 0;
-  let verticalFootPoint = coordsToVerticalFootPoint([(start[0] + end[0]) / 2, (start[1] + end[1]) / 2]);
+  // 归属判定：吸附锚点 → 首点 → 中点，每级都有 200m 门限（口径见 map/sectionBankBinding.ts）
+  const binding = resolveBankBinding({
+    start: start as LngLat,
+    end: end as LngLat,
+    banks: uploadedData,
+    anchor: anchor ?? null,
+  });
 
-  if (uploadedData && uploadedData.features.length > 0) {
-    const mid = turf.midpoint(turf.point(start), turf.point(end));
-    let bestBankId: string | null = null;
-    let bestDistance = 0;
-    let bestD = Number.POSITIVE_INFINITY;
-    let bestAnchorPoint: number[] | null = null;
-
-    uploadedData.features.forEach((f, idx) => {
-      if (!f.geometry || (f.geometry.type !== 'LineString' && f.geometry.type !== 'MultiLineString')) return;
-
-      const handleLine = (line: GeoJSON.Feature<GeoJSON.LineString>, assumedBankId: string) => {
+  // 归不上就写空串：下游按 `bank_id <> ''` 过滤，界面显示为「未归属岸段」。
+  // ⚠ 绝不能退回 line-N —— 那是上传岸段的数组下标，写进库后跨任务/跨次加载完全对不上，
+  //   下游 GET /banks/line-6 恒 404，岸段着色与风险段导出会静默失效（不报错、不留日志）。
+  const bankId = binding.bankId ?? '';
+  const distance = binding.distance ?? 0;
+  const verticalFootPoint = coordsToVerticalFootPoint(
+    binding.footPoint ?? [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2],
+  );
 
   // 前置去重：如果已有相近位置的断面，不再重复创建
   if (perpendicularData && perpendicularData.features.length > 0) {
@@ -900,44 +940,6 @@ export async function createCrossLineByEndpointsAction(params: {
       alert('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
       return;
     }
-  }
-
-  try {
-          const snapped = turf.nearestPointOnLine(line, mid, { units: 'meters' });
-          const d = turf.distance(mid, snapped, { units: 'meters' });
-          const loc = snapped.properties.location ?? 0;
-          const ap = (snapped?.geometry?.coordinates as any) as number[] | undefined;
-
-          if (d < bestD) {
-            bestD = d;
-            bestBankId = assumedBankId;
-            bestDistance = loc;
-            if (Array.isArray(ap) && ap.length >= 2) bestAnchorPoint = [Number(ap[0]), Number(ap[1])];
-          }
-        } catch {
-          // ignore
-        }
-      };
-
-      const assumedBankId = `line-${idx}`;
-      if (f.geometry.type === 'LineString') {
-        handleLine(f as GeoJSON.Feature<GeoJSON.LineString>, assumedBankId);
-      } else {
-        const multi = f.geometry as GeoJSON.MultiLineString;
-        multi.coordinates.forEach((coords) => {
-          const line = turf.lineString(coords) as GeoJSON.Feature<GeoJSON.LineString>;
-          handleLine(line, assumedBankId);
-        });
-      }
-    });
-
-    if (bestBankId !== null) {
-      bankId = bestBankId;
-      distance = bestDistance;
-    }
-
-    // 记录垂足点（无匹配则回退到几何中点）
-    if (bestAnchorPoint) verticalFootPoint = coordsToVerticalFootPoint(bestAnchorPoint);
   }
 
   const nextIndex = perpendicularData ? perpendicularData.features.length : 0;
@@ -1050,6 +1052,11 @@ export async function createCrossLineByEndpointsAction(params: {
 
       return turf.featureCollection([...existing, newFeature]);
     });
+
+    // 未归属岸段必须当场告诉用户：否则算完结果岸段不着色，又会被当成「联动坏了」
+    if (!binding.bankId) {
+      alert(describeUnbound(binding));
+    }
   } catch (err: any) {
     console.error('自由创建断面失败:', err);
     alert(`自由创建断面失败: ${err.message}`);

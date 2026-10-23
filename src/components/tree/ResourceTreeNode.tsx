@@ -3,7 +3,7 @@ import {
   ChevronRight, ChevronDown, Folder, Database, ListTodo, FileText, Map as MapIcon,
   Layers, Settings, Zap, Scissors, Trash2, Eye, EyeOff, Target, Ruler,
   CircleCheck, Download, RotateCw, Move, Plus, Play, ChartColumn, Upload,
-  Eraser, Globe, Palette, Check, Square, ShieldCheck,
+  Eraser, Globe, Palette, Check, Square, ShieldCheck, Copy,
 } from 'lucide-react';
 import type { TreeNode } from '../../tree/types';
 import { getActions } from '../../tree/actions';
@@ -23,7 +23,7 @@ const ACTION_ICONS: Record<string, any> = {
   settings: Settings, zap: Zap, scissors: Scissors, check: Check, layers: Layers,
   rotate: RotateCw, eraser: Eraser, ruler: Ruler, checkCircle: CircleCheck,
   download: Download, move: Move, plus: Plus, play: Play, chart: ChartColumn,
-  trash: Trash2, globe: Globe, stop: Square,
+  trash: Trash2, globe: Globe, stop: Square, copy: Copy,
 };
 
 interface Props {

@@ -9,6 +9,7 @@
  * 分组标题可点折叠，折叠态记在 localStorage；某组超过 60 条时给一个「显示全部」兜底。
  */
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ChevronDown,
   ChevronRight,
@@ -16,13 +17,24 @@ import {
   EyeOff,
   Layers,
   Ruler,
+  Scan,
   Square,
+  SquareDashed,
   Waves,
   X,
 } from 'lucide-react';
 import type { DisplayGroup, LoadedGroup, LoadedRow, RunningTaskRow } from './loadedOnMap';
 import { buildLoadedView, formatElapsed, parseServerTime } from './loadedOnMap';
 import styles from './LoadedOnMapPanel.module.css';
+
+/** 「岸段」框选的结果，只用于在面板里标出命中项与计数（判定本身在 `map/boxSelection.ts`）。 */
+export interface LoadedBoxSelection {
+  /** 命中的岸段 id */
+  bankIds: string[];
+  /** 参与判定的候选条数（已加载 N 条 / 全库 N 条） */
+  candidates: number;
+  scope: 'loaded' | 'library';
+}
 
 export interface LoadedOnMapActions {
   /** 定位到某条岸段（不在图上的会先加载回来） */
@@ -48,6 +60,14 @@ export interface LoadedOnMapActions {
    *          running 里消失再解锁；false 表示失败/被取消 ⇒ 立刻恢复可点。
    */
   onStopTask?: (taskId: string, taskName: string) => Promise<boolean>;
+  /**
+   * 进入"在地图上拖矩形框选岸段"的模式。
+   *
+   * @param scope `loaded` = 只在已加载到屏幕的岸段里选；`library` = 从资源库全量选（命中后加载到地图）
+   */
+  onStartBoxSelect?: (scope: 'loaded' | 'library') => void;
+  /** 清除已生效的框选（地图上的矩形与高亮一起消失，不动岸段本身） */
+  onClearBoxSelect?: () => void;
 }
 
 interface Props {
@@ -55,6 +75,8 @@ interface Props {
   running: RunningTaskRow[];
   /** 地图上当前选中的断面 id（用于高亮面板里的对应行） */
   activeSectionId?: string | null;
+  /** 当前生效的框选结果；null / undefined = 没有框选 */
+  boxSelection?: LoadedBoxSelection | null;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   actions?: LoadedOnMapActions;
@@ -98,6 +120,7 @@ export default function LoadedOnMapPanel({
   groups,
   running,
   activeSectionId,
+  boxSelection,
   collapsed,
   onToggleCollapsed,
   actions,
@@ -113,6 +136,43 @@ export default function LoadedOnMapPanel({
    */
   const [stoppingIds, setStoppingIds] = useState<string[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  /**
+   * 「岸段」右键菜单的屏幕坐标。
+   *
+   * <p>这个面板以前没有右键菜单（行尾就两个图标）。框选是个"作用于整组"的动作，
+   * 摆在组标题上比塞进行尾更合适 —— 而窄栏里再挤一个按钮会挤压标签文本，
+   * 所以走右键：与资源树的交互保持一致，老用户不用学新入口。
+   */
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  /** 命中集合：只有框选生效时才有意义，用 Set 查得更快 */
+  const boxHitIds = useMemo(
+    () => (boxSelection ? new Set(boxSelection.bankIds.map(String)) : null),
+    [boxSelection],
+  );
+
+  // 点空白处 / 滚轮 / 缩放窗口都关掉右键菜单（与 TreeContextMenu 同一套关闭时机）
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      // 菜单自身的点击由菜单项自己处理，这里放行
+      if (el?.closest?.('[data-loaded-ctx]')) return;
+      close();
+    };
+    document.addEventListener('mousedown', onDown, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('wheel', close, { passive: true });
+    window.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('wheel', close);
+      window.removeEventListener('keydown', close);
+    };
+  }, [menu]);
 
   // 运行时长每秒刷新一次；没有任务在跑时不起定时器（空跑会让 CPU 白转）
   const [now, setNow] = useState(() => Date.now());
@@ -172,15 +232,34 @@ export default function LoadedOnMapPanel({
   };
 
   const groupAction = (g: DisplayGroup) => {
-    if (g.total === 0) return null;
-    if (g.key === 'banks' && actions?.onRemoveAllBanks) {
+    // 岸段组单独处理：即使一条都没加载，「框选(box)」也该能用（可以从全库框选后加载进来），
+    // 所以不能套用下面那句 `g.total === 0 ⇒ 不渲染`。
+    if (g.key === 'banks') {
+      const canBox = Boolean(actions?.onStartBoxSelect);
+      if (g.total === 0 && !canBox) return null;
       return (
-        <button type="button" className={styles.groupBtn} title="把地图上的岸段（连同其断面）全部移出"
-          onClick={(e) => { e.stopPropagation(); actions.onRemoveAllBanks!(); }}>
-          <EyeOff size={11} /> 全部移出
-        </button>
+        <>
+          {canBox && (
+            <button
+              type="button"
+              className={styles.groupBtn}
+              data-tour="tree-loaded-box-select"
+              title="在地图上按住鼠标拖一个矩形，框选范围内的岸段（与「按 DEM 筛选」互不影响）"
+              onClick={(e) => { e.stopPropagation(); actions!.onStartBoxSelect!('loaded'); }}
+            >
+              <Scan size={11} /> 框选
+            </button>
+          )}
+          {g.total > 0 && actions?.onRemoveAllBanks && (
+            <button type="button" className={styles.groupBtn} title="把地图上的岸段（连同其断面）全部移出"
+              onClick={(e) => { e.stopPropagation(); actions.onRemoveAllBanks!(); }}>
+              <EyeOff size={11} /> 全部移出
+            </button>
+          )}
+        </>
       );
     }
+    if (g.total === 0) return null;
     if (g.key === 'sections' && actions?.onRemoveAllSections) {
       return (
         <button type="button" className={styles.groupBtn} title="把地图上的断面全部移出"
@@ -293,9 +372,19 @@ export default function LoadedOnMapPanel({
 
           <div className={styles.body}>
             {view.total === 0 ? (
-              <p className={styles.empty}>
-                地图上还没有加载任何资源。在资源树里双击条目，或右键选「加载到地图」——这里会立刻把它们列出来。
-              </p>
+              <>
+                <p className={styles.empty}>
+                  地图上还没有加载任何资源。在资源树里双击条目，或右键选「加载到地图」——这里会立刻把它们列出来。
+                </p>
+                {/* 地图空着的时候，恰恰是最想"划一块区域把岸段找出来"的时候：
+                    组列表整体被空态替换掉了，所以在这里补一个框选全库的入口。 */}
+                {actions?.onStartBoxSelect && (
+                  <button type="button" className={styles.emptyBoxBtn}
+                    onClick={() => actions.onStartBoxSelect!('library')}>
+                    <Scan size={12} /> 在地图上框选全库岸段
+                  </button>
+                )}
+              </>
             ) : (
               <>
                 {view.groups.map((g) => (
@@ -307,6 +396,13 @@ export default function LoadedOnMapPanel({
                       aria-expanded={!g.collapsed}
                       title={g.collapsed ? `展开「${g.title}」` : `收起「${g.title}」`}
                       onClick={() => toggleGroup(g.key)}
+                      onContextMenu={(e) => {
+                        // 只有「岸段」组有框选菜单；其它组的右键交还给浏览器（保持原行为）
+                        if (g.key !== 'banks' || !actions?.onStartBoxSelect) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setMenu({ x: e.clientX, y: e.clientY });
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(g.key); }
                       }}
@@ -328,25 +424,63 @@ export default function LoadedOnMapPanel({
                           <p className={styles.groupEmpty}>断面已加载，但「断面」图层当前是关闭的（视图开关）。</p>
                         )}
                         <ul className={styles.rows}>
-                          {g.rows.map((row) => (
-                            <li
-                              key={row.id}
-                              className={[
-                                styles.row,
-                                row.dimmed ? styles.rowDimmed : '',
-                                g.key === 'sections' && activeSectionId === row.id ? styles.rowActive : '',
-                              ].join(' ')}
-                              title={`${row.label}${row.meta ? ` · ${row.meta}` : ''}`}
-                              onClick={() => focusRow(g, row)}
-                            >
-                              <span className={styles.rowLabel}>{row.label}</span>
-                              {row.currentTask && <span className={styles.tagCurrent}>当前任务</span>}
-                              <span className={styles.spacer} />
-                              {row.meta && <span className={styles.rowMeta}>{row.meta}</span>}
-                              {rowActions(g, row)}
-                            </li>
-                          ))}
+                          {g.rows.map((row) => {
+                            // 框选生效时：命中项打「框内」标，未命中的淡出。
+                            // 只对「岸段」组生效——断面/DEM 不参与框选，不该被一起标灰。
+                            const inBox = g.key === 'banks' && boxHitIds ? boxHitIds.has(String(row.id)) : null;
+                            const outOfBox = inBox === false && boxHitIds !== null;
+                            return (
+                              <li
+                                key={row.id}
+                                className={[
+                                  styles.row,
+                                  row.dimmed ? styles.rowDimmed : '',
+                                  outOfBox ? styles.rowOutsideBox : '',
+                                  g.key === 'sections' && activeSectionId === row.id ? styles.rowActive : '',
+                                ].join(' ')}
+                                title={`${row.label}${row.meta ? ` · ${row.meta}` : ''}`}
+                                onClick={() => focusRow(g, row)}
+                                onContextMenu={(e) => {
+                                  if (g.key !== 'banks' || !actions?.onStartBoxSelect) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setMenu({ x: e.clientX, y: e.clientY });
+                                }}
+                              >
+                                <span className={styles.rowLabel}>{row.label}</span>
+                                {inBox && <span className={styles.tagInBox}>框内</span>}
+                                {row.currentTask && <span className={styles.tagCurrent}>当前任务</span>}
+                                <span className={styles.spacer} />
+                                {row.meta && <span className={styles.rowMeta}>{row.meta}</span>}
+                                {rowActions(g, row)}
+                              </li>
+                            );
+                          })}
                         </ul>
+                        {/* 框选结果的计数与清除入口：挂在「岸段」组下面，用户不用回忆框在哪 */}
+                        {g.key === 'banks' && boxSelection && (
+                          <div className={styles.boxNote}>
+                            <SquareDashed size={11} />
+                            <span className={styles.boxNoteText}>
+                              框选命中 <b>{boxSelection.bankIds.length}</b> / {boxSelection.candidates} 条
+                              {boxSelection.scope === 'library' ? '（全库）' : ''}
+                            </span>
+                            {actions?.onClearBoxSelect && (
+                              <button type="button" className={styles.boxClear}
+                                title="清除框选：地图上的矩形与高亮一起移除，岸段保持不动"
+                                onClick={() => actions.onClearBoxSelect!()}>
+                                清除
+                              </button>
+                            )}
+                            {actions?.onStartBoxSelect && (
+                              <button type="button" className={styles.boxClear}
+                                title="重新框选（把范围收紧或换一块）"
+                                onClick={() => actions.onStartBoxSelect!('loaded')}>
+                                重框
+                              </button>
+                            )}
+                          </div>
+                        )}
                         {g.hiddenByLimit > 0 && (
                           <button type="button" className={styles.moreBtn}
                             onClick={() => expandGroup(g.key)}>
@@ -361,6 +495,35 @@ export default function LoadedOnMapPanel({
             )}
           </div>
         </>
+      )}
+
+      {/* 「岸段」右键菜单：框选的两个范围口径 + 清除。
+          用 portal 挂到 body 上：面板有 `overflow: hidden`，而且祖先链上有 backdrop-filter
+          （会为 fixed 后代创建包含块），菜单留在组件树里会被裁掉一截。
+          定位仍是 position: fixed，坐标直接取 clientX/clientY。 */}
+      {menu && actions?.onStartBoxSelect && createPortal(
+        <div className={styles.ctx} style={{ left: menu.x, top: menu.y }} data-loaded-ctx>
+          <div className={styles.ctxItem}
+            onClick={() => { setMenu(null); actions.onStartBoxSelect!('loaded'); }}>
+            <Scan size={13} /> 框选岸段（已加载范围内）
+          </div>
+          <div className={styles.ctxItem}
+            onClick={() => { setMenu(null); actions.onStartBoxSelect!('library'); }}>
+            <Layers size={13} /> 框选全库岸段…
+          </div>
+          <div className={styles.ctxSep} />
+          <div
+            className={`${styles.ctxItem} ${boxSelection ? '' : styles.ctxDisabled}`}
+            title={boxSelection ? '移除地图上的矩形与高亮（岸段保持不动）' : '当前没有生效的框选'}
+            onClick={() => {
+              setMenu(null);
+              if (boxSelection) actions?.onClearBoxSelect?.();
+            }}
+          >
+            <X size={13} /> 清除框选
+          </div>
+        </div>,
+        document.body,
       )}
     </section>
   );

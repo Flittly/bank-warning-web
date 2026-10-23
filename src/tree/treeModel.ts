@@ -271,8 +271,11 @@ export function buildTasksGroup(
         'task.addBanks',
         'task.generateCompute',
         'task.setParam',
+        'task.copy',
+        'task.copyWithResults',
         'task.loadMap',
         'task.viewResult',
+        // 「分析」紧挨「查看结果」：两者都是"看结果"，只是视角不同（整任务 vs 圈一块区域）
         'task.delete',
       ];
       if (isRunningStatus(t?.status)) taskActions.splice(2, 0, 'task.stop');

@@ -4,6 +4,9 @@ import type { ExpressionSpecification } from 'mapbox-gl';
 import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { getBasemapStyle } from '../map/basemapStyle';
+import { boxFromCorners, boxPolygon, isValidBox, type BoxBounds } from '../map/boxSelection';
+import { sectionIdOfFeature } from '../map/sectionBoxDelete';
+import { snapPointToBank, type BankAnchor, type LngLat } from '../map/sectionBankBinding';
 import type { SelectionGroup } from '../types/selection';
 import { getVerticalFootCoordsFromAny } from '../utils/verticalFootPoint';
 import { useEditorStore } from '../store/useEditorStore';
@@ -167,6 +170,68 @@ function buildArrowIconExpression(): ExpressionSpecification {
   ] as unknown as ExpressionSpecification;
 }
 
+/**
+ * 把"已生效的框"和"命中的岸段"写进地图图层。
+ *
+ * <p>做成模块级函数（而不是组件内的闭包）有两个原因：地图 `load` 回调、两条同步 effect、
+ * 以及换底图后的重建都要用它，闭包版本会被 `useEffect` 依赖检查反复逼着改写成 `useCallback`；
+ * 而且它的全部输入都能从参数拿到，没有隐含状态。
+ *
+ * <p>命中岸段是从 `uploadedData` 里**摘出来**再画一遍，而不是给原图层加 filter：
+ * 原图层的配置（着色开关、`_color` 属性、未来可能的透明度逻辑）不该为一个筛选视角让路。
+ * 因此岸段被移出地图后，高亮会自动消失 —— 数据源里没有它，谁也不用记得清。
+ */
+function syncBoxSelectionLayers(
+  map: mapboxgl.Map,
+  bounds: BoxBounds | null | undefined,
+  bankIds: string[] | null | undefined,
+  uploaded: GeoJSON.FeatureCollection | null | undefined,
+  sectionIds?: string[] | null,
+  perpendicular?: GeoJSON.FeatureCollection | null,
+  polygon?: GeoJSON.Feature<GeoJSON.Polygon> | null,
+): void {
+  const rectSource = map.getSource('box-select-rect') as mapboxgl.GeoJSONSource | undefined;
+  if (rectSource) {
+    // 多边形选区（框选分析）优先：它是"已经画好的一个面"，不能再被 bounds 覆盖成矩形。
+    // 两者互斥由调用方保证（同一时刻只会有一种选区）。
+    if (polygon?.geometry?.type === 'Polygon') {
+      rectSource.setData(turf.featureCollection([polygon]));
+    } else {
+      rectSource.setData(
+        isValidBox(bounds ?? null)
+          ? turf.featureCollection([boxPolygon(bounds as BoxBounds)])
+          : turf.featureCollection([]),
+      );
+    }
+  }
+
+  const bankSource = map.getSource('box-select-banks-source') as mapboxgl.GeoJSONSource | undefined;
+  if (bankSource) {
+    const ids = new Set(bankIds || []);
+    const features = ids.size === 0
+      ? []
+      : ((uploaded?.features || []) as any[]).filter((f) => {
+          if (f?.geometry?.type !== 'LineString') return false;
+          return ids.has(String(f?.properties?.bank_id ?? f?.properties?.bankId ?? ''));
+        });
+    bankSource.setData(turf.featureCollection(features));
+  }
+
+  // 框选删除断面的预览：从 perpendicularData 里摘出命中项再画一遍（红色虚线段），
+  // 不给原图层加 filter —— 断面层的配色/宽度还背着校验状态与箭头图层，动它会牵连一堆东西。
+  const sectionSource = map.getSource('box-delete-sections-source') as mapboxgl.GeoJSONSource | undefined;
+  if (sectionSource) {
+    const ids = new Set(sectionIds || []);
+    const features = ids.size === 0
+      ? []
+      : ((perpendicular?.features || []) as any[]).filter(
+          (f) => f?.geometry?.type === 'LineString' && ids.has(sectionIdOfFeature(f)),
+        );
+    sectionSource.setData(turf.featureCollection(features));
+  }
+}
+
+
 interface EditorMapProps {
   perpendicularData: GeoJSON.FeatureCollection | null;
   uploadedData: GeoJSON.FeatureCollection | null;
@@ -194,7 +259,11 @@ interface EditorMapProps {
     updates: Array<{ crossLineIndex: number; geometry: GeoJSON.LineString }>,
   ) => void;
   persistCrossLineGeometry: (crossLineIndex: number, geometry: GeoJSON.LineString) => Promise<void>;
-  createCrossLineByEndpoints: (start: number[], end: number[]) => void;
+  /**
+   * 第三参数是起点吸附到的岸段（首点落在岸段上时才有）。
+   * 断面归属哪条岸段以它为最高优先，避免「眼睛看到落在岸段上、写库却归到别处」。
+   */
+  createCrossLineByEndpoints: (start: number[], end: number[], anchor?: BankAnchor | null) => void;
   tiffBoundsData: GeoJSON.FeatureCollection | null;
   showTiffBounds: boolean;
   /** 长江河面范围（4326，来自 river_yangtze）；没开启过图层时为 null */
@@ -204,6 +273,35 @@ interface EditorMapProps {
   resizeTrigger: number;
   satellite?: boolean;
   colorBanks?: boolean;
+
+  // —— 矩形框选（地图上按住鼠标拖一个框，由上层判定命中哪些岸段）——
+  /** 是否处于「等待用户画框」状态：会关掉拖拽平移并换成十字光标 */
+  boxSelectMode?: boolean;
+  /** 画完一个框（已经过"太小则丢弃"的判定）。坐标是 WGS84 经纬度 */
+  onBoxSelectDone?: (bounds: BoxBounds) => void;
+  /**
+   * 画框被取消。
+   *
+   * @param reason `escape` = 按 Esc；`contextmenu` = 右键；`too-small` = 拖动距离不足 4px（当误点）
+   */
+  onBoxSelectCancel?: (reason: 'escape' | 'contextmenu' | 'too-small') => void;
+  /** 已生效的框（保留在图上直到清除） */
+  boxSelectionBounds?: BoxBounds | null;
+  /** 框选命中的岸段 id：这些线用高亮层再画一遍 */
+  boxSelectionBankIds?: string[] | null;
+  /**
+   * 画框的目的。只影响**提示文案**与**预览高亮**，交互完全一致：
+   * `banks` = 框选岸段（紫，结果是加载/高亮）；`sections` = 框选删除断面（红，结果是待删预览）。
+   *
+   * <p>用一个 purpose 而不是两个独立的 `xxxMode` 布尔：画框的监听器、拖拽平移开关、
+   * 十字光标、4px 门限这些只有一份，两套布尔迟早会同时为 true（右键菜单和工具栏都能进），
+   * 那时同一块画布会被两个 effect 抢事件。
+   */
+  boxSelectPurpose?: 'banks' | 'sections';
+  /** 框选删除断面：预览中待删的断面 id（红色虚线再画一遍） */
+  sectionBoxDeleteIds?: string[] | null;
+  /** 框选删除断面：预览中的框（画完到确认之间一直留着） */
+  sectionBoxDeleteBounds?: BoxBounds | null;
 }
 
 function EditorMap(props: EditorMapProps) {
@@ -239,7 +337,6 @@ function EditorMap(props: EditorMapProps) {
     showRiverSurface = false,
     resizeTrigger,
   } = props;
-
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
@@ -256,6 +353,36 @@ function EditorMap(props: EditorMapProps) {
   useEffect(() => { tiffBoundsDataRef.current = tiffBoundsData; }, [tiffBoundsData]);
   useEffect(() => { riverSurfaceDataRef.current = riverSurfaceData ?? null; }, [riverSurfaceData]);
 
+  // —— 框选：回调与状态都走 ref ——
+  // 交互是在 `map.on('load')` 里注册的长生命周期监听器，直接用 props 闭包会读到首次渲染时的值；
+  // 而按 props 作依赖重建监听器又会在拖拽中途把 handlers 换掉（画框突然中断）。
+  const boxSelectModeRef = useRef(false);
+  boxSelectModeRef.current = props.boxSelectMode === true;
+  const onBoxSelectDoneRef = useRef(props.onBoxSelectDone);
+  onBoxSelectDoneRef.current = props.onBoxSelectDone;
+  const onBoxSelectCancelRef = useRef(props.onBoxSelectCancel);
+  onBoxSelectCancelRef.current = props.onBoxSelectCancel;
+
+  // 当前画框的目的：决定"上一次的框"到底是岸段框（紫）还是断面待删框（红）。
+  // 同一时刻只有一个框能占用 `box-select-rect`，所以这里必须二选一，
+  // 退出断面删除后 purpose 回到 banks，岸段框会自动重画回来（见下面的同步 effect）。
+  const boxPurpose: 'banks' | 'sections' =
+    props.boxSelectPurpose === 'sections' ? 'sections' : 'banks';
+  const boxPurposeRef = useRef(boxPurpose);
+  boxPurposeRef.current = boxPurpose;
+
+  const committedBounds = boxPurpose === 'sections'
+    ? (props.sectionBoxDeleteBounds ?? null)
+    : (props.boxSelectionBounds ?? null);
+  const committedBankIds = boxPurpose === 'banks' ? (props.boxSelectionBankIds ?? []) : [];
+  const committedSectionIds = boxPurpose === 'sections' ? (props.sectionBoxDeleteIds ?? []) : [];
+
+  const boxBoundsRef = useRef<BoxBounds | null>(committedBounds);
+  const boxBankIdsRef = useRef<string[]>(committedBankIds);
+  const boxSectionIdsRef = useRef<string[]>(committedSectionIds);
+  boxBoundsRef.current = committedBounds;
+  boxBankIdsRef.current = committedBankIds;
+  boxSectionIdsRef.current = committedSectionIds;
   const selectedLinesRef = useRef<Set<string>>(selectedLines);
   useEffect(() => { selectedLinesRef.current = selectedLines; }, [selectedLines]);
 
@@ -529,6 +656,7 @@ function EditorMap(props: EditorMapProps) {
     }
   }, [selectedLines, uploadedData]);
 
+
   // 同步选择组数据到地图
   useEffect(() => {
     const map = mapRef.current;
@@ -714,6 +842,11 @@ function EditorMap(props: EditorMapProps) {
       map.addSource('selected-shore-lines', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('tiff-bounds', { type: 'geojson', data: turf.featureCollection([]) });
       map.addSource('river-surface', { type: 'geojson', data: turf.featureCollection([]) });
+      // 框选：`box-select-rect` 画矩形，`box-select-banks-source` 只放命中的岸段（从 uploaded-data 里摘出来）
+      map.addSource('box-select-rect', { type: 'geojson', data: turf.featureCollection([]) });
+      map.addSource('box-select-banks-source', { type: 'geojson', data: turf.featureCollection([]) });
+      // 框选删除断面的预览层：同样单独一条 source，删掉命中项后 source 自然空掉，不用额外清理。
+      map.addSource('box-delete-sections-source', { type: 'geojson', data: turf.featureCollection([]) });
       // 如果已有数据，立刻恢复
       if (tiffBoundsDataRef.current) {
         const src = map.getSource('tiff-bounds') as mapboxgl.GeoJSONSource;
@@ -829,6 +962,60 @@ function EditorMap(props: EditorMapProps) {
         paint: {
           'line-color': '#94a3b8',
           'line-width': 2,
+        },
+      });
+
+      // —— 矩形框选命中的岸段：单独的数据源 + 单独一层，不改 uploaded-lines 的配色，也不动 selectedLines ——
+      // 为什么不复用 `selected-shore-lines`（琥珀色那层）：那层的语义是"手选岸段、准备截取/生成断面"，
+      // 由 isSelectingShoreLines 模式维护；框选是筛选视角，混用会让「截取岸段」吃进一批意料之外的线。
+      // 宽而淡的底层 = 外发光，窄而实的顶层 = 线本身，卫星底图上也看得清。
+      map.addLayer({
+        id: 'box-select-banks-glow',
+        type: 'line',
+        source: 'box-select-banks-source',
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+          'line-color': '#7c3aed',
+          'line-width': 10,
+          'line-opacity': 0.22,
+          'line-blur': 1,
+        },
+      });
+      map.addLayer({
+        id: 'box-select-banks',
+        type: 'line',
+        source: 'box-select-banks-source',
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+          'line-color': '#7c3aed',
+          'line-width': 3.5,
+        },
+      });
+
+      // —— 框选删除断面的待删预览：红色，且刻意做成虚线 ——
+      // 与断面本身的校验配色（绿/黄/红实线）区分开：这里表达的是"即将消失"，
+      // 用实线会和"无效断面（红实线）"撞语义。
+      map.addLayer({
+        id: 'box-delete-sections-glow',
+        type: 'line',
+        source: 'box-delete-sections-source',
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+          'line-color': '#ef4444',
+          'line-width': 11,
+          'line-opacity': 0.22,
+          'line-blur': 1,
+        },
+      });
+      map.addLayer({
+        id: 'box-delete-sections',
+        type: 'line',
+        source: 'box-delete-sections-source',
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+          'line-color': '#ef4444',
+          'line-width': 3.5,
+          'line-dasharray': [2, 1.2],
         },
       });
 
@@ -956,10 +1143,44 @@ function EditorMap(props: EditorMapProps) {
         },
       });
 
+      // —— 框选的矩形边框：置顶，任何图层（含断面箭头、端点、弹窗锚点）都不能压住它 ——
+      // 拖拽过程中直接写 source（不走 React setState），否则 mousemove 每帧一次渲染，
+      // 几百条岸段的地图会被拖到卡死。
+      map.addLayer({
+        id: 'box-select-rect-fill',
+        type: 'fill',
+        source: 'box-select-rect',
+        filter: ['==', '$type', 'Polygon'],
+        paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.08 },
+      });
+      map.addLayer({
+        id: 'box-select-rect-line',
+        type: 'line',
+        source: 'box-select-rect',
+        filter: ['==', '$type', 'Polygon'],
+        paint: {
+          'line-color': '#7c3aed',
+          'line-width': 1.6,
+          'line-dasharray': [2, 1.5],
+        },
+      });
+
+      // 图层重建（换底图 / 首次 load）后把已经生效的框与命中岸段画回来
+      syncBoxSelectionLayers(
+        map,
+        boxBoundsRef.current,
+        boxBankIdsRef.current,
+        uploadedDataRef.current,
+        boxSectionIdsRef.current,
+        perpendicularDataRef.current,
+      );
+
       const hitLayers = ['uploaded-lines-hit-target'];
       const crossLineHitLayers = ['perpendicular-lines-hit-target'];
 
       const freeAddStartRef: { current: number[] | null } = { current: null };
+      /** 首点吸附到的岸段；等终点落点后一起交给创建动作，作为 bank_id 的最高优先真源 */
+      const freeAddAnchorRef: { current: BankAnchor | null } = { current: null };
 
       let infoPopup: mapboxgl.Popup | null = null;
 
@@ -1288,6 +1509,8 @@ function EditorMap(props: EditorMapProps) {
       // 端点拖拽：点击断面起点/终点手柄，拖动以自由调整长度和方向
       let wasDragging = false;
       map.on('mousedown', 'perpendicular-endpoints-layer', (e) => {
+        // 框选模式下左键属于"画框"，不能被端点拖拽认领（否则从断面上起手就拖不动框）
+        if (boxSelectModeRef.current) return;
         if (!isSelectingCrossLinesRef.current) return;
         if (crossLineEditModeRef.current !== 'select') return;
 
@@ -1378,6 +1601,7 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.on('mousedown', 'perpendicular-lines-hit-target', (e) => {
+        if (boxSelectModeRef.current) return;
         if (!isSelectingCrossLinesRef.current) return;
         if (crossLineControlModeRef.current !== 'free') return;
         if (crossLineEditModeRef.current !== 'select') return;
@@ -1499,6 +1723,9 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.on('click', (e) => {
+        // 画框期间（含松手那一下产生的 click）一律不交给选择/创建逻辑：
+        // 否则框选完会顺手在框角处"选中一条断面"或"落一个自由绘制起点"。
+        if (boxSelectModeRef.current) return;
         // 拖拽刚结束后的第一次 click 事件需要抑制，避免误触选择/创建逻辑
         if (wasDragging) {
           wasDragging = false;
@@ -1595,19 +1822,46 @@ function EditorMap(props: EditorMapProps) {
                 createCrossLineAtPoint(lineFeature, distanceOnLine);
               }
             } else {
-              const clicked = [e.lngLat.lng, e.lngLat.lat] as number[];
+              const rawPoint: LngLat = [e.lngLat.lng, e.lngLat.lat];
               if (!freeAddStartRef.current) {
-                freeAddStartRef.current = clicked;
+                // 首点若落在岸段上：吸附到岸段线，并记住「归到哪条岸段」。
+                // 少了这一步，用户眼睛看到的落点和实际存的坐标能差十几米（命中区是按屏幕像素算的），
+                // 归属判定就会漂到隔壁岸段，或者干脆归不上。
+                let anchor: BankAnchor | null = null;
+                const hit = map.queryRenderedFeatures(e.point, { layers: hitLayers })?.[0];
+                if (hit) {
+                  const hitIndex = Number(hit.properties?.index);
+                  // 优先用 uploadedData 里的原始几何：渲染用的 feature 可能已被裁切/简化
+                  const bankFeature = Number.isFinite(hitIndex)
+                    ? ((uploadedDataRef.current?.features?.[hitIndex] as any) ?? hit)
+                    : hit;
+                  const snapped = snapPointToBank(rawPoint, bankFeature, Number.isFinite(hitIndex) ? hitIndex : 0);
+                  if (snapped) {
+                    anchor = {
+                      point: snapped.footPoint,
+                      bankId: snapped.bankId,
+                      distance: snapped.distance,
+                    };
+                  }
+                }
+                freeAddStartRef.current = anchor ? anchor.point : rawPoint;
+                freeAddAnchorRef.current = anchor;
                 const source = map.getSource('snap-point') as mapboxgl.GeoJSONSource;
-                if (source) source.setData(turf.point(clicked));
-                console.log('自由模式：已选择断面起点');
+                if (source) source.setData(turf.point(freeAddStartRef.current));
+                console.log(
+                  anchor
+                    ? `自由模式：起点已吸附到岸段 ${anchor.bankId ?? '(无 bank_id)'}，里程 ${(anchor.distance ?? 0).toFixed(1)}m`
+                    : '自由模式：已选择断面起点（未落在岸段上）',
+                );
               } else {
                 const start = freeAddStartRef.current;
+                const anchor = freeAddAnchorRef.current;
                 freeAddStartRef.current = null;
+                freeAddAnchorRef.current = null;
                 const source = map.getSource('snap-point') as mapboxgl.GeoJSONSource;
                 if (source) source.setData(turf.featureCollection([]));
                 console.log('自由模式：已选择断面终点，开始创建断面');
-                createCrossLineByEndpointsRef.current(start, clicked);
+                createCrossLineByEndpointsRef.current(start, rawPoint, anchor);
               }
             }
           }
@@ -1762,6 +2016,8 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.on('mousemove', crossLineHitLayers, (e) => {
+        // 框选时不要让 hover 改光标：十字光标被顶回 pointer，用户会以为画不了框
+        if (boxSelectModeRef.current) return;
         if (isSelectingCrossLinesRef.current && crossLineEditModeRef.current === 'select') {
           map.getCanvas().style.cursor = 'pointer';
 
@@ -1787,6 +2043,8 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.on('mousemove', hitLayers, (e) => {
+        // 框选时不要让 hover 改光标：十字光标被顶回 pointer，用户会以为画不了框
+        if (boxSelectModeRef.current) return;
         if (isSelectingCrossLinesRef.current && crossLineEditModeRef.current === 'add') {
           map.getCanvas().style.cursor = 'crosshair';
 
@@ -1820,6 +2078,8 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.on('mouseleave', hitLayers, () => {
+        // 框选时不要让 hover 改光标：十字光标被顶回 pointer，用户会以为画不了框
+        if (boxSelectModeRef.current) return;
         const source = map.getSource('snap-point') as mapboxgl.GeoJSONSource;
         if (source) source.setData(turf.featureCollection([]));
 
@@ -1827,6 +2087,8 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.on('mousemove', crossLineHitLayers, (e) => {
+        // 框选时不要让 hover 改光标：十字光标被顶回 pointer，用户会以为画不了框
+        if (boxSelectModeRef.current) return;
         if (isSelectingCrossLinesRef.current) {
           map.getCanvas().style.cursor = 'pointer';
 
@@ -1852,6 +2114,8 @@ function EditorMap(props: EditorMapProps) {
       });
 
       map.on('mouseleave', crossLineHitLayers, () => {
+        // 框选时不要让 hover 改光标：十字光标被顶回 pointer，用户会以为画不了框
+        if (boxSelectModeRef.current) return;
         if (isSelectingCrossLinesRef.current) {
           map.getCanvas().style.cursor = '';
 
@@ -1869,7 +2133,224 @@ function EditorMap(props: EditorMapProps) {
     };
   }, [mapStyle]);
 
-  return <div ref={mapContainer} className="map-full" />;
+  // —— 框选结果同步：bounds / 命中 id / 岸段或断面数据任一变化都要重画 ——
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    // 框的颜色跟着用途走：岸段筛选是紫（只是"挑出来看看"），断面删除是红（"要没了"）。
+    // 只换颜色、不换图层：两套用途共用同一个 rect source，换色比维护两份图层省事，
+    // 也不会出现"两个框同时在图上"的歧义。
+    const accent = boxPurpose === 'sections' ? '#ef4444' : '#7c3aed';
+    try {
+      map.setPaintProperty('box-select-rect-fill', 'fill-color', accent);
+      map.setPaintProperty('box-select-rect-line', 'line-color', accent);
+    } catch {
+      /* 图层还没建好（首次 load 前）：下面 syncBoxSelectionLayers 会在 load 后再画一次 */
+    }
+    const apply = () => syncBoxSelectionLayers(
+      map,
+      committedBounds,
+      committedBankIds,
+      uploadedDataRef.current,
+      committedSectionIds,
+      perpendicularDataRef.current,
+    );
+    // 与 uploadedData 的同步同一个套路：setData 之后 isStyleLoaded() 会短暂为 false，
+    // 直接调用会丢一次更新（表现为"框画好了但高亮要等下一次才出现"）。
+    if (map.isStyleLoaded()) {
+      apply();
+      return undefined;
+    }
+    map.once('idle', apply);
+    return () => {
+      map.off('idle', apply);
+    };
+  }, [
+    boxPurpose,
+    props.boxSelectionBounds,
+    props.boxSelectionBankIds,
+    props.sectionBoxDeleteBounds,
+    props.sectionBoxDeleteIds,
+    uploadedData,
+    perpendicularData,
+  ]);
+
+  /**
+   * 画框交互。
+   *
+   * <p>为什么不用 mapbox-gl-draw / mapbox-gl-draw-rectangle：为一个矩形引一个只在框选时
+   * 才有用的插件，会把它的样式、模式栈、事件优先级一起带进来（和现有的断面拾取、端点拖拽
+   * 打架的概率不低）。这里只需要「按下 → 拖 → 松开」三件事，自己接 DOM 事件更可控。
+   *
+   * <p>拖拽期间只写 GeoJSON source、不 setState：mousemove 每帧一次 React 渲染，
+   * 在几百条岸段的地图上会明显掉帧。松手时才把最终 bounds 交给上层。
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !props.boxSelectMode) return;
+
+    const container = map.getCanvasContainer();
+    const canvas = map.getCanvas();
+    const prevCursor = canvas.style.cursor;
+
+    // 拖拽平移 / shift 框选缩放 / 双击缩放 / 拖拽旋转都会和画框抢同一批鼠标事件，
+    // 先记下原始开关状态，退出时按原样恢复（断面拖拽结束时会 enable 回来，别把它弄丢）。
+    const wasDragPan = map.dragPan.isEnabled();
+    const wasBoxZoom = map.boxZoom.isEnabled();
+    const wasDragRotate = map.dragRotate.isEnabled();
+    const wasDoubleClickZoom = map.doubleClickZoom.isEnabled();
+    map.dragPan.disable();
+    map.boxZoom.disable();
+    map.dragRotate.disable();
+    map.doubleClickZoom.disable();
+    canvas.style.cursor = 'crosshair';
+
+    let anchor: mapboxgl.LngLat | null = null;
+    let anchorPoint: [number, number] | null = null;
+    let dragging = false;
+
+    /**
+     * 鼠标事件 → 经纬度。
+     *
+     * <p>不用 `map.mouseEventToLngLat`：mapbox-gl v3 的类型里已经没有它（运行时还在），
+     * 直接用会让 `tsc -b` 挂掉。`unproject` 是公开且稳定的 API，配合容器矩形算一下即可 ——
+     * 顺便也把"拖到容器外"的情况算对（clientX 可能为负）。
+     */
+    const toLngLat = (ev: MouseEvent): mapboxgl.LngLat => {
+      const rect = container.getBoundingClientRect();
+      return map.unproject([ev.clientX - rect.left, ev.clientY - rect.top]);
+    };
+
+    const writeRect = (a: mapboxgl.LngLat, b: mapboxgl.LngLat) => {
+      const source = map.getSource('box-select-rect') as mapboxgl.GeoJSONSource | undefined;
+      if (!source) return;
+      const bounds = boxFromCorners([a.lng, a.lat], [b.lng, b.lat]);
+      source.setData(
+        isValidBox(bounds) ? turf.featureCollection([boxPolygon(bounds)]) : turf.featureCollection([]),
+      );
+    };
+
+    /** 把图上的临时框擦掉，并恢复"上一次已生效的框"（否则取消一次会顺手把已有结果也抹掉）。 */
+    const restoreCommittedBox = () => {
+      syncBoxSelectionLayers(
+        map,
+        boxBoundsRef.current,
+        boxBankIdsRef.current,
+        uploadedDataRef.current,
+        boxSectionIdsRef.current,
+        perpendicularDataRef.current,
+      );
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragging = true;
+      anchor = toLngLat(e);
+      anchorPoint = [e.clientX, e.clientY];
+      writeRect(anchor, anchor);
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging || !anchor) return;
+      e.preventDefault();
+      writeRect(anchor, toLngLat(e));
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (!dragging || !anchor || !anchorPoint) return;
+      dragging = false;
+      const from = anchor;
+      const startPoint = anchorPoint;
+      const to = toLngLat(e);
+      anchor = null;
+      anchorPoint = null;
+
+      // 4px 像素门限：手抖点一下不该产生一个"选中 0 条"的框，也不该把上一条结果清掉
+      const dx = Math.abs(e.clientX - startPoint[0]);
+      const dy = Math.abs(e.clientY - startPoint[1]);
+      if (dx < 4 || dy < 4) {
+        restoreCommittedBox();
+        onBoxSelectCancelRef.current?.('too-small');
+        return;
+      }
+
+      const bounds = boxFromCorners([from.lng, from.lat], [to.lng, to.lat]);
+      if (!isValidBox(bounds)) {
+        restoreCommittedBox();
+        onBoxSelectCancelRef.current?.('too-small');
+        return;
+      }
+      writeRect(from, to);
+      onBoxSelectDoneRef.current?.(bounds);
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragging = false;
+      anchor = null;
+      anchorPoint = null;
+      restoreCommittedBox();
+      onBoxSelectCancelRef.current?.('escape');
+    };
+
+    const onContextMenu = (e: MouseEvent) => {
+      // 右键取消：不 preventDefault 的话会弹出浏览器菜单，选择时会打断当前操作
+      e.preventDefault();
+      e.stopPropagation();
+      dragging = false;
+      anchor = null;
+      anchorPoint = null;
+      restoreCommittedBox();
+      onBoxSelectCancelRef.current?.('contextmenu');
+    };
+
+    container.addEventListener('mousedown', onMouseDown);
+    // mousemove / mouseup 挂在 window 上：拖到画布外（甚至拖出窗口）也要能收尾，
+    // 只挂 canvas 会出现"拖出去松手，画框状态卡住、地图再也拖不动"。
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('keydown', onKeyDown, true);
+    container.addEventListener('contextmenu', onContextMenu);
+
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('keydown', onKeyDown, true);
+      container.removeEventListener('contextmenu', onContextMenu);
+      try {
+        if (wasDragPan) map.dragPan.enable();
+        if (wasBoxZoom) map.boxZoom.enable();
+        if (wasDragRotate) map.dragRotate.enable();
+        if (wasDoubleClickZoom) map.doubleClickZoom.enable();
+        canvas.style.cursor = prevCursor;
+      } catch {
+        /* 地图已销毁（换底图 / 离开页面）：handler 跟着 map 一起没了，不用再恢复 */
+      }
+    };
+  }, [props.boxSelectMode, mapStyle]);
+
+
+  return (
+    <>
+      <div ref={mapContainer} className="map-full" />
+      {/* 画框提示条：只在"等用户拖框"时出现，Esc / 右键都能退，先把退路写给用户。
+          框选删除比框选岸段更危险，配色与文案都单独区分，避免看错当前在做什么。 */}
+      {props.boxSelectMode && (
+        <div
+          className={`map-box-select-hint${boxPurpose === 'sections' ? ' is-danger' : ''}`}
+          data-tour="map-box-select-hint"
+        >
+          {boxPurpose === 'sections'
+            ? '按住鼠标拖出矩形：框内的断面将被删除 · Esc 或右键取消'
+            : '按住鼠标拖出矩形框选岸段 · Esc 或右键取消'}
+        </div>
+      )}
+    </>
+  );
 }
 
 export default EditorMap;

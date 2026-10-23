@@ -84,7 +84,15 @@ export const ACTION_META: Record<ActionKey, ActionMeta> = {
   'task.runPending': { key: 'task.runPending', label: '只算未计算断面', icon: 'play' },
   // 打开的是「本任务」自己的参数集（basic_params.task_id = 该任务），不是模板库那份。
   'task.setParam': { key: 'task.setParam', label: '编辑本任务参数…', icon: 'settings' },
+  // 复制任务：只搬「配置 + 断面几何 + 参数集」，状态重置为 pending，不复制计算结果。
+  // 与「含结果」拆成两个菜单项，是为了不在弹窗里再塞一个勾选框 ——
+  // 复制结果会带来「这批结论不是本任务算的」的语义，用户应该在点之前就知道自己在要什么。
+  'task.copy': { key: 'task.copy', label: '复制任务', icon: 'copy' },
+  'task.copyWithResults': { key: 'task.copyWithResults', label: '复制任务（含计算结果）', icon: 'copy' },
   'task.viewResult': { key: 'task.viewResult', label: '查看结果', icon: 'chart' },
+  // 「分析」= 在地图上框一块区域，统计区内各风险等级的占比与长度（不写库、不改任务）。
+  // 与「查看结果」的区别：后者是整任务的表格/报告视角，前者是"只看我圈起来的这一块"。
+  // 图标用 layers 而不是 chart —— 菜单里已经有一个 chart（查看结果），两个同图标会看串。
   'task.delete': { key: 'task.delete', label: '删除任务', icon: 'trash', danger: true, separatorBefore: true },
 
   // —— 校验规则（树里与「数据资源」「计算任务」并列的「规则」节点）——
