@@ -1,11 +1,32 @@
-import { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2, Send, MessageCircle, Save } from 'lucide-react';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
+import { Plus, Trash2, Send, MessageCircle, Save, Square, Wrench, Brain } from 'lucide-react';
 import { getStoredAiModel, setStoredAiModel, onAiModelChanged } from '../utils/aiModelSettings';
+import { streamChat, type ChatStreamEvent } from '../utils/chatStream';
+
+// 版本指纹：加载到这一版模块时在控制台打一行。Vite 对「非编辑器写入」的文件改动
+// 不触发 HMR（curl 拿到新内容 ≠ 浏览器内存里是新模块），没有这行指纹就只能靠猜。
+// 判据：F12 Console 里没有这行 ⇒ 页面跑的还是旧模块，硬刷新或重启 dev server。
+console.info(
+  '%c[ChatPanel] 流式版 · POST /ai/agent/chat/stream（有思考块与工具卡片）',
+  'color:#0284c7;font-weight:600',
+);
+
+/** 一次工具调用在 UI 上的轨迹（入参与结果都是流式增量拼出来的）。 */
+interface ChatToolCall {
+  id: string;
+  name: string;
+  args: string;
+  result: string;
+  status: 'running' | 'done';
+}
 
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   contextText?: string; // 上下文标签文本（如 "📋 任务A  📄 report_xxx.md"）
+  thinking?: string;    // 思考过程（streamEvents 的 ThinkingBlockDelta 累积）
+  tools?: ChatToolCall[];
+  streaming?: boolean;  // 该消息是否还在接收增量
 }
 
 interface ChatSession {
@@ -36,6 +57,9 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
   const [models, setModels] = useState<{ key: string; label: string }[]>([]);
   const [selectedModel, setSelectedModel] = useState(() => getStoredAiModel());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // 流式令牌：每次发送自增。收到旧令牌的帧一律丢弃（切会话 / 重发 / 停止）
+  const streamTokenRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetchSessions();
@@ -171,9 +195,47 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
     setSelectedSkills(selectedSkills.filter(s => s !== name));
   };
 
+  /**
+   * 只改「最后一条 assistant 消息」。
+   *
+   * <p>流式下每个 delta 都会调用一次，所以这里按索引原位替换、不动其它消息，
+   * 也不重建数组结构（否则整段列表会重新挂载、丢失折叠态）。
+   */
+  const patchLast = (token: number, fn: (m: ChatMessage) => ChatMessage) => {
+    if (streamTokenRef.current !== token) return;
+    setMessages(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      if (last.role !== 'assistant') return prev;
+      const next = prev.slice();
+      next[next.length - 1] = fn({ ...last });
+      return next;
+    });
+  };
+
+  const stopStreaming = () => {
+    streamTokenRef.current += 1; // 让在途帧失效
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    setMessages(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      if (last.role !== 'assistant' || !last.streaming) return prev;
+      const next = prev.slice();
+      next[next.length - 1] = {
+        ...last,
+        streaming: false,
+        content: last.content ? `${last.content}\n\n（已停止）` : '（已停止）',
+      };
+      return next;
+    });
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || !activeSessionId || loading) return;
     const question = input.trim();
+    const sessionIdAtSend = activeSessionId;
     // 捕获当前上下文标签，拼成显示文本
     const ctxParts: string[] = [];
     if (chatReports && chatReports.length > 0) {
@@ -186,38 +248,114 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: question, contextText }]);
     // 持久化用户消息
-    saveChatMessage(activeSessionId, 'user', question, contextText);
+    saveChatMessage(sessionIdAtSend, 'user', question, contextText);
     // 消息发出后清空上下文标签
     if (setChatReports) setChatReports([]);
     if (setChatTasks) setChatTasks([]);
+
+    const token = streamTokenRef.current + 1;
+    streamTokenRef.current = token;
+    const abort = new AbortController();
+    abortRef.current = abort;
     setLoading(true);
+    // 先占一条空的 assistant 消息：思考 / 工具 / 正文都往上长，UI 只追加不重建
+    setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '', tools: [], streaming: true }]);
+
+    let finalText = '';
+    let updatedReports: { filename: string; updated?: string; error?: string }[] = [];
     try {
-      const res = await fetch('/v0/bank/ai/agent/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, sessionId: activeSessionId, skills: selectedSkills || [], taskIds: chatTasks ? chatTasks.map(t => t.taskId) : [], reportIds: chatReports ? chatReports.map(r => r.filename) : [], model: selectedModel }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        let content = data.data;
-        if (typeof content === 'object' && content !== null) {
-          content = content.text || content.thinking || JSON.stringify(content);
-        }
-        const replyText = String(content);
-        setMessages(prev => [...prev, { role: 'assistant', content: replyText }]);
-        // 持久化 AI 回复
-        saveChatMessage(activeSessionId, 'assistant', replyText);
-        // 如果 AI 修改了报告文件，通知父组件刷新
-        if (data.updatedReports && data.updatedReports.length > 0 && onReportsUpdated) {
-          onReportsUpdated();
-        }
-      } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: '请求失败，请重试。' }]);
+      await streamChat(
+        {
+          question,
+          sessionId: sessionIdAtSend,
+          skills: selectedSkills || [],
+          taskIds: chatTasks ? chatTasks.map(t => t.taskId) : [],
+          reportIds: chatReports ? chatReports.map(r => r.filename) : [],
+          model: selectedModel,
+        },
+        (event: ChatStreamEvent) => {
+          switch (event.type) {
+            case 'thinking':
+              patchLast(token, m => ({ ...m, thinking: `${m.thinking || ''}${event.delta}` }));
+              break;
+            case 'text':
+              patchLast(token, m => ({ ...m, content: `${m.content}${event.delta}` }));
+              break;
+            case 'tool_call':
+              patchLast(token, m => ({
+                ...m,
+                tools: [...(m.tools || []),
+                  { id: event.id, name: event.name, args: '', result: '', status: 'running' }],
+              }));
+              break;
+            case 'tool_args':
+              patchLast(token, m => ({
+                ...m,
+                tools: (m.tools || []).map(t => (t.id === event.id ? { ...t, args: t.args + event.delta } : t)),
+              }));
+              break;
+            case 'tool_call_end':
+              patchLast(token, m => ({
+                ...m,
+                tools: (m.tools || []).map(t => (t.id === event.id ? { ...t, args: event.args || t.args } : t)),
+              }));
+              break;
+            case 'tool_result':
+              // 只留尾部 1200 字：工具结果可能上万字，全量塞进状态会拖垮渲染
+              patchLast(token, m => ({
+                ...m,
+                tools: (m.tools || []).map(t =>
+                  t.id === event.id ? { ...t, result: `${t.result}${event.delta}`.slice(-1200) } : t),
+              }));
+              break;
+            case 'tool_result_end':
+              patchLast(token, m => ({
+                ...m,
+                tools: (m.tools || []).map(t => (t.id === event.id ? { ...t, status: 'done' } : t)),
+              }));
+              break;
+            case 'warn':
+              patchLast(token, m => ({
+                ...m,
+                content: `${m.content}${m.content ? '\n\n' : ''}⚠ ${event.message}`,
+              }));
+              break;
+            case 'error':
+              patchLast(token, m => ({ ...m, streaming: false, content: m.content || `⚠ ${event.message}` }));
+              break;
+            case 'done':
+              // done.data 才是收口后的正文：已剥离 <!--REPORT--> 之后的报告全文
+              finalText = event.data;
+              updatedReports = event.updatedReports || [];
+              patchLast(token, m => ({
+                ...m,
+                streaming: false,
+                content: event.data || m.content,
+                thinking: event.thinking || m.thinking,
+              }));
+              break;
+            default:
+              break; // start / round：不上屏
+          }
+        },
+        abort.signal,
+      );
+      if (finalText && streamTokenRef.current === token) {
+        saveChatMessage(sessionIdAtSend, 'assistant', finalText);
       }
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: '网络错误，请检查后端服务。' }]);
+      if (updatedReports.length > 0 && onReportsUpdated) {
+        onReportsUpdated();
+      }
+    } catch (e) {
+      const aborted = (e as Error)?.name === 'AbortError';
+      patchLast(token, m => ({
+        ...m,
+        streaming: false,
+        content: m.content || (aborted ? '（已停止）' : '网络错误，请检查后端服务。'),
+      }));
     } finally {
-      setLoading(false);
+      if (streamTokenRef.current === token) setLoading(false);
+      abortRef.current = null;
     }
   };
 
@@ -356,6 +494,12 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
                     {msg.contextText}
                   </div>
                 )}
+                {msg.role === 'assistant' && msg.thinking && (
+                  <ThinkingTrace text={msg.thinking} streaming={!!msg.streaming} />
+                )}
+                {msg.role === 'assistant' && msg.tools && msg.tools.length > 0 && (
+                  <ToolTrace tools={msg.tools} />
+                )}
                 <div style={{
                   fontSize: '0.875rem', lineHeight: 1.6,
                   color: '#1e293b', whiteSpace: 'pre-wrap',
@@ -363,6 +507,13 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
                   borderRadius: 8, border: '1px solid #e2e8f0',
                 }}>
                   {msg.content}
+                  {msg.streaming && !msg.content && (
+                    <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>正在生成…</span>
+                  )}
+                  {msg.streaming && msg.content && (
+                    // 流式光标：随增量一起动，比 spinner 更能说明"还在往里写"
+                    <span style={{ color: '#0ea5e9', marginLeft: 2 }}>▍</span>
+                  )}
                 </div>
                 {msg.role === 'assistant' && msg.content.length > 20 && (
                   <button
@@ -379,9 +530,9 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
                 )}
               </div>
             ))}
-            {loading && (
+            {loading && !messages.some(m => m.streaming) && (
               <div style={{ color: '#94a3b8', fontSize: '0.875rem', fontStyle: 'italic' }}>
-                AI 正在思考...
+                正在连接模型…
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -461,6 +612,19 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
               }}
               rows={1}
             />
+            {loading && (
+              <button
+                onClick={stopStreaming}
+                title="停止生成（会中断后端的 agent 推理）"
+                style={{
+                  border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626',
+                  borderRadius: 14, padding: '8px 12px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem',
+                }}
+              >
+                <Square size={13} /> 停止
+              </button>
+            )}
             <button
               onClick={sendMessage}
               disabled={loading || !input.trim()}
@@ -503,6 +667,77 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * 思考过程块：流式期间默认展开、结束后自动折叠。
+ *
+ * <p>用组件自身的 state 而不是父级控制：父级每个 delta 都重渲染，
+ * 受控折叠态会被"自动展开"反复覆盖，用户手动收起后又会弹开。
+ */
+function ThinkingTrace({ text, streaming }: { text: string; streaming: boolean }) {
+  const [open, setOpen] = useState(streaming);
+  useEffect(() => {
+    if (streaming) setOpen(true);
+  }, [streaming]);
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b',
+          borderRadius: 6, padding: '2px 8px', fontSize: '0.7rem', cursor: 'pointer',
+        }}
+      >
+        <Brain size={11} />
+        思考过程（{text.length} 字）· {open ? '收起' : '展开'}
+        {streaming && <span style={{ color: '#0ea5e9' }}>· 进行中</span>}
+      </button>
+      {open && (
+        <div style={{
+          marginTop: 4, fontSize: '0.72rem', lineHeight: 1.55, color: '#64748b',
+          whiteSpace: 'pre-wrap', maxHeight: 160, overflowY: 'auto',
+          background: '#f8fafc', border: '1px dashed #cbd5e1',
+          borderRadius: 6, padding: '6px 8px',
+        }}>
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 工具调用轨迹：名字 + 运行态 + 入参 / 结果（都可折叠，长结果只留尾部）。 */
+function ToolTrace({ tools }: { tools: ChatToolCall[] }) {
+  const preStyle: CSSProperties = {
+    margin: '4px 0 0', fontSize: '0.68rem', lineHeight: 1.5, color: '#475569',
+    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+    maxHeight: 120, overflowY: 'auto',
+    background: '#ffffff', border: '1px solid #e0f2fe', borderRadius: 4, padding: '4px 6px',
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+      {tools.map(t => (
+        <details key={t.id} style={{
+          background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: '3px 8px',
+        }}>
+          <summary style={{
+            cursor: 'pointer', fontSize: '0.72rem', color: '#0369a1',
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            <Wrench size={11} />
+            <span style={{ fontWeight: 600 }}>{t.name}</span>
+            <span style={{ color: t.status === 'running' ? '#d97706' : '#059669' }}>
+              {t.status === 'running' ? '（执行中…）' : '（已完成）'}
+            </span>
+          </summary>
+          {t.args && <pre style={preStyle}>{`入参 ${t.args}`}</pre>}
+          {t.result && <pre style={preStyle}>{`结果 ${t.result}`}</pre>}
+        </details>
+      ))}
     </div>
   );
 }
