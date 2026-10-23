@@ -765,7 +765,17 @@ export async function runCurrentTask(params: {   perpendicularData: GeoJSON.Feat
     });
 
     if (!response.ok) {
-      throw new Error(`运行任务失败: ${response.statusText}`);
+      // 409 现在是可预期的结果（P2 分布式锁）：任务已在跑、或该任务下有断面在单独重算。
+      // 后端把可读原因放在 error.message 里，只报 statusText 的话用户看到的是 "Conflict"。
+      let detail = '';
+      try {
+        const body = await response.json();
+        const err = body?.error as Record<string, unknown> | undefined;
+        detail = String(err?.message ?? body?.message ?? '');
+      } catch {
+        /* body 不是 JSON 就退回状态码 */
+      }
+      throw new Error(detail || `${response.status} ${response.statusText}`);
     }
 
     const result = await response.json();
