@@ -1538,14 +1538,16 @@
   border-radius: 50%;
 }
 
-/* 结果页图例。色值必须与 utils/riskScoring.ts 的 RISK_COLORS 一致：
-   high=高风险(level 3) / medium=较高风险(level 2) / low=中风险(level 1) / no=低风险(level 0)。
-   2026-10-20：低风险与「无风险值」不再着色（见 map/sectionRenderVisibility.ts），
-   no 改成虚线空心点，让图例自己说明「这一档不画」。 */
-.dot.high { background: #ef4444; }
-.dot.medium { background: #f97316; }
-.dot.low { background: #3b82f6; }
-.dot.no {
+/* 结果页图例。色值必须与 utils/riskScoring.ts 的 RISK_COLORS 一致。
+   类名按「显示等级」命名，不要再用 high/medium/low 这类品级词 ——
+   旧命名与实际档位是错位的（.dot.low 渲染的其实是「中风险」蓝，.dot.no 才是低风险），
+   2026-10-26 改低风险上色时踩到过这个坑，故一并改成语义化命名。
+   2026-10-26：四个等级全部着色；虚线空心点只留给「无风险值」（未计算 / 计算失败）。 */
+.dot.lv3 { background: #ef4444; }
+.dot.lv2 { background: #f97316; }
+.dot.lv1 { background: #3b82f6; }
+.dot.lv0 { background: #10b981; }
+.dot.none {
   background: transparent;
   border: 1px dashed #94a3b8;
   box-sizing: border-box;

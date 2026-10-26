@@ -4,7 +4,9 @@
  * 守三件事：
  * 1. **长度** = 岸段色带在选区内的长度（按断面中点切段，与图上颜色同一套口径）；
  * 2. **断面数** = 与选区相交的断面（不是「中点在内」）；
- * 3. 低风险 / 未计算**计入分母**（否占比会虚高），且它们标成 `rendered: false`。
+ * 3. 低风险 / 未计算**计入分母**（否占比会虚高）。两者的区别在 `rendered`：
+ *    低风险自 2026-10-26 起在图上着绿色 ⇒ `rendered: true`；
+ *    未计算是「没数」，图上仍留空 ⇒ `rendered: false`。
  *
  * 全部用真实经纬度附近的坐标（119.2E / 32.2N），turf 算出来的就是米，不靠手写换算。
  */
@@ -178,7 +180,7 @@ describe('computeAreaRiskStats', () => {
     expect(stats.totalLengthM).toBeCloseTo(totalBankLengthM(), 3);
   });
 
-  it('低风险计入分母（否则占比虚高），但标成不渲染', () => {
+  it('低风险计入分母且同属可渲染（2026-10-26 起上色）', () => {
     const sections = [
       sectionAt('S1', LNG0, 3),
       sectionAt('S2', (LNG0 + LNG1) / 2, 0),
@@ -194,7 +196,9 @@ describe('computeAreaRiskStats', () => {
     const high = stats.rows.find(r => r.key === '3')!;
     expect(low.lengthRatio).toBeCloseTo(0.75, 3);
     expect(high.lengthRatio).toBeCloseTo(0.25, 3);
-    expect(low.rendered).toBe(false);
+    // rendered 的语义 = 「这个等级在图上会不会着色」。低风险自 2026-10-26 起着绿，
+    // 所以不再被标成「图上不渲染」（面板也不会再把它灰化）。
+    expect(low.rendered).toBe(true);
     expect(high.rendered).toBe(true);
     // 两行长度相加 = 总长：低风险没有被「悄悄丢掉」
     expect(low.lengthM + high.lengthM).toBeCloseTo(stats.totalLengthM, 3);

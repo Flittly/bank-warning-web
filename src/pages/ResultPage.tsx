@@ -2262,9 +2262,10 @@ function ResultPage(props: ResultPageProps) {
 
   // 渲染断面集合几何并在地图显示
   //
-  // 【可见性口径】2026-10-20 起：**低风险（显示等级 0）与「无风险值」（未计算 / 计算失败）
-  // 不出实色**，颜色给 `rgba(0,0,0,0)`，并在命中层里过滤掉，避免出现「看不见却能点」的隐形靶子。
-  // 判定只走 map/sectionRenderVisibility，别在这里就地写 level !== 0 —— 否则规则会分裂成两份。
+  // 【可见性口径】只有「无风险值」（未计算 / 计算失败）不出实色：颜色给 `rgba(0,0,0,0)`，
+  // 并在命中层里过滤掉，避免出现「看不见却能点」的隐形靶子。
+  // 四个风险等级（含低风险，2026-10-26 起）全部上色，别在这里就地写 level > 0 —— 判定只走
+  // map/sectionRenderVisibility，否则规则会分裂成两份。
   const renderSections = (sections: SectionResult[]) => {
     const map = mapRef.current;
     if (!map) return;
@@ -2522,11 +2523,12 @@ function ResultPage(props: ResultPageProps) {
         .filter(item => item.progress !== null)
         .sort((a, b) => (a.progress as number) - (b.progress as number));
 
-      // 【可见性口径】低风险与无风险值的断面不参与实色着色（见 map/sectionRenderVisibility）：
-      //   * 整条岸段一条可渲染断面都没有 → stops 为 null → 直接把图层 visibility 关掉；
-      //   * 部分断面不渲染 → 岸段按「最近断面」切成区间（Voronoi 式），不渲染的那条断面
-      //     把它管辖的整段（前后各半个间距）填透明。第一版只在该断面位置插一个透明点，
-      //     结果两侧实色跨过它插值，透明点不到 1 像素，肉眼完全看不出来 —— 这是本次修复的根因。
+      // 【可见性口径】只有「无风险值」的断面不参与实色着色（见 map/sectionRenderVisibility）：
+      //   * 整条岸段一条有值的断面都没有 → stops 为 null → 直接把图层 visibility 关掉；
+      //   * 部分断面无风险值 → 岸段按「最近断面」切成区间（Voronoi 式），无值的那条断面
+      //     把它管辖的整段（前后各半个间距）填透明。注意不能只在该断面位置插一个透明点：
+      //     两侧实色会跨过它插值，透明点不到 1 像素、肉眼完全看不出来 —— 这是早前修复过的根因。
+      //   低风险自 2026-10-26 起正常着绿色，不再走这条「留空」路径。
       const riskPoints: RiskGradientPoint[] = placedSections.map(({ section: s, progress }) => {
         const info = resolveSectionRisk(s);
         return {
@@ -2584,7 +2586,7 @@ function ResultPage(props: ResultPageProps) {
           type: 'line',
           source: sourceId,
           layout: {
-            // 整条岸段无可渲染断面时，图层先建出来但直接不显示 —— 之后人工改成高风险
+            // 整条岸段都没有风险值时，图层先建出来但直接不显示 —— 之后人工改成有值
             // 只需切 visibility，不必重建图层（重建会丢掉 lineMetrics 的缓存）。
             'visibility': bankVisible ? 'visible' : 'none',
           },
@@ -3126,15 +3128,18 @@ function ResultPage(props: ResultPageProps) {
               {selectedTask && !loading && (
                 <div className="result-info">
                   <h5>当前分析结果</h5>
-                  {/* 文案直读 RISK_LABELS，别再写死中文：名称只有 riskScoring.ts 一处真源。 */}
+                  {/* 文案直读 RISK_LABELS，别再写死中文：名称只有 riskScoring.ts 一处真源。
+                      四个等级全部着色（2026-10-26 起低风险也是绿色实色），
+                      虚线空心点只代表「无风险值」——这是「没数」，不是第 5 个等级。 */}
                   <div className="legend">
-                    <div className="legend-item"><span className="dot high"></span>{RISK_LABELS[3]}</div>
-                    <div className="legend-item"><span className="dot medium"></span>{RISK_LABELS[2]}</div>
-                    <div className="legend-item"><span className="dot low"></span>{RISK_LABELS[1]}</div>
-                    <div className="legend-item"><span className="dot no"></span>{RISK_LABELS[0]}（不渲染）</div>
+                    <div className="legend-item"><span className="dot lv3"></span>{RISK_LABELS[3]}</div>
+                    <div className="legend-item"><span className="dot lv2"></span>{RISK_LABELS[2]}</div>
+                    <div className="legend-item"><span className="dot lv1"></span>{RISK_LABELS[1]}</div>
+                    <div className="legend-item"><span className="dot lv0"></span>{RISK_LABELS[0]}</div>
+                    <div className="legend-item"><span className="dot none"></span>无风险值（不渲染）</div>
                   </div>
                   <div className="legend-hint">
-                    低风险与「无风险值」（未计算 / 计算失败）的断面不再上色，岸段色带同样留空。
+                    四个风险等级全部上色；只有「无风险值」（未计算 / 计算失败）的断面与岸段留空。
                   </div>
                 </div>
               )}
