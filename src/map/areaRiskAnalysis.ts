@@ -28,9 +28,9 @@
  * </ul>
  *
  * <h3>低风险 / 未计算</h3>
- * 图上它们**不着色**（见 `sectionRenderVisibility`），但长度仍然计入分母 ——
- * 否则「高风险占 60%」会因为分母只剩着色段而虚高成 100%。所以面板里它们单列一行，
- * 并标注「图上不渲染」。
+ * 低风险（2026-10-26 起）在图上正常着绿；「未计算」在色带上不留颜色，改由灰色虚线层显示
+ * （见 `sectionRenderVisibility`）。两者都**长度计入分母** ——
+ * 否则「高风险占 60%」会因为分母只剩着色段而虚高成 100%。所以面板里它们各自单列一行。
  */
 
 import * as turf from '@turf/turf';
@@ -40,6 +40,7 @@ import { sectionProgressAlongBank } from './sectionBandProgress';
 import {
   buildRiskBandSpans,
   isRiskLevelRenderable,
+  NO_DATA_RISK_COLOR,
   TRANSPARENT_RISK_COLOR,
   type RiskBandSpan,
   type RiskGradientPoint,
@@ -47,8 +48,9 @@ import {
 
 /** 无风险值（未计算 / 计算失败）那一行的固定键与文案。 */
 export const UNKNOWN_RISK_KEY = 'none';
-/** 无风险值的兜底色，与出图 `DEFAULT_RISK_COLOR` 同一个灰。 */
-export const UNKNOWN_RISK_COLOR = '#94a3b8';
+/** 无风险值的兜底色。与地图灰色虚线层、出图 `DEFAULT_RISK_COLOR` 同一个灰，
+ *  色值唯一真源在 `sectionRenderVisibility.NO_DATA_RISK_COLOR`。 */
+export const UNKNOWN_RISK_COLOR = NO_DATA_RISK_COLOR;
 /** 无风险值那一行/图例的文案。 */
 export const UNKNOWN_RISK_LABEL = '未计算';
 
@@ -81,7 +83,11 @@ export interface AreaRiskRow {
   level: number | null;
   label: string;
   color: string;
-  /** 图上是否着色（低风险与未计算为 false，但长度仍计入分母） */
+  /**
+   * 图上是否有**实色**（四个等级为 true）。
+   * 「未计算」为 false，但它不等于「看不见」—— 色带上留空、另有灰色虚线层显示，
+   * 所以面板标签写的是「图上为灰色虚线」，不是「不渲染」。
+   */
   rendered: boolean;
   sectionCount: number;
   /** 断面占比 0..1 */

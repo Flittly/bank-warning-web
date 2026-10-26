@@ -126,7 +126,7 @@ export default function AreaRiskAnalysisPanel({
                   <td>
                     <span className="aap-dot" style={{ background: row.color }} />
                     {row.label}
-                    {!row.rendered && <span className="aap-tag">图上不渲染</span>}
+                    {!row.rendered && <span className="aap-tag">图上为灰色虚线</span>}
                   </td>
                   <td className="num">
                     {row.sectionCount}

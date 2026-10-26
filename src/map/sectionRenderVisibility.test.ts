@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  NO_DATA_RISK_COLOR,
   TRANSPARENT_RISK_COLOR,
   buildRiskBandSpans,
   buildRiskGradientStops,
+  collectNoDataSpans,
   hasRenderableRisk,
   isRiskLevelRenderable,
+  sectionLayerFilters,
   shouldRenderRisk,
 } from './sectionRenderVisibility';
+import { UNKNOWN_RISK_COLOR } from './areaRiskAnalysis';
 
 /** 从 Mapbox 表达式里把 [val, color] 对抽出来，便于断言。 */
 function pairsOf(stops: unknown[]): Array<[number, string]> {
@@ -103,6 +107,75 @@ describe('buildRiskBandSpans', () => {
     // [0.15, 0.8] 这段里只有 no-data 那条管辖区留空
     expect(spans[1].start).toBeCloseTo(0.15, 9);
     expect(spans[2].end).toBeCloseTo(0.8, 9);
+  });
+});
+
+describe('collectNoDataSpans（地图灰色虚线层的数据来源）', () => {
+  it('只挑出「无风险值」的区间，实色区间一条都不进虚线层', () => {
+    const spans = buildRiskBandSpans([
+      { val: 0, level: 3, color: RED },
+      { val: 0.3, level: null, color: NO_DATA_RISK_COLOR },
+      { val: 0.7, level: 0, color: GREEN },
+    ]);
+    const noData = collectNoDataSpans(spans);
+    expect(noData).toHaveLength(1);
+    expect(noData[0].level).toBeNull();
+    expect(noData[0].visible).toBe(false);
+    // 虚线区间必须与色带上的透明区间完全同一段，否则图上会出现「实色与虚线错位」
+    expect(noData[0].start).toBeCloseTo(spans[1].start, 12);
+    expect(noData[0].end).toBeCloseTo(spans[1].end, 12);
+    expect(noData[0].color).toBe(TRANSPARENT_RISK_COLOR);
+  });
+
+  it('整条岸段都没数据 → 虚线覆盖 0..1（不能因为「没实色」就整条消失）', () => {
+    const noData = collectNoDataSpans(
+      buildRiskBandSpans([
+        { val: 0.2, level: null, color: NO_DATA_RISK_COLOR },
+        { val: 0.8, level: null, color: NO_DATA_RISK_COLOR },
+      ]),
+    );
+    expect(noData).toHaveLength(2);
+    expect(noData[0].start).toBe(0);
+    expect(noData[noData.length - 1].end).toBe(1);
+  });
+
+  it('全部有值 → 虚线层为空（图层据此切 visibility:none）', () => {
+    expect(
+      collectNoDataSpans(
+        buildRiskBandSpans([
+          { val: 0.5, level: 0, color: GREEN },
+        ]),
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+describe('sectionLayerFilters（断面三层图层的互补关系）', () => {
+  const { solid, noData, hit } = sectionLayerFilters();
+
+  it('实色层与虚线层互为取反，合起来覆盖全部断面', () => {
+    expect(JSON.stringify(solid)).toBe(JSON.stringify(['!=', ['get', 'noData'], true]));
+    expect(JSON.stringify(noData)).toBe(JSON.stringify(['==', ['get', 'noData'], true]));
+  });
+
+  it('命中层不看 noData：无数据断面必须可点（否则人工评定没有入口）', () => {
+    const text = JSON.stringify(hit);
+    expect(text).not.toContain('noData');
+    // 旧实现挂的是这个，曾让无数据断面彻底摸不到
+    expect(text).not.toContain('hidden');
+  });
+});
+
+describe('无数据配色的一致性', () => {
+  it('地图虚线色与框选面板「未计算」行是同一个灰（两处必须同源）', () => {
+    expect(NO_DATA_RISK_COLOR).toBe('#94a3b8');
+    expect(UNKNOWN_RISK_COLOR).toBe(NO_DATA_RISK_COLOR);
+  });
+
+  it('无数据的灰绝不能当成一种等级色用：不在 RISK 四色里', () => {
+    ['#10b981', '#3b82f6', '#f97316', '#ef4444'].forEach(c => {
+      expect(c).not.toBe(NO_DATA_RISK_COLOR);
+    });
   });
 });
 

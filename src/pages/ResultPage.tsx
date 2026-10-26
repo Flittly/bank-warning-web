@@ -18,10 +18,13 @@ import { FlowFieldLayer, FLOW_FIELD_LAYER_ID, type FlowFieldStatus } from '../ma
 import { bankShadeWidthExpr } from '../map/bankShadeWidth';
 import { sectionProgressAlongBank } from '../map/sectionBandProgress';
 import {
+  NO_DATA_RISK_COLOR,
   TRANSPARENT_RISK_COLOR,
   buildRiskBandSpans,
   buildRiskGradientStops,
+  collectNoDataSpans,
   emptyRiskGradientStops,
+  sectionLayerFilters,
   shouldRenderRisk,
   type RiskGradientPoint,
 } from '../map/sectionRenderVisibility';
@@ -341,6 +344,15 @@ function parseList(data: any, key?: string): any[] {
 
 // 矩阵指标分组配置统一由 utils/riskScoring 提供（与人工修改的重算共用同一份定义）
 const MATRIX_GROUPS = RISK_MATRIX_GROUPS;
+
+/**
+ * 「无数据」虚线带的线宽倍率（相对实色色带）。
+ *
+ * 刻意比色带细：无数据段**不是一种等级**，跟彩色带同宽同位置会让它读起来像第 5 档；
+ * 细一档之后「灰 + 虚线 + 更窄」三重信号叠在一起，才不会被误读。
+ * 同时窄一点也给小比例尺下密集的平行岸段让位（见 map/bankShadeWidth.ts 的曲线理由）。
+ */
+const NO_DATA_BAND_WIDTH_SCALE = 0.75;
 
 interface ResultPageProps {
   initialTaskId?: string;
@@ -1473,17 +1485,16 @@ function ResultPage(props: ResultPageProps) {
     if (!mapRef.current) return;
     const map = mapRef.current;
     
-    if (map.getLayer('sections-line')) {
-      map.setLayoutProperty('sections-line', 'visibility', showSections ? 'visible' : 'none');
-    }
-    if (map.getLayer('sections-line-hit')) {
-      map.setLayoutProperty('sections-line-hit', 'visibility', showSections ? 'visible' : 'none');
-    }
+    ['sections-line', 'sections-nodata-line', 'sections-line-hit'].forEach(layer => {
+      if (map.getLayer(layer)) {
+        map.setLayoutProperty(layer, 'visibility', showSections ? 'visible' : 'none');
+      }
+    });
   }, [showSections]);
 
   // 清理地图上所有断面和中线图层/数据源
   const clearMapLayers = (map: mapboxgl.Map) => {
-    ['sections-line-hit', 'sections-line'].forEach(layer => {
+    ['sections-line-hit', 'sections-nodata-line', 'sections-line'].forEach(layer => {
       if (map.getLayer(layer)) map.removeLayer(layer);
     });
     if (map.getSource('sections-source')) map.removeSource('sections-source');
@@ -2262,10 +2273,16 @@ function ResultPage(props: ResultPageProps) {
 
   // 渲染断面集合几何并在地图显示
   //
-  // 【可见性口径】只有「无风险值」（未计算 / 计算失败）不出实色：颜色给 `rgba(0,0,0,0)`，
-  // 并在命中层里过滤掉，避免出现「看不见却能点」的隐形靶子。
-  // 四个风险等级（含低风险，2026-10-26 起）全部上色，别在这里就地写 level > 0 —— 判定只走
-  // map/sectionRenderVisibility，否则规则会分裂成两份。
+  // 【可见性口径】
+  //   * 四个风险等级（含低风险，2026-10-26 起）→ 实色实线，颜色取 `resolveSectionRisk`；
+  //   * 「无风险值」（未计算 / 计算失败）→ **灰色虚线**（`sections-nodata-line`），
+  //     仍然画出来，并且**可点**。
+  //
+  // 2026-10-26 二次调整的原因：无数据断面原来直接给 `rgba(0,0,0,0)` 并从命中层过滤掉，
+  // 结果它们在地图上既看不见也点不到 —— 而正是这些断面最需要人工评定。
+  // 现在「看不见」变成「看得见但不是一种等级」：颜色沿用 `NO_DATA_RISK_COLOR`（与图例、
+  // 框选面板同一个灰），线型用虚线把「没数」和「四个等级」彻底分开。
+  // 判定只走 map/sectionRenderVisibility，别在这里就地写 level > 0。
   const renderSections = (sections: SectionResult[]) => {
     const map = mapRef.current;
     if (!map) return;
@@ -2276,10 +2293,9 @@ function ResultPage(props: ResultPageProps) {
       const renderable = shouldRenderRisk(info);
       const color = renderable ? info.color : TRANSPARENT_RISK_COLOR;
       const displayRisk = info.valid ? info.level : info.label;
-      // 不渲染的断面也保留一句准确文案：弹窗/日志里「低风险」和「无结果」必须能分开，
-      // 不能都写成「未知」—— 前者是有效结果，后者是没数。
+      // 文案必须把「低风险」与「无数据」分开：前者是有效结果，后者是没数。
       const riskLabel = !info.valid
-        ? '无风险值（不渲染）'
+        ? '无数据（待人工评估）'
         : info.level === null
           ? '未知'
           : renderable
@@ -2295,8 +2311,8 @@ function ResultPage(props: ResultPageProps) {
           risk_level: displayRisk,
           risk_label: riskLabel,
           color: color,
-          /** 命中层据此过滤：不可见的断面不该还能被点开。 */
-          hidden: !renderable
+          /** 无风险值 → 由 nodata 图层画灰色虚线；命中层**不再**用它过滤（这类断面必须可点）。 */
+          noData: !renderable
         }
       };
     });
@@ -2314,12 +2330,18 @@ function ResultPage(props: ResultPageProps) {
       });
     }
 
+    // 两个互补的过滤 + 不过滤的命中层，真源在 map/sectionRenderVisibility（有单测守着）。
+    const { solid: solidFilter, noData: noDataFilter, hit: hitFilter } = sectionLayerFilters() as {
+      solid: any; noData: any; hit: any;
+    };
+
     // 若图层不存在则创建一次；后续仅更新 source 数据与可见性
     if (!map.getLayer('sections-line')) {
       map.addLayer({
         id: 'sections-line',
         type: 'line',
         source: 'sections-source',
+        filter: solidFilter,
         layout: {
           'line-join': 'round',
           'line-cap': 'round',
@@ -2331,11 +2353,39 @@ function ResultPage(props: ResultPageProps) {
           'line-opacity': 0.9
         }
       });
+    } else {
+      // filter 每次都要刷：旧图层上可能还留着上一版按 `hidden` 过滤的表达式。
+      map.setFilter('sections-line', solidFilter);
     }
 
-    // 命中层的过滤条件每次都要刷：断面从「低风险」被人工改成高等级后必须重新可点。
-    const hitFilter = ['!=', ['get', 'hidden'], true] as any;
+    // —— 无数据断面：灰色虚线 ——
+    // 单开一层而不是复用 `sections-line`：Mapbox 的 line-dasharray 是**整层**属性，
+    // 没法按 feature 决定虚实；而「虚线 = 没数」正是这里唯一需要的区分手段。
+    if (!map.getLayer('sections-nodata-line')) {
+      map.addLayer({
+        id: 'sections-nodata-line',
+        type: 'line',
+        source: 'sections-source',
+        filter: noDataFilter,
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'butt',
+          'visibility': showSections ? 'visible' : 'none'
+        },
+        paint: {
+          'line-color': NO_DATA_RISK_COLOR,
+          // 断面上也用虚线，与岸段虚线同一套语义（虚线 = 没数）。
+          'line-dasharray': [1.4, 1.4],
+          'line-width': 3,
+          'line-opacity': 0.95
+        }
+      });
+    } else {
+      map.setFilter('sections-nodata-line', noDataFilter);
+    }
 
+    // 命中层**不按等级过滤**：无数据断面也得能点开 —— 点开才知道它是哪一条、
+    // 才有下一步人工评定的落点。以前这类断面被 `hidden` 过滤掉，等于永远摸不到。
     if (!map.getLayer('sections-line-hit')) {
       map.addLayer({
         id: 'sections-line-hit',
@@ -2464,7 +2514,9 @@ function ResultPage(props: ResultPageProps) {
       const style = map.getStyle();
       (style?.layers ?? []).forEach((layer: any) => {
         const id = String(layer.id ?? '');
-        if (id.startsWith('bankline-result-') && map.getLayer(id)) {
+        // 前缀覆盖实色色带与灰色虚线两层；漏掉 nodata 的话，清空结果后地图上会留着
+        // 上一个状态的虚线，看起来像「这条岸段一直没数据」。
+        if (id.startsWith('bankline-') && map.getLayer(id)) {
           map.setLayoutProperty(id, 'visibility', 'none');
         }
       });
@@ -2479,9 +2531,9 @@ function ResultPage(props: ResultPageProps) {
       groups[bid].push(s);
     });
 
-    // 全局是否至少有一条「值得画」的断面。全否 = 任务还在算 / 全部失败，
-    // 此时色带本来就是空的，灰色底线要保持完整，否则地图整片空白、像加载失败。
-    const anyRenderable = sections.some(s => shouldRenderRisk(resolveSectionRisk(s)));
+    // 注：这里不再按「全局有没有可渲染断面」决定要不要画灰底线。无数据区间的可见性
+    // 一律由 `bankline-nodata-*` 灰色虚线承担 —— 任务还在算时整条岸段都是虚线，
+    // 同样不会留下「地图一片空白、像加载失败」的观感。
     let bankSegmentsDirty = false;
 
     // 2. 遍历每个岸段组
@@ -2524,11 +2576,13 @@ function ResultPage(props: ResultPageProps) {
         .sort((a, b) => (a.progress as number) - (b.progress as number));
 
       // 【可见性口径】只有「无风险值」的断面不参与实色着色（见 map/sectionRenderVisibility）：
-      //   * 整条岸段一条有值的断面都没有 → stops 为 null → 直接把图层 visibility 关掉；
+      //   * 整条岸段一条有值的断面都没有 → stops 为 null → 实色图层 visibility 关掉；
       //   * 部分断面无风险值 → 岸段按「最近断面」切成区间（Voronoi 式），无值的那条断面
       //     把它管辖的整段（前后各半个间距）填透明。注意不能只在该断面位置插一个透明点：
       //     两侧实色会跨过它插值，透明点不到 1 像素、肉眼完全看不出来 —— 这是早前修复过的根因。
-      //   低风险自 2026-10-26 起正常着绿色，不再走这条「留空」路径。
+      //   * 透明区间**不是什么都不画**：下面单开一层 `bankline-nodata-*` 用灰色虚线画出来，
+      //     让「这里有一条岸段、但还没有数据」看得见（2026-10-26 用户要求，便于后续人工评定）。
+      //   低风险自 2026-10-26 起正常着绿色，不走这条「留空」路径。
       const riskPoints: RiskGradientPoint[] = placedSections.map(({ section: s, progress }) => {
         const info = resolveSectionRisk(s);
         return {
@@ -2538,35 +2592,83 @@ function ResultPage(props: ResultPageProps) {
         };
       });
 
+      // 区间划分只算一次：实色 stops、灰色底线、灰色虚线三层共用，
+      // 任何一层自己再切一遍都会出现「实色与虚线错位」。
+      const spans = buildRiskBandSpans(riskPoints);
+      const noDataSpans = collectNoDataSpans(spans);
+
       const stops = buildRiskGradientStops(riskPoints);
       const bankVisible = stops !== null;
 
-      // —— 灰色底线（uploaded-lines-base）按同一套区间口径切片 ——
-      // 色带能靠 line-gradient 局部透明，但底下那条贯穿全程的 2px 灰线不会断开，
-      // 视觉上仍然读作「岸段还在」。这里只输出可见区间，不可见区间直接不生成几何。
+      /** 把区间按米切片成几何；亚米级碎片直接丢掉，避免生成一堆退化线段。 */
+      const minLen = Math.max(1, totalDist * 1e-4);
+      const sliceSpans = (list: typeof spans): GeoJSON.Feature[] => {
+        const out: GeoJSON.Feature[] = [];
+        list.forEach(span => {
+          const from = span.start * totalDist;
+          const to = span.end * totalDist;
+          if (to - from < minLen) return;
+          try {
+            const slice = turf.lineSliceAlong(bankLine, from, to, { units: 'meters' });
+            out.push({ type: 'Feature', properties: { bank_id: bankId }, geometry: slice.geometry });
+          } catch {
+            // 单段切片失败（几何退化）时跳过，不影响其它段
+          }
+        });
+        return out;
+      };
+
+      // —— 灰色底线（uploaded-lines-base）：只留实色区间 ——
+      // 它的作用是给半透明色带垫一条视觉连续的底座。无数据区间**不再**走这条 2px 灰实线 ——
+      // 虚线画在它上面时，间隙会露出下面的实线，看起来又变回实线了。
       {
-        const spans = anyRenderable ? buildRiskBandSpans(riskPoints) : [];
-        const minLen = Math.max(1, totalDist * 1e-4); // 亚米级碎片不画，避免生成一堆退化线段
-        const feats: GeoJSON.Feature[] = [];
-        if (!anyRenderable) {
-          // 计算中 / 全无结果：保留完整岸段，作为「这里有一条岸段」的参考
-          feats.push({ type: 'Feature', properties: { bank_id: bankId }, geometry: bankLine.geometry });
-        } else {
-          spans.forEach(span => {
-            if (!span.visible) return;
-            const from = span.start * totalDist;
-            const to = span.end * totalDist;
-            if (to - from < minLen) return;
-            try {
-              const slice = turf.lineSliceAlong(bankLine, from, to, { units: 'meters' });
-              feats.push({ type: 'Feature', properties: { bank_id: bankId }, geometry: slice.geometry });
-            } catch {
-              // 单段切片失败（几何退化）时跳过，不影响其它段
-            }
-          });
-        }
+        const feats = sliceSpans(spans.filter(span => span.visible));
         bankVisibleSegmentsRef.current[bankId] = feats;
         bankSegmentsDirty = true;
+      }
+
+      // —— 无数据岸段：灰色虚线 ——
+      // 与「四个等级的实色」严格区分：颜色用 `NO_DATA_RISK_COLOR`（框选面板「未计算」同一个灰），
+      // 线型用虚线。整条岸段都没数据时这条虚线就是用户在地图上找到该岸段的唯一线索。
+      {
+        const noDataLayerId = `bankline-nodata-${bankId}`;
+        const noDataSourceId = `bankline-nodata-source-${bankId}`;
+        const noDataFeats = sliceSpans(noDataSpans);
+        const fc = turf.featureCollection(noDataFeats as any);
+        const noDataVisible = noDataFeats.length > 0;
+
+        const existingNoDataSrc = map.getSource(noDataSourceId) as mapboxgl.GeoJSONSource | undefined;
+        if (existingNoDataSrc) {
+          existingNoDataSrc.setData(fc as any);
+        } else {
+          map.addSource(noDataSourceId, { type: 'geojson', data: fc as any });
+        }
+
+        if (!map.getLayer(noDataLayerId)) {
+          map.addLayer({
+            id: noDataLayerId,
+            type: 'line',
+            source: noDataSourceId,
+            layout: {
+              'visibility': noDataVisible ? 'visible' : 'none',
+              'line-join': 'round',
+              'line-cap': 'butt',
+            },
+            paint: {
+              'line-color': NO_DATA_RISK_COLOR,
+              // 虚线长度按线宽缩放（Mapbox 语义），故与色带同宽时 dash 会自动放大。
+              // 间隙刻意大于实段（2.2 : 1.2）：整条岸段都没数据时，若间隙太小会糊成
+              // 一条灰色实带，反被读成「第 5 个等级」。
+              'line-dasharray': [1.2, 2.2],
+              // 比色带略细：宽度差本身也是一层区分信号，同时给小比例尺下密集的岸段让位。
+              'line-width': ['*', bankShadeWidthExpr(), NO_DATA_BAND_WIDTH_SCALE] as any,
+              'line-opacity': 0.95,
+            },
+          });
+        } else {
+          map.setLayoutProperty(noDataLayerId, 'visibility', noDataVisible ? 'visible' : 'none');
+          map.setPaintProperty(noDataLayerId, 'line-width', ['*', bankShadeWidthExpr(), NO_DATA_BAND_WIDTH_SCALE] as any);
+        }
       }
 
       // 渲染到岸段线上
@@ -3129,17 +3231,18 @@ function ResultPage(props: ResultPageProps) {
                 <div className="result-info">
                   <h5>当前分析结果</h5>
                   {/* 文案直读 RISK_LABELS，别再写死中文：名称只有 riskScoring.ts 一处真源。
-                      四个等级全部着色（2026-10-26 起低风险也是绿色实色），
-                      虚线空心点只代表「无风险值」——这是「没数」，不是第 5 个等级。 */}
+                      四个等级全部着色（2026-10-26 起低风险也是绿色实色）；
+                      灰色虚线 = 「无数据」—— 地图上看得见但不是一种等级，点断面可做人工评定。 */}
                   <div className="legend">
                     <div className="legend-item"><span className="dot lv3"></span>{RISK_LABELS[3]}</div>
                     <div className="legend-item"><span className="dot lv2"></span>{RISK_LABELS[2]}</div>
                     <div className="legend-item"><span className="dot lv1"></span>{RISK_LABELS[1]}</div>
                     <div className="legend-item"><span className="dot lv0"></span>{RISK_LABELS[0]}</div>
-                    <div className="legend-item"><span className="dot none"></span>无风险值（不渲染）</div>
+                    <div className="legend-item"><span className="dot none"></span>无数据（待人工评定）</div>
                   </div>
                   <div className="legend-hint">
-                    四个风险等级全部上色；只有「无风险值」（未计算 / 计算失败）的断面与岸段留空。
+                    四个风险等级以实色显示；灰色虚线表示该断面/岸段暂无计算结果。
+                    这类岸段仍会完整显示，便于人工补充评定。
                   </div>
                 </div>
               )}

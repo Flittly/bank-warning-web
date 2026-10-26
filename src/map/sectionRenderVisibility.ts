@@ -1,14 +1,23 @@
 /**
  * 结果页「断面 / 岸段着色」的可见性口径。
  *
- * 规则只有一条：**只有「无风险值」不画；4 个风险等级（含低风险）全部上色。**
+ * 规则只有一条：**4 个风险等级（含低风险）在色带上实色上色；「无风险值」不上实色，
+ * 但用灰色虚线显示出来。**
  *
  *   - 低风险（显示等级 0 = `risk_level` 1，绿）：**2026-10-26 起改为正常着色**。
  *     此前（2026-10-20）它被刻意留空，理由是「预警图只留需要处理的部分」；实际使用中
  *     那样会让人误以为低风险段没有数据，且绿色图例与图面矛盾。现在四个等级一视同仁。
- *   - 无风险值（断面未计算 / 计算失败 / 结果里没有 `result`）**仍然不画**，也不兜底成灰色实线 ——
- *     灰色最容易被读成「一种等级」，实际上它只是「没数」。低风险与它是两件事，
- *     代码里必须继续分开（见 `shouldRenderRisk` 的两个条件）。
+ *   - 无风险值（断面未计算 / 计算失败 / 结果里没有 `result`）：**色带留空 + 灰色虚线**。
+ *     2026-10-26 二次调整：此前它在地图上整段消失，用户看不到「这里还有一条岸段」，
+ *     也就无从发现该去哪个断面做人工评定。现在改成「看得见、但不是一种等级」：
+ *
+ *     * **不进 `line-gradient`** —— 灰色实色会被读成第 5 个等级，而且会被相邻区间的颜色
+ *       插值污染。所以 `buildRiskBandSpans` 里它仍是 `TRANSPARENT_RISK_COLOR`。
+ *     * **另外单独一层画**（结果页 `bankline-nodata-*` / `sections-nodata-line`），
+ *       样式是 `NO_DATA_RISK_COLOR` + **虚线**。虚线是「没数」的唯一视觉标记，
+ *       四个等级永远是实线 —— 这个区分必须保留，否则图上又多一个"看起来像等级"的颜色。
+ *
+ *     低风险与「无风险值」是两件事，代码里必须继续分开（见 `shouldRenderRisk` 的两个条件）。
  *
  * ## 关键：岸段色带必须「整段」留空，而不是「整点」留空
  *
@@ -24,12 +33,24 @@
  *   - 好处 1：透明是「没有这条颜色」，不是「一个透明的点」，不会被邻段颜色吃掉；
  *   - 好处 2：等级本来就只有 4 档离散值，区间内渐变其实在暗示「半档」，纯色更诚实；
  *   - 好处 3：换色是硬边，与出图端（`visualization/gradient.py`）逐像素同款。
+ *   - 好处 4：透明区间正好是灰色虚线层要覆盖的区间（`collectNoDataSpans`），
+ *     两层共用同一份区间划分，不会出现「实色和虚线错位」。
  *
  * 这里全是纯函数，Mapbox 表达式拼装的正确性由 `sectionRenderVisibility.test.ts` 守着。
  */
 
 /** 隐藏用的颜色。注意必须是 **rgba(...,0)**：Mapbox 对 `transparent` 关键字支持不一致。 */
 export const TRANSPARENT_RISK_COLOR = 'rgba(0, 0, 0, 0)';
+
+/**
+ * 「无风险值」在地图上的显示色。
+ *
+ * 三处同色（必须是同一个值，否则图例、地图、框选面板三张脸）：
+ *   - 结果页地图的灰色虚线层（`sections-nodata-line` / `bankline-nodata-*`）；
+ *   - 框选分析面板的「未计算」行（`areaRiskAnalysis.UNKNOWN_RISK_COLOR` 从这里取）；
+ *   - 出图端的 `DEFAULT_RISK_COLOR`。
+ */
+export const NO_DATA_RISK_COLOR = '#94a3b8';
 
 /** Mapbox 的 interpolate 要求 stop 严格递增；区间交界处用这点宽度完成换色（视觉上是一条硬边）。 */
 const DEFAULT_GAP = 1e-5;
@@ -124,6 +145,36 @@ export function buildRiskBandSpans(points: RiskGradientPoint[]): RiskBandSpan[] 
       visible,
     };
   });
+}
+
+/**
+ * 断面三个图层的 Mapbox 过滤表达式（结果页 `sections-*`）。
+ *
+ * 拆成函数而不是散在页面里，是因为三者必须**严格互补**：
+ *   - `solid` + `noData` 恰好覆盖全部断面 → 任何一个断面都不会既看不见又摸不到；
+ *   - `hit` 完全不看 `noData` → 无数据断面也点得开（那是人工评定的入口）。
+ *
+ * 2026-10-26 之前 `hit` 里挂着 `['!=', ['get','hidden'], true]`，于是无数据断面
+ * 被静默过滤掉：地图上看不见、鼠标也点不到，用户根本找不到该去哪条断面上补数据。
+ * 谁要是想把「不可见就不能点」的写法加回来，先看 `sectionRenderVisibility.test.ts`。
+ */
+export function sectionLayerFilters(): { solid: unknown; noData: unknown; hit: unknown } {
+  return {
+    solid: ['!=', ['get', 'noData'], true],
+    noData: ['==', ['get', 'noData'], true],
+    hit: ['has', 'id'],
+  };
+}
+
+/**
+ * 从区间划分里挑出「无风险值」的那些段。
+ *
+ * 结果页用它生成灰色虚线层：色带上这些段是透明的（什么都没有），虚线层负责把
+ * 「这里有一条岸段、但还没有数据」画出来。两份几何共用同一次 `buildRiskBandSpans`，
+ * 所以虚线区间与透明区间**必然**严丝合缝 —— 别在页面里另算一套切分。
+ */
+export function collectNoDataSpans(spans: RiskBandSpan[]): RiskBandSpan[] {
+  return spans.filter(span => !span.visible);
 }
 
 /**
