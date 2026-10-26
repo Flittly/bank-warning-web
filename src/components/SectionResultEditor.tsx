@@ -37,10 +37,20 @@ const buildDraft = (detail: any): Record<string, string> => {
  *
  * 只允许改 9 个指标的原始数值；档位、风险值、风险等级都由 `computeRisk()` 现算。
  * 这是刻意的：等级若能手填，就会与数值脱钩，出图与报告两套口径必然打架。
+ *
+ * ## 两种模式
+ * `detail.id == null`（后端返回 `not_computed`）时是**新建**：该断面一条结果都没有，
+ * 这张空表就是它的录入入口，保存会 INSERT 一行人工结果。此时：
+ *   - 「原值」全是空，`original.riskValue` 为 null，底部对比只显示箭头右侧；
+ *   - 9 个指标必须全部填完才能保存（少一个，综合风险值就无从谈起）；
+ *   - 撤销按钮的语义是「删掉这条人工结果」，不是「恢复模型原值」。
  */
 export default function SectionResultEditor({ sectionId, taskId, detail, onSaved, onReverted, onCancel }: Props) {
   const detailId = detail?.id ?? null;
+  const isNew = detailId === null;
   const isEdited = Boolean(detail?.edited ?? detail?.manual_override?.edited);
+  /** 这一行本来就是人工新建的 ⇒ 撤销 = 删除，没有「模型原值」可恢复。 */
+  const isCreatedManual = Boolean(detail?.manual_override?.created_manual ?? detail?.created_manual);
 
   const [draft, setDraft] = useState<Record<string, string>>(() => buildDraft(detail));
   const [note, setNote] = useState('');
@@ -132,7 +142,10 @@ export default function SectionResultEditor({ sectionId, taskId, detail, onSaved
   };
 
   const handleRevert = async () => {
-    if (!window.confirm('恢复模型原始结果？人工修改的内容与备注会被清除。')) return;
+    const message = isCreatedManual
+      ? '撤销人工录入？这条结果会被删除，该断面回到「无数据」状态（图上显示为灰色虚线）。'
+      : '恢复模型原始结果？人工修改的内容与备注会被清除。';
+    if (!window.confirm(message)) return;
     setReverting(true);
     setError(null);
     try {
@@ -148,15 +161,28 @@ export default function SectionResultEditor({ sectionId, taskId, detail, onSaved
   return (
     <div className="result-editor">
       <div className="result-editor-banner">
-        <span className="result-editor-banner-title">人工修改</span>
+        <span className="result-editor-banner-title">{isNew || isCreatedManual ? '人工录入' : '人工修改'}</span>
         <span className="result-editor-banner-text">
-          只改数值，档位与风险等级由系统按阈值重算；保存后立即生效，不需要重跑模型。
+          {isNew || isCreatedManual
+            ? '该断面暂无计算结果。填完 9 个指标即可人工评定：档位与风险等级由系统按阈值算，保存后立即上色，不需要重跑模型。'
+            : '只改数值，档位与风险等级由系统按阈值重算；保存后立即生效，不需要重跑模型。'}
         </span>
       </div>
 
+      {(isNew || isCreatedManual) && (
+        <div className="result-editor-hint">
+          {detail?.not_computed_reason
+            ? `${detail.not_computed_reason}。`
+            : '该断面没有模型算出的结果，这一行完全是人工录入的。'}
+          {' '}9 项必须全部有值（或选择枚举），少一项就无法得到综合风险值。
+        </div>
+      )}
+
       {preview.params.fellBack.length > 0 && (
         <div className="result-editor-hint warn">
-          该结果未记录完整参数（{preview.params.fellBack.join('、')}），已按默认阈值/权重判定。
+          {isNew || isCreatedManual
+            ? `该任务没有可参照的参数快照（${preview.params.fellBack.join('、')}），将按系统默认阈值/权重判定。`
+            : `该结果未记录完整参数（${preview.params.fellBack.join('、')}），已按默认阈值/权重判定。`}
         </div>
       )}
 
@@ -218,8 +244,16 @@ export default function SectionResultEditor({ sectionId, taskId, detail, onSaved
                         {isEnum ? '—' : thresholds.map(v => formatCellValue(v)).join(' / ')}
                       </td>
                       <td className="result-editor-tier">
-                        {originalTier ?? '—'}
-                        {tierChanged ? <span className="result-editor-tier-arrow"> → {nextTier}</span> : null}
+                        {/* 新建模式下没有「原档位」可对比，直接显示现算档位 ——
+                            否则这一列整片是「—」，用户看不到自己填的值落在第几档。 */}
+                        {isNew ? (
+                          nextTier === null ? '—' : nextTier
+                        ) : (
+                          <>
+                            {originalTier ?? '—'}
+                            {tierChanged ? <span className="result-editor-tier-arrow"> → {nextTier}</span> : null}
+                          </>
+                        )}
                       </td>
                       <td>{formatCellValue(weights[idx])}</td>
                     </tr>
@@ -233,7 +267,9 @@ export default function SectionResultEditor({ sectionId, taskId, detail, onSaved
 
       {invalidKeys.size > 0 && (
         <div className="result-editor-hint error">
-          {Array.from(invalidKeys).join('、')} 无法判定档位：请填写有效数值/选择枚举，未填报不会被当作最低风险。
+          {isNew || isCreatedManual
+            ? `还需填写 ${invalidKeys.size} 项：${Array.from(invalidKeys).join('、')}。未填报不会被当作最低风险，也无法保存。`
+            : `${Array.from(invalidKeys).join('、')} 无法判定档位：请填写有效数值/选择枚举，未填报不会被当作最低风险。`}
         </div>
       )}
       {invalidKeys.size === 0 && dirtyKeys.length > 0 && !levelChanged && preview.riskLevel !== null && (
@@ -286,7 +322,7 @@ export default function SectionResultEditor({ sectionId, taskId, detail, onSaved
           />
           {isEdited && (
             <button type="button" className="result-editor-btn ghost" onClick={handleRevert} disabled={saving || reverting}>
-              {reverting ? '恢复中…' : '恢复模型原值'}
+              {reverting ? '撤销中…' : (isCreatedManual ? '撤销人工录入' : '恢复模型原值')}
             </button>
           )}
           <button type="button" className="result-editor-btn ghost" onClick={onCancel} disabled={saving || reverting}>

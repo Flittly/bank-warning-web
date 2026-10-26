@@ -1127,9 +1127,35 @@ function ResultPage(props: ResultPageProps) {
     const matrixPromise = (async () => {
       const payload = await fetchJSON(`/v0/bank/results/${encodeURIComponent(sectionId)}`);
       // 断面存在但没算出结果：后端返回 200 + status=not_computed（不再用 404）。
-      // 这里必须显式中断：否则 result 为 null，下面会摊出一张全空矩阵，看着像数据丢了。
+      //
+      // 【不要在这里中断】没算出结果恰恰是最该人工评定的对象。以前这里 throw，
+      // 弹窗只剩一句「该断面尚无计算结果」，无数据断面的数值永远改不了。
+      // 现在摊一张**空表**并直接进编辑态：用户填完 9 个指标即落库成一条人工结果
+      // （后端 overrideRiskResult 的「新建」分支）。
+      //
+      // 空表的 thresholds 必须用后端回带的**任务级**参数，不能用前端内置默认值 ——
+      // 否则同任务里这一条按 0.25/0.5/0.75 判档、其它条按自定义阈值判档，图上一片混账。
       if (payload?.status === 'not_computed') {
-        throw new Error(payload?.reason || '该断面尚无计算结果');
+        const sectionInfo = payload?.section ?? {};
+        setMatrixDetail({
+          id: null,
+          section_id: sectionInfo.section_id ?? sectionId,
+          section_name: sectionInfo.section_name ?? sectionName ?? null,
+          bank_id: sectionInfo.bank_id ?? null,
+          region_code: sectionInfo.region_code ?? null,
+          task_id: sectionInfo.task_id ?? effectiveTaskId ?? null,
+          raw_values: {},
+          thresholds: payload?.thresholds ?? null,
+          matrices: {},
+          result: null,
+          risk_level: null,
+          /** 标记「这一条是空白待录入」，决定 banner 文案与撤销语义。 */
+          not_computed: true,
+          not_computed_reason: payload?.reason ?? null,
+          manual_editable: payload?.manual_editable !== false
+        });
+        setResultEditing(payload?.manual_editable !== false);
+        return;
       }
       const result = payload?.result ?? payload?.data?.result ?? payload?.data ?? payload;
       const indicators = result?.indicators ?? payload?.indicators ?? {};
@@ -1204,6 +1230,15 @@ function ResultPage(props: ResultPageProps) {
     return {
       ...prev,
       ...indicators,
+      // 人工「新建」的那一行在保存前 id 是 null，保存后必须换上真实 id ——
+      // 否则再保存一次会走「新建」分支，同一个断面插出第二行。
+      id: updated?.id ?? prev.id ?? null,
+      section_id: updated?.section_id ?? prev.section_id,
+      section_name: updated?.section_name ?? prev.section_name,
+      bank_id: updated?.bank_id ?? prev.bank_id,
+      task_id: updated?.task_id ?? prev.task_id,
+      not_computed: false,
+      not_computed_reason: null,
       matrices: indicators.matrices ?? prev.matrices,
       result: indicators.result ?? prev.result,
       risk_level: updated?.risk_level ?? prev.risk_level,
@@ -1259,6 +1294,41 @@ function ResultPage(props: ResultPageProps) {
     }
   };
 
+  /**
+   * 撤销「人工新建」的结果：该断面回到无数据状态。
+   *
+   * <p>与 {@link applyResultOverride} 相反 —— 要**删掉**三处缓存里的这条，而不是写新值。
+   * 漏删任何一处，下一轮轮询/重绘都会把刚撤销的颜色画回来。
+   */
+  const applyResultRevert = (sectionId: string) => {
+    const taskId = selectedTaskRef.current;
+    if (!taskId) return;
+    delete sectionIndicatorResultCacheRef.current[taskId]?.[sectionId];
+    delete sectionIndicatorResultPromiseRef.current[taskId]?.[sectionId];
+    delete sectionRiskThresholdsRef.current[taskId]?.[sectionId];
+
+    const base = lastSectionsByTaskRef.current[taskId] ?? [];
+    const target = base.find(s => s.section_id === sectionId) ?? null;
+    const next = base.map(s => {
+      if (s.section_id !== sectionId) return s;
+      // 解构掉 risk_level：该类型不接受 null，而「没有等级」必须是真的没有
+      //（留着旧值会让断面继续按旧颜色画，灰色虚线也出不来）。
+      const { risk_level: _dropped, ...rest } = s;
+      return { ...rest, indicator_result: null, risk_thresholds: null };
+    });
+    lastSectionsByTaskRef.current[taskId] = next;
+
+    if (mapRef.current) {
+      renderSections(next);
+      applyShorelineGradient(next, target?.bank_id ?? null);
+    }
+    if (activePopupSectionIdRef.current === sectionId) {
+      activePopupRef.current?.remove();
+      activePopupRef.current = null;
+      activePopupSectionIdRef.current = null;
+    }
+  };
+
   const handleOverrideSaved = (updated: any) => {
     if (!matrixSectionId) return;
     setMatrixDetail((prev: any) => mergeResultIntoDetail(prev, updated));
@@ -1274,6 +1344,14 @@ function ResultPage(props: ResultPageProps) {
 
   const handleOverrideReverted = (updated: any) => {
     if (!matrixSectionId) return;
+    // 人工新建的那一行被撤销 ⇒ 后端软删，返回 result=null。
+    // 此时不能留在弹窗里显示一份不存在的值，直接关掉并把断面打回无数据。
+    if (!updated) {
+      applyResultRevert(matrixSectionId);
+      closeMatrixDetail();
+      setToast({ tone: 'ok', text: '已撤销人工录入：该断面回到「无数据」，图上显示为灰色虚线' });
+      return;
+    }
     setMatrixDetail((prev: any) => mergeResultIntoDetail(prev, updated));
     applyResultOverride(matrixSectionId, updated);
     // 退出编辑态：草稿里还是那组被驳回的数值，留在页面上会与地图/表格不一致。
@@ -3543,10 +3621,17 @@ function ResultPage(props: ResultPageProps) {
                   <button
                     className="matrix-modal-edit"
                     onClick={() => setResultEditing(v => !v)}
-                    disabled={!matrixDetail || matrixLoading}
-                    title={resultEditing ? '退出编辑（未保存的改动会被丢弃）' : '直接在结果上改数值，不重跑模型'}
+                    // not_computed 的断面**可以**编辑 —— 那张空表就是它的录入入口。
+                    // 只有断面没挂在任务下（后端 manual_editable=false，结果表 task_id NOT NULL）
+                    // 才禁用，否则点了保存必然失败。
+                    disabled={!matrixDetail || matrixLoading || matrixDetail?.manual_editable === false}
+                    title={matrixDetail?.manual_editable === false
+                      ? '该断面未挂到任何任务，无法保存结果'
+                      : resultEditing
+                        ? '退出编辑（未保存的改动会被丢弃）'
+                        : '直接在结果上改数值，不重跑模型'}
                   >
-                    {resultEditing ? '退出编辑' : '编辑结果'}
+                    {resultEditing ? '退出编辑' : (matrixDetail?.not_computed ? '录入风险数值' : '编辑结果')}
                   </button>
                   <button className="matrix-modal-download" onClick={downloadMatrixCSV} title="下载CSV数据">
                     下载CSV
