@@ -818,6 +818,251 @@
   margin-bottom: 5px;
 }
 
+/* ——— 框选设为无效断面（任务右键）———
+   与「框选分析」面板同位置（互斥，不会同时出现），但主色换成琥珀：
+   青色 = 只是看看，琥珀 = 这一下会把东西隐藏起来。视觉上必须能区分，
+   否则两个入口点错一个，手感上的"松手就生效"会让人以为只是又统计了一次。 */
+.map-box-select-hint.is-invalid {
+  background: rgba(180, 83, 9, 0.94);
+  box-shadow: 0 2px 10px rgba(120, 53, 15, 0.42);
+}
+
+.section-box-invalid-panel {
+  position: absolute;
+  top: 56px;
+  left: 12px;
+  z-index: 12;
+  width: 322px;
+  max-height: calc(100% - 170px);
+  overflow: auto;
+  padding: 11px 12px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  /* 琥珀色投影：面板一出现就知道"当前是个会改数据的模式" */
+  box-shadow: 0 10px 30px rgba(120, 53, 15, 0.22), 0 0 0 1px rgba(245, 158, 11, 0.18);
+  font-size: 12px;
+  color: #1f2937;
+  animation: areaPanelIn 0.16s ease-out;
+}
+
+.section-box-invalid-panel .sbi-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.section-box-invalid-panel .sbi-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.section-box-invalid-panel .sbi-title > span:first-child {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #92400e;
+}
+
+.section-box-invalid-panel .sbi-task {
+  max-width: 246px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.section-box-invalid-panel .sbi-icon-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.section-box-invalid-panel .sbi-icon-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.section-box-invalid-panel .sbi-hint {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* 拖拽中的实时命中数：等松手才报数的话，用户只能反复重画 */
+.section-box-invalid-panel .sbi-live {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #92400e;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-box-invalid-panel .sbi-live b {
+  font-size: 15px;
+  margin-right: 3px;
+}
+
+.section-box-invalid-panel .sbi-empty {
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  color: #64748b;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.section-box-invalid-panel .sbi-count {
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+}
+
+.section-box-invalid-panel .sbi-count.is-zero {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.section-box-invalid-panel .sbi-count-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #b45309;
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+
+.section-box-invalid-panel .sbi-count.is-zero .sbi-count-num {
+  color: #94a3b8;
+}
+
+.section-box-invalid-panel .sbi-count-unit {
+  font-size: 12px;
+  color: #92400e;
+}
+
+.section-box-invalid-panel .sbi-count.is-zero .sbi-count-unit {
+  color: #64748b;
+}
+
+.section-box-invalid-panel .sbi-count-note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #78716c;
+  line-height: 1.55;
+}
+
+.section-box-invalid-panel .sbi-sub {
+  margin-left: 4px;
+  font-size: 11px;
+  color: #a8a29e;
+}
+
+.section-box-invalid-panel .sbi-done {
+  margin-bottom: 8px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.section-box-invalid-panel .sbi-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.section-box-invalid-panel .sbi-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.section-box-invalid-panel .sbi-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.section-box-invalid-panel .sbi-btn.is-primary {
+  background: #b45309;
+  border-color: #b45309;
+  color: #ffffff;
+}
+
+.section-box-invalid-panel .sbi-btn.is-primary:hover:not(:disabled) {
+  background: #92400e;
+  border-color: #92400e;
+}
+
+.section-box-invalid-panel .sbi-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.section-box-invalid-panel .sbi-notes {
+  margin-top: 9px;
+  font-size: 11px;
+  color: #475569;
+}
+
+.section-box-invalid-panel .sbi-notes summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: #64748b;
+  list-style: none;
+}
+
+.section-box-invalid-panel .sbi-notes summary::-webkit-details-marker {
+  display: none;
+}
+
+.section-box-invalid-panel .sbi-notes ul {
+  margin: 6px 0 0;
+  padding-left: 15px;
+  line-height: 1.6;
+}
+
+.section-box-invalid-panel .sbi-notes li {
+  margin-bottom: 5px;
+}
+
+
 /* 框选删除的确认条：画完框后浮在底部工具条上方。
    工具栏是 bottom 18 + 高约 62（≈80），这里留到 104px，与上面那条
    「圆形新建按钮的外发光」也不打架。 */

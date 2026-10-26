@@ -10,7 +10,7 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search, Waves, Play, Pause, ScanSearch } from 'lucide-react';
+import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search, Waves, Play, Pause, ScanSearch, SquareDashed } from 'lucide-react';
 import { ConfigProvider, Modal } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { cancelTask } from '../services/taskRunControl';
@@ -101,6 +101,19 @@ import {
   setAreaSelection,
   type AreaSelectionCancelReason,
 } from '../map/areaSelection';
+import {
+  SECTION_BOX_INVALID_RULE_TEXT,
+  clearSectionBoxMatch,
+  paintSectionBoxMatch,
+  pickSectionIdsByStartPoint,
+  removeSectionBoxMatchLayers,
+  sectionBoxBoundsOf,
+  sectionBoxInvalidConfirmText,
+  sectionBoxInvalidEmptyHint,
+  splitBoxInvalidByPriorState,
+  type SectionBoxCandidate,
+} from '../map/sectionBoxInvalid';
+import SectionBoxInvalidPanel from '../components/SectionBoxInvalidPanel';
 import { useResourceTreeStore } from '../store/useResourceTreeStore';
 import {
   RISK_COLORS,
@@ -733,6 +746,34 @@ function ResultPage(props: ResultPageProps) {
   /** 给绘制 effect 读的实时会话（effect 里不能闭包旧 state，否则画完一次就再也算不出新选区） */
   const areaAnalysisRef = useRef<typeof areaAnalysis>(null);
   areaAnalysisRef.current = areaAnalysis;
+
+  /**
+   * 「框选设为无效断面」会话。与 `areaAnalysis` 互斥：两者共用同一套选区图层与左键，
+   * 同时开着会互相抢鼠标（一个想拖矩形、一个想点地图）。
+   *
+   * <p>`matched` 只在松手后算定；拖拽期间面板读 `draftCount`（每帧更新，但只在数字变化时
+   * setState，否则拖一次要重渲染整棵结果页几十次）。`undoIds` = 本次真正从「有效」改成
+   * 「无效」的那批，撤销只回滚它。
+   */
+  const [sectionBoxInvalid, setSectionBoxInvalid] = useState<{
+    taskId: string;
+    taskName: string;
+    drawing: boolean;
+    selection: GeoJSON.Feature<GeoJSON.Polygon> | null;
+    matched: string[];
+    alreadyInvalid: number;
+    draftCount: number;
+    /** 本次已经生效的条数（0 = 还没应用）。与 `undoIds` 分开：全部命中断面本来就无效时，
+     *  生效了 N 条但可撤销 0 条 —— 用撤销数反推「是否已应用」会让按钮又亮起来。 */
+    appliedCount: number;
+    /** 可撤销的那批（本次真正从「有效」改成「无效」的），撤销只回滚它 */
+    undoIds: string[];
+    applying: boolean;
+  } | null>(null);
+  const sectionBoxInvalidRef = useRef<typeof sectionBoxInvalid>(null);
+  sectionBoxInvalidRef.current = sectionBoxInvalid;
+  /** 上一次写进面板的草稿命中数：拖拽每帧都会来，只有数字变了才需要动 React。 */
+  const boxMatchCountRef = useRef<number>(-1);
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -965,8 +1006,8 @@ function ResultPage(props: ResultPageProps) {
     e.preventDefault();
     e.stopPropagation();
     const MENU_W = 200;
-    // 三个操作项 + 标题 ≈ 190px；少估会让最后一行的菜单被视口底边裁掉
-    const MENU_H = 190;
+    // 五个操作项 + 标题 ≈ 190px；少估会让最后一行的菜单被视口底边裁掉
+    const MENU_H = 220;
     // 顺手刷一次结果计数：刚在编辑器算完就切回来右键时，缓存的 0 会把「分析」错误置灰
     void refreshResultCounts();
     setTaskMenu({
@@ -1564,28 +1605,39 @@ function ResultPage(props: ResultPageProps) {
    * <p>**刻意不清** `sectionIndicatorResultCacheRef`：结果没被删，恢复有效时那份数值还要用。
    * 顺手清掉会让"恢复有效"变成"恢复成灰的，但也不是无数据"这种中间状态。
    */
-  const applyManualInvalid = (sectionId: string, invalid: boolean, reason: string | null) => {
+  const applyManualInvalidMany = (sectionIds: string[], invalid: boolean, reason: string | null) => {
     const taskId = selectedTaskRef.current;
     if (!taskId) return;
+    const ids = new Set(sectionIds.map(id => String(id ?? '').trim()).filter(Boolean));
+    if (ids.size === 0) return;
+
     const base = lastSectionsByTaskRef.current[taskId] ?? [];
-    const target = base.find(s => s.section_id === sectionId) ?? null;
-    const next = base.map(s => (s.section_id === sectionId
+    const next = base.map(s => (ids.has(s.section_id)
       ? { ...s, manual_invalid: invalid, manual_invalid_reason: reason }
       : s));
     lastSectionsByTaskRef.current[taskId] = next;
 
     if (mapRef.current) {
       renderSections(next);
-      // 只重画该断面所属岸段：结果没变，其它岸段的色带没必要跟着重算（全量重绘会让整条岸线闪一下）。
-      applyShorelineGradient(next, target?.bank_id ?? null);
+      // 只重画受影响的岸段：结果没变，其它岸段的色带没必要跟着重算（全量重绘会让整条岸线闪一下）。
+      // 批量时可能跨多条岸段：一条都不涉及 → 传 null 全量（等价于"没有可局部重绘的目标"），
+      // 恰好一条 → 局部重绘，多条 → 全量重绘（比逐条重绘少 N 次 setPaintProperty 抖动）。
+      const bankIds = new Set<string>();
+      base.forEach(s => { if (ids.has(s.section_id) && s.bank_id) bankIds.add(s.bank_id); });
+      applyShorelineGradient(next, bankIds.size === 1 ? [...bankIds][0] : null);
     }
 
     // 悬停卡片里的等级文案是构建 DOM 时写死的，改完必须关掉；用户再点一次才是新状态。
-    if (activePopupSectionIdRef.current === sectionId) {
+    if (activePopupSectionIdRef.current && ids.has(activePopupSectionIdRef.current)) {
       activePopupRef.current?.remove();
       activePopupRef.current = null;
       activePopupSectionIdRef.current = null;
     }
+  };
+
+  /** 单条：批量版的退化用法。两条路径共用同一套本地刷新，避免"单条改了、批量没改"。 */
+  const applyManualInvalid = (sectionId: string, invalid: boolean, reason: string | null) => {
+    applyManualInvalidMany([sectionId], invalid, reason);
   };
 
   /**
@@ -1856,6 +1908,10 @@ function ResultPage(props: ResultPageProps) {
     // 岸段折点编辑层也要清：它的图层 id 是 `bank-edit-*`，不在下面那两个
     // `bankline-` 前缀的清理范围内，漏掉会在新任务地图上留一条青色草稿线。
     removeBankEditLayers(map);
+
+    // 框选设无效的命中断面高亮（`sections-box-match-*`）同理：它是按上一个任务的
+    // 断面 id 画出来的，留在新任务地图上会指着一批无关断面。
+    removeSectionBoxMatchLayers(map);
 
     const style = map.getStyle();
     if (style && style.layers) {
@@ -2343,6 +2399,9 @@ function ResultPage(props: ResultPageProps) {
     // 换任务 = 上一次的框选分析作废：选区是画在"上一个任务的岸段"上的，
     // 数据换了还留着面板，统计口径就对不上了。
     setAreaAnalysis(null);
+    // 框选设无效同理：命中集合是上一个任务的断面 id，留着只会误操作
+    setSectionBoxInvalid(null);
+    boxMatchCountRef.current = -1;
 
     setSelectedTask(taskId);
     selectedTaskRef.current = taskId;
@@ -2518,6 +2577,9 @@ function ResultPage(props: ResultPageProps) {
   };
 
   const startAreaAnalysis = async (taskId: string, taskName: string) => {
+    // 两种框选互斥（共用同一套选区图层与左键）
+    closeSectionBoxInvalid();
+
     // 已经有明确计数且为 0：直接拒，不去加载地图（省一次整任务的断面+结果拉取）
     if (resultCountOfTask(taskId) === 0) {
       setToast({ text: `任务「${taskName}」还没有计算结果，无法框选分析`, tone: 'warn' });
@@ -2598,7 +2660,11 @@ function ResultPage(props: ResultPageProps) {
       ensureAreaSelectionLayers(map);
       if (hasAreaSelectionLayers(map)) {
         retries = 0;
-        setAreaSelection(map, areaAnalysisRef.current?.selection ?? null);
+        // 两个会话共用同一个选区 source（互斥，不会同时有值）：分析优先，其次框选设无效。
+        setAreaSelection(
+          map,
+          areaAnalysisRef.current?.selection ?? sectionBoxInvalidRef.current?.selection ?? null,
+        );
         return;
       }
       // 样式还在换：短间隔重试几次（换底图是几百毫秒级的事）
@@ -2619,11 +2685,261 @@ function ResultPage(props: ResultPageProps) {
       map.off('style.load', onStyleEvent);
       map.off('styledata', onStyleEvent);
     };
-  }, [mapReady, areaAnalysis?.selection, satellite]);
+  }, [mapReady, areaAnalysis?.selection, sectionBoxInvalid?.selection, satellite]);
 
   // 注：原先这里还有一个 handleDeleteTask（删除"当前选中"的任务，约 40 行），
   // 但全仓库已无调用方 —— 实际在用的是列表行上的 handleDeleteTaskById。
   // 已于 2026-10-12 冗余清理中删除（git 历史可查）。
+
+  // ============================================================
+  //  框选批量设为无效断面（任务列表右键 → 框选设为无效断面）
+  // ============================================================
+  //
+  // 与「框选分析」共用同一套画框交互与选区图层，但**判定口径完全不同**：
+  //   · 分析：断面几何与选区**相交**（统计走的是"图上那一段色带有多长"）；
+  //   · 这里：只看**断面起点**（岸侧端点）是否落在框内（见 map/sectionBoxInvalid）。
+  // 提交复用单条按钮那条链路：同一个 `setSectionManualInvalid` 接口、同一个
+  // `applyManualInvalidMany` 本地刷新 —— 不另写一套"批量"语义，否则两处迟早不一致。
+
+  /** 框选提交时写进库的原因（≤200 字，单条路径不传原因）。 */
+  const BOX_INVALID_REASON = '框选批量设为无效';
+
+  /** 内存里的断面（拖拽每帧都要判，绝不可能走接口）。 */
+  const boxCandidatesOf = (taskId: string): SectionBoxCandidate[] =>
+    (lastSectionsByTaskRef.current[taskId] ?? []) as unknown as SectionBoxCandidate[];
+
+  /**
+   * 拖拽中的实时高亮。
+   *
+   * <p>每帧都跑，必须便宜：一次线性扫描（2000 条量级）+ 只把**命中项**写进 source
+   * （通常几条到几十条），不重绘断面全量。React 只在命中数字变化时才 setState ——
+   * 否则拖一次会触发几十次整页重渲染，拖框的手感会碎掉。
+   */
+  const previewSectionBoxInvalid = (polygon: GeoJSON.Feature<GeoJSON.Polygon> | null) => {
+    const map = mapRef.current;
+    const session = sectionBoxInvalidRef.current;
+    if (!map || !session) return;
+    const candidates = boxCandidatesOf(session.taskId);
+    const bounds = sectionBoxBoundsOf(polygon);
+    const ids = bounds ? pickSectionIdsByStartPoint(candidates, bounds) : [];
+    paintSectionBoxMatch(map, candidates, ids);
+    // 命中数没变就到此为止：`splitBoxInvalidByPriorState` 要建一个上千项的 Set，
+    // 拖拽期间每帧都算等于白烧 60 次/秒，而它只影响"其中 N 条已是无效"这句提示。
+    if (ids.length === boxMatchCountRef.current) return;
+    boxMatchCountRef.current = ids.length;
+    const alreadyInvalid = splitBoxInvalidByPriorState(candidates, ids).alreadyInvalid.length;
+    setSectionBoxInvalid(prev => (prev
+      ? { ...prev, draftCount: ids.length, alreadyInvalid }
+      : prev));
+  };
+
+  /** 松手：把选区与命中集合定下来（此后只有「设为无效 / 撤销 / 重新框选」能动它）。 */
+  const completeSectionBoxInvalid = (taskId: string, polygon: GeoJSON.Feature<GeoJSON.Polygon>) => {
+    const map = mapRef.current;
+    const candidates = boxCandidatesOf(taskId);
+    const bounds = sectionBoxBoundsOf(polygon);
+    const ids = bounds ? pickSectionIdsByStartPoint(candidates, bounds) : [];
+    const alreadyInvalid = splitBoxInvalidByPriorState(candidates, ids).alreadyInvalid.length;
+    // 收尾再画一次：最后一帧 mousemove 可能没赶上 mouseup（拖得很快时很常见）
+    paintSectionBoxMatch(map, candidates, ids);
+    boxMatchCountRef.current = ids.length;
+    setSectionBoxInvalid(prev => (prev && prev.taskId === taskId
+      ? {
+        ...prev,
+        drawing: false,
+        selection: polygon,
+        matched: ids,
+        draftCount: ids.length,
+        alreadyInvalid,
+        // 新选区还没被应用 ⇒ 主按钮要重新可用；
+        // 但 `undoIds` **要留着**：用户松手发现框错了会立刻「重新框选」，
+        // 这时上一次应用的东西还必须能撤回来（撤销永远只针对「最近一次应用」）。
+        appliedCount: 0,
+      }
+      : prev));
+    if (ids.length === 0) {
+      setToast({ text: sectionBoxInvalidEmptyHint(candidates.length), tone: 'warn' });
+    } else {
+      setToast({
+        text: `框内 ${ids.length} 条断面起点落在选区里（含边界）；点「设为无效」应用`,
+        tone: 'ok',
+      });
+    }
+  };
+
+  /** 进入框选（任务右键入口）。 */
+  const startSectionBoxInvalid = async (taskId: string, taskName: string) => {
+    // 两种框选互斥：共用同一套选区图层与左键，同时开着会互相抢鼠标
+    closeAreaAnalysis();
+
+    const loaded = selectedTaskRef.current === taskId
+      && (lastSectionsByTaskRef.current[taskId]?.length ?? 0) > 0;
+    if (!loaded) await handleTaskClick(taskId);
+
+    const candidates = boxCandidatesOf(taskId);
+    if (candidates.length === 0) {
+      setToast({ text: `任务「${taskName}」没有断面，无法框选`, tone: 'warn' });
+      return;
+    }
+
+    boxMatchCountRef.current = -1;
+    setSectionBoxInvalid({
+      taskId,
+      taskName,
+      drawing: true,
+      selection: null,
+      matched: [],
+      alreadyInvalid: 0,
+      draftCount: 0,
+      appliedCount: 0,
+      undoIds: [],
+      applying: false,
+    });
+    setToast({ text: `${SECTION_BOX_INVALID_RULE_TEXT}。在地图上拖出矩形，Esc 或右键取消`, tone: 'ok' });
+  };
+
+  /** 应用：一次批量提交（与单条按钮同一个接口），成功后走同一套本地刷新。 */
+  const applySectionBoxInvalid = async () => {
+    const session = sectionBoxInvalidRef.current;
+    if (!session || session.applying || session.matched.length === 0) return;
+    if (!window.confirm(sectionBoxInvalidConfirmText(session.matched.length, session.alreadyInvalid))) {
+      return;
+    }
+
+    // 必须在 applyManualInvalidMany **之前**算：它会就地改写这些断面为无效，
+    // 之后 splitBoxInvalidByPriorState 会把全部算成"本来就无效"，撤销就没目标了。
+    const { toMark } = splitBoxInvalidByPriorState(boxCandidatesOf(session.taskId), session.matched);
+
+    setSectionBoxInvalid(prev => (prev ? { ...prev, applying: true } : prev));
+    try {
+      const res = await setSectionManualInvalid({
+        sectionIds: session.matched,
+        invalid: true,
+        reason: BOX_INVALID_REASON,
+      });
+      if (res.updated === 0) {
+        // 0 行 = 越权或已被删除。不能静默：面板会以为改成功了，图上却毫无变化
+        setToast({ tone: 'warn', text: '未生效：这些断面可能已被删除，或不属于当前账号' });
+        return;
+      }
+      applyManualInvalidMany(session.matched, true, BOX_INVALID_REASON);
+      // 应用后把琥珀高亮撤掉：这一刻用户要看的是**结果**（那几条变成灰色虚线），
+      // 高亮留在上面会把灰线盖住，反而看不到自己刚做了什么。选区矩形保留，便于对照范围。
+      clearSectionBoxMatch(mapRef.current);
+      setSectionBoxInvalid(prev => (prev
+        ? { ...prev, applying: false, appliedCount: res.updated, undoIds: toMark }
+        : prev));
+      const partial = res.updated < session.matched.length
+        ? `（提交 ${session.matched.length} 条，实际生效 ${res.updated} 条）`
+        : '';
+      setToast({
+        tone: res.updated < session.matched.length ? 'warn' : 'ok',
+        text: `已把 ${res.updated} 条断面设为无效${partial}；灰色虚线不参与统计与导出，可「撤销本次」恢复`,
+      });
+    } catch (e: any) {
+      setSectionBoxInvalid(prev => (prev ? { ...prev, applying: false } : prev));
+      setToast({ tone: 'warn', text: e?.message || '批量设为无效失败' });
+    }
+  };
+
+  /** 撤销本次：只回滚这次真正从「有效」改成「无效」的那批，然后清空选区重新框选。 */
+  const undoSectionsBoxInvalid = async () => {
+    const session = sectionBoxInvalidRef.current;
+    const ids = session?.undoIds ?? [];
+    if (!session || session.applying || ids.length === 0) return;
+
+    setSectionBoxInvalid(prev => (prev ? { ...prev, applying: true } : prev));
+    try {
+      const res = await setSectionManualInvalid({ sectionIds: ids, invalid: false });
+      if (res.updated === 0) {
+        setToast({ tone: 'warn', text: '撤销未生效：这些断面可能已被删除，或不属于当前账号' });
+        return;
+      }
+      applyManualInvalidMany(ids, false, null);
+      const map = mapRef.current;
+      if (map) {
+        clearSectionBoxMatch(map);
+        setAreaSelection(map, null);
+      }
+      boxMatchCountRef.current = -1;
+      setSectionBoxInvalid(prev => (prev
+        ? {
+          ...prev,
+          applying: false,
+          appliedCount: 0,
+          undoIds: [],
+          matched: [],
+          alreadyInvalid: 0,
+          draftCount: 0,
+          selection: null,
+          drawing: true,
+        }
+        : prev));
+      setToast({ text: `已撤销：${res.updated} 条断面恢复为有效，可继续框选`, tone: 'ok' });
+    } catch (e: any) {
+      setSectionBoxInvalid(prev => (prev ? { ...prev, applying: false } : prev));
+      setToast({ tone: 'warn', text: e?.message || '撤销失败' });
+    }
+  };
+
+  /** 重新框选（重置）：清高亮与选区，重新进入绘制。**不动**已经生效的无效标记。 */
+  const redrawSectionBoxInvalid = () => {
+    const map = mapRef.current;
+    if (map) {
+      clearSectionBoxMatch(map);
+      setAreaSelection(map, null);
+    }
+    boxMatchCountRef.current = -1;
+    setSectionBoxInvalid(prev => (prev
+      ? {
+        ...prev,
+        drawing: true,
+        selection: null,
+        matched: [],
+        alreadyInvalid: 0,
+        draftCount: 0,
+      }
+      : prev));
+  };
+
+  const closeSectionBoxInvalid = () => {
+    const map = mapRef.current;
+    if (map) {
+      clearSectionBoxMatch(map);
+      setAreaSelection(map, null);
+    }
+    boxMatchCountRef.current = -1;
+    setSectionBoxInvalid(null);
+  };
+
+  // 画框监听：只在"等用户画矩形"期间存在。依赖只放真正决定监听行为的两个值，
+  // 别把整个会话对象放进来 —— 每帧 setState 都会重装监听、把正在拖的矩形打断。
+  const boxInvalidDrawing = sectionBoxInvalid?.drawing === true;
+  const boxInvalidTaskId = sectionBoxInvalid?.taskId ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !boxInvalidDrawing || !boxInvalidTaskId) return;
+    ensureAreaSelectionLayers(map);
+    const detach = attachAreaSelection(map, {
+      shape: 'rect',
+      onPreview: (polygon) => previewSectionBoxInvalid(polygon),
+      onDone: (polygon) => completeSectionBoxInvalid(boxInvalidTaskId, polygon),
+      onCancel: (reason: AreaSelectionCancelReason) => {
+        if (reason === 'too-small') {
+          // 误点不退出绘制：用户还要接着画，退出去反而要再点一次「重新框选」
+          setToast({ text: '选区太小，已忽略；请拖出更大的范围', tone: 'warn' });
+          return;
+        }
+        setSectionBoxInvalid(prev => (prev ? { ...prev, drawing: false } : prev));
+      },
+    });
+    return detach;
+    // 两个回调每次渲染都是新引用，但只读 ref + setState，捕获旧的也无副作用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boxInvalidDrawing, boxInvalidTaskId, mapReady]);
+
+  // 停止框选时把高亮留住还是清掉：留着 —— 用户松手后还要看"到底哪几条会被隐藏"，
+  // 清掉的话面板上的数字和图上就对不上了。只有关闭 / 撤销 / 重新框选才清。
 
   const handleDeleteTaskById = async (taskId: string) => {
     try {
@@ -3617,6 +3933,10 @@ function ResultPage(props: ResultPageProps) {
     });
 
     mapRef.current = map;
+    // 开发期把地图挂到 window：结果页的图层（断面 / 色带 / 框选高亮）全在 canvas 上，
+    // DOM 里查不到，真机脚本（CDP）只能靠它读 `getSource()._data` / `getStyle().layers`
+    // 来区分「没画」和「画了但被压住」。生产构建不会带上（`import.meta.env.DEV` 为 false 时被裁掉）。
+    if (import.meta.env.DEV) (window as any).__resultMap = map;
     map.addControl(new mapboxgl.NavigationControl(), 'top-left');
 
     const initLayers = () => {
@@ -4413,6 +4733,32 @@ function ResultPage(props: ResultPageProps) {
           />
         )}
 
+        {/* 框选设为无效：与上面同位置、同交互，但只有矩形（起点判定不需要多边形）。
+            提示条用琥珀色 —— 与"分析(青)"分开，"这一下会隐藏东西"必须一眼看出。 */}
+        {sectionBoxInvalid?.drawing && (
+          <div className="map-box-select-hint is-invalid" data-tour="map-box-select-hint">
+            按住鼠标拖出矩形：起点落在框内的断面会被一起设为无效 · Esc 或右键取消
+          </div>
+        )}
+        {sectionBoxInvalid && (
+          <SectionBoxInvalidPanel
+            taskName={sectionBoxInvalid.taskName}
+            drawing={sectionBoxInvalid.drawing}
+            hasSelection={!!sectionBoxInvalid.selection}
+            matchedCount={sectionBoxInvalid.drawing
+              ? sectionBoxInvalid.draftCount
+              : sectionBoxInvalid.matched.length}
+            alreadyInvalid={sectionBoxInvalid.alreadyInvalid}
+            appliedCount={sectionBoxInvalid.appliedCount}
+            undoCount={sectionBoxInvalid.undoIds.length}
+            busy={sectionBoxInvalid.applying}
+            onApply={() => { void applySectionBoxInvalid(); }}
+            onUndo={() => { void undoSectionsBoxInvalid(); }}
+            onRedraw={redrawSectionBoxInvalid}
+            onClose={closeSectionBoxInvalid}
+          />
+        )}
+
         {matrixOpen && (
           <div className="matrix-modal-overlay" onClick={closeMatrixDetail}>
             <div className="matrix-modal" onClick={(e) => e.stopPropagation()}>
@@ -4809,6 +5155,14 @@ function ResultPage(props: ResultPageProps) {
           >
             <ScanSearch size={13} />
             {resultCountOfTask(taskMenu.taskId) === 0 ? '分析（暂无结果）' : '分析'}
+          </button>
+          <button
+            className="task-menu-item"
+            title="在地图上拖出矩形：断面起点（岸边端点）落在框内的断面一起设为无效（灰色虚线），可一键撤销"
+            onClick={() => { const t = taskMenu; setTaskMenu(null); void startSectionBoxInvalid(t.taskId, t.taskName); }}
+          >
+            <SquareDashed size={13} />
+            框选设为无效断面
           </button>
           <button
             className="task-menu-item"

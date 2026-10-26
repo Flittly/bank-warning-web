@@ -44,6 +44,17 @@ export interface AttachAreaSelectionOptions {
   onDone: (polygon: GeoJSON.Feature<GeoJSON.Polygon>) => void;
   /** Esc / 右键 / 误点取消。`too-small` = 拖拽不足 4px。 */
   onCancel?: (reason: AreaSelectionCancelReason) => void;
+  /**
+   * 拖拽过程中的**每一帧**回调（null = 当前这一帧没有合法选区，如刚按下鼠标）。
+   *
+   * <p>给「边拖边看会选中谁」用（框选设为无效的高亮）。刻意只在拖拽中触发、不节流：
+   * 节流会把成本转嫁给调用方（它反而不知道该不该补最后一帧），而调用方可以自己
+   * 用 rAF 合并 —— 那边还要顺带判上千条断面，本来就得控频。
+   *
+   * <p>注意 `onDone` 之前一定会先来一次 `onPreview(最终选区)`，所以调用方
+   * 不需要在 `onDone` 里再画一次高亮（但重算一遍更稳，见调用方注释）。
+   */
+  onPreview?: (polygon: GeoJSON.Feature<GeoJSON.Polygon> | null) => void;
 }
 
 /** 顶点数组 → 闭合 Polygon；不足 3 点或面积为 0 返回 null（"点两下"不算选区）。 */
@@ -186,6 +197,9 @@ export function attachAreaSelection(
 
   const preview = (polygon: GeoJSON.Feature<GeoJSON.Polygon> | null) => {
     setAreaSelection(map, polygon);
+    // 实时反馈交给调用方（框选高亮）。放在 setAreaSelection 之后：调用方可能要用
+    // 图层顺序把高亮压到选区下面，得先保证选区图层已经在了。
+    options.onPreview?.(polygon);
   };
 
   const finish = (polygon: GeoJSON.Feature<GeoJSON.Polygon> | null) => {
