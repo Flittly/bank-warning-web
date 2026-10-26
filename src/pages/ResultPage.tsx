@@ -14,6 +14,7 @@ import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search,
 import { ConfigProvider, Modal } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { cancelTask } from '../services/taskRunControl';
+import { setSectionManualInvalid } from '../services/sectionInvalidApi';
 import { FlowFieldLayer, FLOW_FIELD_LAYER_ID, type FlowFieldStatus } from '../map/flowFieldLayer';
 import { bankShadeWidthExpr } from '../map/bankShadeWidth';
 import { sectionProgressAlongBank } from '../map/sectionBandProgress';
@@ -28,6 +29,36 @@ import {
   shouldRenderRisk,
   type RiskGradientPoint,
 } from '../map/sectionRenderVisibility';
+import {
+  SECTION_START_LAYER_ID,
+  SECTION_START_SOURCE_ID,
+  raiseSectionStartLayer,
+  sectionStartCoordinate,
+  sectionStartPointPaint,
+} from '../map/sectionStartPoints';
+import {
+  BANK_EDIT_DRAFT_HALO_LAYER_ID,
+  BANK_EDIT_DRAFT_LAYER_ID,
+  BANK_EDIT_DRAFT_SOURCE_ID,
+  BANK_EDIT_VERTEX_HIT_LAYER_ID,
+  BANK_EDIT_VERTEX_LAYER_ID,
+  BANK_EDIT_VERTEX_SOURCE_ID,
+  bankEditDraftHaloPaint,
+  bankEditDraftPaint,
+  bankEditVertexHitPaint,
+  bankEditVertexPaint,
+  coordsSignature,
+  coordsToLineFeature,
+  type BankCoord,
+  deleteVertex,
+  dropCoincidentVertices,
+  insertVertexAfter,
+  moveVertex,
+  nearestPointOnBank,
+  normalizeBankCoords,
+  vertexFeatures,
+} from '../map/bankGeometryEdit';
+import BankGeometryEditBar from '../components/BankGeometryEditBar';
 import {
   DEFAULT_FLOW_COLOR_SCHEME,
   FLOW_COLOR_SCHEMES,
@@ -267,6 +298,14 @@ interface SectionResult {
   /** 该断面结果自带的 all 阈值；缺失时按默认 0.25/0.5/0.75 分级。 */
   risk_thresholds?: number[] | null;
   risk_score?: number;
+  /**
+   * 人工标记为无效断面：不参与着色 / 框选统计 / 报告与导出，图上按「无数据」的灰虚线画。
+   *
+   * <p>它是**断面**属性（`cross_sections.manual_invalid`），与结果无关 —— 有结果的断面也可能被标记，
+   * 恢复有效时立刻重新上色（结果没被删）。与几何校验 `is_valid` 是两件事，别混用。
+   */
+  manual_invalid?: boolean;
+  manual_invalid_reason?: string | null;
 }
 
 type SectionProfilePoint = {
@@ -345,6 +384,113 @@ function parseList(data: any, key?: string): any[] {
 // 矩阵指标分组配置统一由 utils/riskScoring 提供（与人工修改的重算共用同一份定义）
 const MATRIX_GROUPS = RISK_MATRIX_GROUPS;
 
+// ============================================================
+//  岸段折点编辑：图层与拾取工具
+// ============================================================
+
+/**
+ * 从色带 / 虚线图层 id 反解 bank_id。
+ *
+ * <p>为什么不能读 `feature.properties.bank_id`：色带的数据源是
+ * `turf.lineString(coords)`，几何上没有任何属性（`bankline-source-<id>` 的 data 就是一条裸线）。
+ * 而图层 id 里编了 bank_id，是唯一可靠的来源。虚线层的数据源的**有** bank_id，
+ * 但两条路径各写一套判断迟早漂移，所以统一走 id 反解。
+ */
+function bankIdFromLayerId(layerId: string): string | null {
+  for (const prefix of ['bankline-result-', 'bankline-nodata-']) {
+    if (layerId.startsWith(prefix)) return layerId.slice(prefix.length);
+  }
+  return null;
+}
+
+/** 编辑期间要临时藏掉的两层：实色色带与灰色虚线。 */
+function bankBandLayerIds(bankId: string): string[] {
+  return [`bankline-result-${bankId}`, `bankline-nodata-${bankId}`];
+}
+
+/**
+ * 建（或复用）编辑态图层：白描边 → 草稿线 → 折点命中层 → 折点圆点。
+ *
+ * <p>顺序是硬要求：命中层必须压在折点**下面**，否则点击折点时先命中的是那个
+ * 透明大圆（没有 `index` 属性），拖拽会变成「点了没反应」。而命中层又必须比圆点大，
+ * 那是鼠标容错，不是视觉元素。
+ */
+function ensureBankEditLayers(map: mapboxgl.Map) {
+  if (!map.getSource(BANK_EDIT_DRAFT_SOURCE_ID)) {
+    map.addSource(BANK_EDIT_DRAFT_SOURCE_ID, {
+      type: 'geojson',
+      data: turf.featureCollection([]),
+    });
+  }
+  if (!map.getSource(BANK_EDIT_VERTEX_SOURCE_ID)) {
+    map.addSource(BANK_EDIT_VERTEX_SOURCE_ID, {
+      type: 'geojson',
+      data: turf.featureCollection([]),
+    });
+  }
+
+  if (!map.getLayer(BANK_EDIT_DRAFT_HALO_LAYER_ID)) {
+    map.addLayer({
+      id: BANK_EDIT_DRAFT_HALO_LAYER_ID,
+      type: 'line',
+      source: BANK_EDIT_DRAFT_SOURCE_ID,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: bankEditDraftHaloPaint() as any,
+    });
+  }
+  if (!map.getLayer(BANK_EDIT_DRAFT_LAYER_ID)) {
+    map.addLayer({
+      id: BANK_EDIT_DRAFT_LAYER_ID,
+      type: 'line',
+      source: BANK_EDIT_DRAFT_SOURCE_ID,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: bankEditDraftPaint() as any,
+    });
+  }
+  if (!map.getLayer(BANK_EDIT_VERTEX_HIT_LAYER_ID)) {
+    map.addLayer({
+      id: BANK_EDIT_VERTEX_HIT_LAYER_ID,
+      type: 'circle',
+      source: BANK_EDIT_VERTEX_SOURCE_ID,
+      paint: bankEditVertexHitPaint() as any,
+    });
+  }
+  if (!map.getLayer(BANK_EDIT_VERTEX_LAYER_ID)) {
+    map.addLayer({
+      id: BANK_EDIT_VERTEX_LAYER_ID,
+      type: 'circle',
+      source: BANK_EDIT_VERTEX_SOURCE_ID,
+      paint: bankEditVertexPaint() as any,
+    });
+  }
+}
+
+/** 拆掉编辑态图层。退出编辑时调用，避免留一条「看得见但拖不动」的青色线。 */
+function removeBankEditLayers(map: mapboxgl.Map) {
+  [BANK_EDIT_VERTEX_LAYER_ID, BANK_EDIT_VERTEX_HIT_LAYER_ID, BANK_EDIT_DRAFT_LAYER_ID, BANK_EDIT_DRAFT_HALO_LAYER_ID]
+    .forEach(layerId => {
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+    });
+  [BANK_EDIT_VERTEX_SOURCE_ID, BANK_EDIT_DRAFT_SOURCE_ID].forEach(sourceId => {
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  });
+}
+
+/**
+ * 把草稿折点推给地图。
+ *
+ * <p>拖拽过程中**每帧只调这个函数**，不走 React setState ——
+ * 一条岸段平均上百个折点，每帧全页重渲染会让拖拽明显掉帧。
+ * 折点数据在拖拽结束后才写回 state（见 mouseup）。
+ */
+function pushBankEditDraft(map: mapboxgl.Map, coords: BankCoord[]) {
+  const draftSrc = map.getSource(BANK_EDIT_DRAFT_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+  if (draftSrc) draftSrc.setData(coordsToLineFeature(coords) as any);
+  const vertexSrc = map.getSource(BANK_EDIT_VERTEX_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+  if (vertexSrc) vertexSrc.setData(vertexFeatures(coords) as any);
+}
+
+
 /**
  * 「无数据」虚线带的线宽倍率（相对实色色带）。
  *
@@ -400,6 +546,44 @@ function ResultPage(props: ResultPageProps) {
    */
   const bankVisibleSegmentsRef = useRef<Record<string, GeoJSON.Feature[]>>({});
 
+  // ==================== 岸段折点编辑 ====================
+  //
+  // 编辑的对象是 `banks` 表里的岸段几何，**不是**当前任务的副本 —— 岸段是用户级共享资源
+  // （没有 task_id），所以改一条会同时挪动所有引用它的任务的色带。这一点在浮栏里显式提示。
+  //
+  // 编辑期间：
+  //   * 该岸段的实色色带与灰色虚线被临时藏掉，改由青色草稿线承担视觉（避免旧位置还留着颜色）；
+  //   * `applyShorelineGradient` 整段跳过（见 bankEditActiveRef 闸门），否则轮询每 2 秒
+  //     会把色带按旧几何画回去，用户看到的是「线在跳」。
+  const [bankEditTarget, setBankEditTarget] = useState<{ bankId: string; bankName: string } | null>(null);
+  const [bankEditCoords, setBankEditCoords] = useState<BankCoord[] | null>(null);
+  const [bankEditUsage, setBankEditUsage] = useState<{ taskCount: number; sectionCount: number } | null>(null);
+  const [bankEditPicking, setBankEditPicking] = useState(false);
+  const [bankEditSaving, setBankEditSaving] = useState(false);
+  const [bankEditDirty, setBankEditDirty] = useState(false);
+  /**
+   * 撤销 / 重做栈。栈里存**整份折点数组**而不是 diff：
+   * 折点最多一两千个，一次拷贝几十 KB，比维护一套「反向操作」可靠得多
+   * （反向操作要在拖动、插入、删除三条路径上各自写对，错一处就会撤销出错误几何）。
+   */
+  const bankEditHistoryRef = useRef<{ stack: BankCoord[][]; cursor: number }>({ stack: [], cursor: -1 });
+  /** 只为了让撤销/重做按钮的禁用态跟着栈变 —— 栈本身放 ref，不参与渲染。 */
+  const [bankEditHistoryVersion, setBankEditHistoryVersion] = useState(0);
+  /** 正在拖的折点下标；null = 没在拖。 */
+  const bankEditDragRef = useRef<{ index: number } | null>(null);
+  /** 供地图事件回调读取最新值（事件闭包捕获的是注册那一刻的 state，读 state 会拿到旧值）。 */
+  const bankEditTargetRef = useRef<{ bankId: string; bankName: string } | null>(null);
+  const bankEditCoordsRef = useRef<BankCoord[] | null>(null);
+  /** 编辑期闸门：true 时色带重绘整体跳过。 */
+  const bankEditActiveRef = useRef(false);
+  /**
+   * 「正在选岸段」的镜像。断面点击处理器是在 renderSections 里一次性赋值的，
+   * 那里读 state 只能读到赋值那一刻的值 ⇒ 必须走 ref，否则选岸段时点断面仍会弹矩阵。
+   */
+  const bankEditPickingRef = useRef(false);
+  /** 提交一步折点改动的函数。用 ref 持有，避免地图事件监听随每次渲染重建。 */
+  const bankEditCommitRef = useRef<((next: BankCoord[]) => void) | null>(null);
+
   const sectionClickHandlerRef = useRef<((e: any) => void) | null>(null);
   const sectionEnterHandlerRef = useRef<(() => void) | null>(null);
   const sectionLeaveHandlerRef = useRef<(() => void) | null>(null);
@@ -429,6 +613,8 @@ function ResultPage(props: ResultPageProps) {
   const [matrixDetail, setMatrixDetail] = useState<any | null>(null);
   /** 矩阵弹窗是否处于「人工修改」态 */
   const [resultEditing, setResultEditing] = useState(false);
+  /** 「人工无效」标记提交中：只锁那一个按钮，不锁整个弹窗（用户仍可看图表）。 */
+  const [invalidSaving, setInvalidSaving] = useState(false);
   /** 轻量提示：保存成功后给一句明确反馈（出图/报告不会自动变，也要在这里说清） */
   const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
 
@@ -1152,7 +1338,11 @@ function ResultPage(props: ResultPageProps) {
           /** 标记「这一条是空白待录入」，决定 banner 文案与撤销语义。 */
           not_computed: true,
           not_computed_reason: payload?.reason ?? null,
-          manual_editable: payload?.manual_editable !== false
+          manual_editable: payload?.manual_editable !== false,
+          // 人工无效是断面属性，payload 顶层与 section 里各带一份（同一份数据，取到哪个都行）：
+          // 弹窗靠它决定按钮文案与「已标记无效」标签。
+          manual_invalid: payload?.manual_invalid === true || sectionInfo.manual_invalid === true,
+          manual_invalid_reason: payload?.manual_invalid_reason ?? sectionInfo.manual_invalid_reason ?? null
         });
         setResultEditing(payload?.manual_editable !== false);
         return;
@@ -1169,6 +1359,9 @@ function ResultPage(props: ResultPageProps) {
         result_matrix: matrices.result_matrix ?? indicators.result_matrix ?? result?.result_matrix,
         risk_level: result?.['risk-level'] ?? result?.risk_level ?? result?.riskLevel,
         result: result?.result ?? indicators?.result ?? payload?.result?.result,
+        // 人工无效标记不在结果行上（是 cross_sections 的列），payload 单独带回来的。
+        manual_invalid: payload?.manual_invalid === true,
+        manual_invalid_reason: payload?.manual_invalid_reason ?? null,
       };
       console.log('ResultPage: matrix detail payload:', payload);
       console.log('ResultPage: matrix detail resolved matrix:', matrix);
@@ -1359,6 +1552,86 @@ function ResultPage(props: ResultPageProps) {
     const level = toDisplayLevel(updated?.risk_level);
     const label = level === null ? '未知' : RISK_LABELS[level];
     setToast({ tone: 'ok', text: `已恢复模型原值：风险等级 ${label}` });
+  };
+
+  /**
+   * 「人工无效」标记生效后：只改内存里的那一条，然后重绘断面与它所属岸段。
+   *
+   * <p>为什么不重新拉一次断面列表：标记只改一个布尔，重拉 2000+ 断面等于给后端一次
+   * 无谓的全量读；而这里用的 `renderSections` + `applyShorelineGradient(onlyBankId, …)`
+   * 与轮询走的是同一套链路，不会出现「手动改的和自动刷的不一致」。
+   *
+   * <p>**刻意不清** `sectionIndicatorResultCacheRef`：结果没被删，恢复有效时那份数值还要用。
+   * 顺手清掉会让"恢复有效"变成"恢复成灰的，但也不是无数据"这种中间状态。
+   */
+  const applyManualInvalid = (sectionId: string, invalid: boolean, reason: string | null) => {
+    const taskId = selectedTaskRef.current;
+    if (!taskId) return;
+    const base = lastSectionsByTaskRef.current[taskId] ?? [];
+    const target = base.find(s => s.section_id === sectionId) ?? null;
+    const next = base.map(s => (s.section_id === sectionId
+      ? { ...s, manual_invalid: invalid, manual_invalid_reason: reason }
+      : s));
+    lastSectionsByTaskRef.current[taskId] = next;
+
+    if (mapRef.current) {
+      renderSections(next);
+      // 只重画该断面所属岸段：结果没变，其它岸段的色带没必要跟着重算（全量重绘会让整条岸线闪一下）。
+      applyShorelineGradient(next, target?.bank_id ?? null);
+    }
+
+    // 悬停卡片里的等级文案是构建 DOM 时写死的，改完必须关掉；用户再点一次才是新状态。
+    if (activePopupSectionIdRef.current === sectionId) {
+      activePopupRef.current?.remove();
+      activePopupRef.current = null;
+      activePopupSectionIdRef.current = null;
+    }
+  };
+
+  /**
+   * 弹窗里切换「人工无效」。
+   *
+   * <p>确认框只在**标记**时弹：那是把一条有颜色的断面变灰，用户需要知道「结果没删、随时能恢复」；
+   * 恢复不做二次确认 —— 它是纯增益动作，且按钮文案已经写明。
+   */
+  const handleToggleManualInvalid = async () => {
+    const sectionId = matrixSectionId;
+    if (!sectionId) return;
+    const nextInvalid = matrixDetail?.manual_invalid !== true;
+    if (nextInvalid) {
+      const ok = window.confirm([
+        '把这条断面标记为「无效」？',
+        '',
+        '· 该断面与它管辖的那段岸线会变成灰色虚线；',
+        '· 不再参与着色、框选统计、报告配图与导出；',
+        '· 计算结果会保留，随时可以恢复，不需要重算。',
+      ].join('\n'));
+      if (!ok) return;
+    }
+
+    setInvalidSaving(true);
+    try {
+      const res = await setSectionManualInvalid({ sectionIds: [sectionId], invalid: nextInvalid });
+      if (res.updated === 0) {
+        // 0 行 = 该 id 越权或已被删除。这类失败不能静默：界面会以为改成功了，图上却毫无变化。
+        setToast({ tone: 'warn', text: '未生效：该断面可能已被删除，或不属于当前账号' });
+        return;
+      }
+      applyManualInvalid(sectionId, nextInvalid, null);
+      setMatrixDetail((prev: any) => (prev
+        ? { ...prev, manual_invalid: nextInvalid, manual_invalid_reason: null }
+        : prev));
+      setToast({
+        tone: 'ok',
+        text: nextInvalid
+          ? '已标记为无效断面：图上显示为灰色虚线，不参与统计与导出；结果数据已保留'
+          : '已恢复为有效断面：颜色与统计立即恢复，无需重算',
+      });
+    } catch (e: any) {
+      setToast({ tone: 'warn', text: e?.message || '操作失败' });
+    } finally {
+      setInvalidSaving(false);
+    }
   };
 
   // — 单指标风险等级
@@ -1563,7 +1836,7 @@ function ResultPage(props: ResultPageProps) {
     if (!mapRef.current) return;
     const map = mapRef.current;
     
-    ['sections-line', 'sections-nodata-line', 'sections-line-hit'].forEach(layer => {
+    ['sections-line', 'sections-nodata-line', 'sections-line-hit', SECTION_START_LAYER_ID].forEach(layer => {
       if (map.getLayer(layer)) {
         map.setLayoutProperty(layer, 'visibility', showSections ? 'visible' : 'none');
       }
@@ -1572,10 +1845,17 @@ function ResultPage(props: ResultPageProps) {
 
   // 清理地图上所有断面和中线图层/数据源
   const clearMapLayers = (map: mapboxgl.Map) => {
-    ['sections-line-hit', 'sections-nodata-line', 'sections-line'].forEach(layer => {
+    // 顺序按「图层叠放从上到下」删，起点圆在最上面。把定义分散到多处迟早漏掉新层 ——
+    // 漏掉的表现就是切到别的任务后，上一批起点圆还钉在原地。
+    [SECTION_START_LAYER_ID, 'sections-line-hit', 'sections-nodata-line', 'sections-line'].forEach(layer => {
       if (map.getLayer(layer)) map.removeLayer(layer);
     });
+    if (map.getSource(SECTION_START_SOURCE_ID)) map.removeSource(SECTION_START_SOURCE_ID);
     if (map.getSource('sections-source')) map.removeSource('sections-source');
+
+    // 岸段折点编辑层也要清：它的图层 id 是 `bank-edit-*`，不在下面那两个
+    // `bankline-` 前缀的清理范围内，漏掉会在新任务地图上留一条青色草稿线。
+    removeBankEditLayers(map);
 
     const style = map.getStyle();
     if (style && style.layers) {
@@ -1666,6 +1946,13 @@ function ResultPage(props: ResultPageProps) {
    * 注意 `risk_level` 是库里的 1..4（1 最安全），显示等级要减 1（`toDisplayLevel`）。
    */
   const resolveSectionRisk = (section: SectionResult) => {
+    // 【人工无效优先于一切】标记的语义是「这条断面先别算进来」，不是「这条断面没有值」：
+    // 它可能明明有结果，只是用户判定位置/数据不可用，要先从图面与分析里摘出去。
+    // 所以必须在任何「拿到值」的判定**之前**返回 valid:false —— 下游（断面线、起点圆、
+    // 岸段色带、框选统计）都只认 `valid`，一处早退即可全链路按「无数据」口径处理。
+    if (section.manual_invalid) {
+      return { valid: false as const, color: RISK_COLORS.default, label: '无效', level: null };
+    }
     const info = computeColorWithMatrix(section.indicator_result, section.risk_thresholds);
     if (info.valid) return info;
 
@@ -2091,7 +2378,9 @@ function ResultPage(props: ResultPageProps) {
           // legacy compatibility
           anchorPoint: (s.anchorPoint ?? s.anchor_point ?? s.anchor) ?? null,
           risk_level: s.risk_level,
-          indicator_result: null
+          indicator_result: null,
+          manual_invalid: s.manual_invalid === true,
+          manual_invalid_reason: s.manual_invalid_reason ?? null
         }));
 
       // 打印处理后的断面列表 JSON，便于调试（也可在控制台查看）
@@ -2366,31 +2655,67 @@ function ResultPage(props: ResultPageProps) {
     if (!map) return;
 
     // 转换断面数据为 GeoJSON
+    //
+    // 同一次遍历里顺带产出「起点圆」的 feature：点的颜色与文案必须与线**逐字一致**，
+    // 分成两遍会出现「线是蓝的、点是绿的」而没人知道该信哪个。所以两者共用同一个 `info`。
+    const startFeatures: any[] = [];
     const features = sections.filter(s => s.geometry).map(s => {
       const info = resolveSectionRisk(s);
       const renderable = shouldRenderRisk(info);
       const color = renderable ? info.color : TRANSPARENT_RISK_COLOR;
       const displayRisk = info.valid ? info.level : info.label;
-      // 文案必须把「低风险」与「无数据」分开：前者是有效结果，后者是没数。
-      const riskLabel = !info.valid
-        ? '无数据（待人工评估）'
-        : info.level === null
-          ? '未知'
-          : renderable
-            ? RISK_LABELS[info.level]
-            : `${RISK_LABELS[info.level]}（不渲染）`;
+      // 文案必须把「人工无效」「低风险」「无数据」三者分开 —— 前两者在图上同是灰虚线，
+      // 但一个是"我故意关掉的"、一个是"还没算出来"，处理动作完全不同。
+      const riskLabel = s.manual_invalid
+        ? '已标记无效（不参与着色/统计）'
+        : !info.valid
+          ? '无数据（待人工评估）'
+          : info.level === null
+            ? '未知'
+            : renderable
+              ? RISK_LABELS[info.level]
+              : `${RISK_LABELS[info.level]}（不渲染）`;
+      const name = s.section_name || s.section_id;
+
+      // —— 起点圆：标出这条断面挂在岸段的哪一点 ——
+      // 起点 = 几何首点 = 岸侧（全库 28191 条已验证，见 map/sectionStartPoints 的注释）。
+      // 无数据断面的线是透明的，点不能跟着透明，否则「这里有条断面」的锚点也没了，
+      // 故点单独给 NO_DATA_RISK_COLOR（与虚线、图例、框选面板同一个灰）。
+      const start = sectionStartCoordinate(s.geometry);
+      if (start) {
+        startFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: start },
+          properties: {
+            id: s.section_id,
+            name,
+            risk_level: displayRisk,
+            risk_label: riskLabel,
+            color: renderable ? info.color : NO_DATA_RISK_COLOR,
+            noData: !renderable,
+            /** 人工无效：断面线画得更淡（见 `sections-nodata-line` 的 line-opacity 表达式）。 */
+            invalid: s.manual_invalid === true,
+          },
+        });
+      }
 
       return {
         type: 'Feature',
         geometry: s.geometry,
         properties: {
           id: s.section_id,
-          name: s.section_name || s.section_id,
+          name,
           risk_level: displayRisk,
           risk_label: riskLabel,
           color: color,
           /** 无风险值 → 由 nodata 图层画灰色虚线；命中层**不再**用它过滤（这类断面必须可点）。 */
-          noData: !renderable
+          noData: !renderable,
+          /**
+           * 人工无效 = `noData` 的子集，但视觉上要能分辨：同是灰虚线，
+           * 无效的更淡（line-opacity 表达式按这个字段取值）。
+           * 判断「这是不是我故意关掉的那条」不能靠记忆，得能从图上读出来。
+           */
+          invalid: s.manual_invalid === true
         }
       };
     });
@@ -2405,6 +2730,20 @@ function ResultPage(props: ResultPageProps) {
       map.addSource('sections-source', {
         type: 'geojson',
         data: fc as any
+      });
+    }
+
+    // 起点圆单独一个 source：与线共用一个 geojson source 也能跑（Mapbox 各图层只取匹配的
+    // 几何类型），但那样 line 图层会为每个 Point 做一次无谓的类型判断，且 clearMapLayers
+    // 里「删线 source」时会连带删掉点。分开更省事。
+    const startFc = turf.featureCollection(startFeatures as any);
+    const existingStartSource = map.getSource(SECTION_START_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    if (existingStartSource) {
+      existingStartSource.setData(startFc as any);
+    } else {
+      map.addSource(SECTION_START_SOURCE_ID, {
+        type: 'geojson',
+        data: startFc as any
       });
     }
 
@@ -2455,7 +2794,15 @@ function ResultPage(props: ResultPageProps) {
           // 断面上也用虚线，与岸段虚线同一套语义（虚线 = 没数）。
           'line-dasharray': [1.4, 1.4],
           'line-width': 3,
-          'line-opacity': 0.95
+          /**
+           * 「人工无效」比「没算出来」再淡一档。
+           *
+           * 两者共用这一层（虚线是整层属性，Mapbox 没法按 feature 决定 `line-dasharray`），
+           * 但语义不同：没算 = 待办，无效 = 用户主动关掉、别再提醒我。图上要能分辨，
+           * 否则「我标的那几条到底生效了没有」只能靠记忆。`opacity` 是 data-driven 的，
+           * 正好承担这个区分，且不会引入第 5 种颜色。
+           */
+          'line-opacity': ['case', ['==', ['get', 'invalid'], true], 0.45, 0.95]
         }
       });
     } else {
@@ -2482,9 +2829,31 @@ function ResultPage(props: ResultPageProps) {
       map.setFilter('sections-line-hit', hitFilter);
     }
 
+    // —— 断面起点圆 ——
+    // 目的：让「这条断面挂在哪一段岸上」不用点开就能看出来。断面是横跨河道的线，
+    // 只看线的话两根线交叉在江心，根本分不清谁连着哪段岸；起点落在岸线上才是一一对应的锚点。
+    //
+    // 放在命中层**之后**（= 图层顺序最上）：点击时 Mapbox 后加的层优先，圆点才点得中。
+    // 半径随缩放收缩（见 map/sectionStartPoints）：单任务断面可达 2000+ 条，
+    // 低缩放下全尺寸圆点会串成一排白点、把岸段色带整片盖住。
+    if (!map.getLayer(SECTION_START_LAYER_ID)) {
+      map.addLayer({
+        id: SECTION_START_LAYER_ID,
+        type: 'circle',
+        source: SECTION_START_SOURCE_ID,
+        layout: {
+          'visibility': showSections ? 'visible' : 'none'
+        },
+        paint: sectionStartPointPaint() as any
+      });
+    }
+
     // 事件只绑定一次（防止轮询刷新导致重复绑定）
     if (!sectionClickHandlerRef.current) {
       sectionClickHandlerRef.current = (e: any) => {
+        // 岸段折点编辑 / 选岸段期间不响应断面点击：这一刻点图是在选岸段或拖折点，
+        // 弹一张断面矩阵会盖住编辑浮栏，等于把人从编辑态里踢出去。
+        if (bankEditActiveRef.current || bankEditPickingRef.current) return;
         if (!e.features || e.features.length === 0) return;
         const f = e.features[0];
         const p = f.properties;
@@ -2566,15 +2935,24 @@ function ResultPage(props: ResultPageProps) {
         map.getCanvas().style.cursor = '';
       };
 
-      map.off('click', 'sections-line-hit', sectionClickHandlerRef.current);
-      map.on('click', 'sections-line-hit', sectionClickHandlerRef.current);
+      // 命中层与起点圆共用同一个 handler：两处弹的是同一条断面，内容必须一模一样
+      // （properties 已在上面用同一个 `info` 生成）。同一个点击可能同时命中线和点，
+      // handler 会跑两遍 —— 第二遍先 remove 再 add 同一个 popup，同位置同内容，视觉无差。
+      ['sections-line-hit', SECTION_START_LAYER_ID].forEach(layerId => {
+        map.off('click', layerId, sectionClickHandlerRef.current!);
+        map.on('click', layerId, sectionClickHandlerRef.current!);
 
-      map.off('mouseenter', 'sections-line-hit', sectionEnterHandlerRef.current);
-      map.on('mouseenter', 'sections-line-hit', sectionEnterHandlerRef.current);
+        map.off('mouseenter', layerId, sectionEnterHandlerRef.current!);
+        map.on('mouseenter', layerId, sectionEnterHandlerRef.current!);
 
-      map.off('mouseleave', 'sections-line-hit', sectionLeaveHandlerRef.current);
-      map.on('mouseleave', 'sections-line-hit', sectionLeaveHandlerRef.current);
+        map.off('mouseleave', layerId, sectionLeaveHandlerRef.current!);
+        map.on('mouseleave', layerId, sectionLeaveHandlerRef.current!);
+      });
     }
+
+    // 起点圆必须在最上层：岸段色带是沿整条岸线铺的宽带，而起点正落在带子覆盖范围内。
+    // 首次渲染时色带还没建，这里先占位；真正生效靠 applyShorelineGradient 末尾那次。
+    raiseSectionStartLayer(map as any);
   };
 
   /**
@@ -2585,6 +2963,11 @@ function ResultPage(props: ResultPageProps) {
   const applyShorelineGradient = (sections: SectionResult[], onlyBankId?: string | null) => {
     const map = mapRef.current;
     if (!map) return;
+
+    // 岸段折点编辑期间整体停画。理由：色带是按**库里那份几何**算的，编辑时草稿线已经换了
+    // 位置，若这里照旧重绘（轮询每 2 秒一次），用户会看到色带在旧位置闪回，
+    // 像是「拖了但没生效」。退出/保存时闸门放开，再按新几何完整重算一次。
+    if (bankEditActiveRef.current) return;
 
     // 没有任何断面：把已存在的岸段色带全部藏掉，避免上一个任务的配色残留在地图上
     // （clearMapLayers 会删图层，但它只在切任务时调用，这里的防线针对「同任务内结果被清空」）。
@@ -2795,7 +3178,380 @@ function ResultPage(props: ResultPageProps) {
         segSrc.setData(turf.featureCollection(all as any));
       }
     }
+
+    // 色带图层刚在上面被创建/更新，起点圆又被压到下面了 —— 这里必须再提一次。
+    // 这是 `renderSections` 末尾那次的全量版本：局部重绘（onlyBankId）也会新建 bankline 图层。
+    raiseSectionStartLayer(map as any);
   };
+
+  // ============================================================
+  //  岸段折点编辑：状态机
+  // ============================================================
+
+  /**
+   * 提交一步折点改动（拖动结束 / 插入 / 删除 / 撤销都走它）。
+   *
+   * <p>「签名没变就不入栈」这一条不是优化而是必需：`mousedown` + `mouseup` 不移动鼠标
+   * 也会走到提交，若照推，点一下折点就多一条空历史，撤销要连点好几次才有效果。
+   */
+  const commitBankEditCoords = (next: BankCoord[]) => {
+    const history = bankEditHistoryRef.current;
+    const currentSnapshot = history.cursor >= 0 ? history.stack[history.cursor] : null;
+    if (currentSnapshot && coordsSignature(currentSnapshot) === coordsSignature(next)) {
+      // 内容没变：只把地图上的草稿刷一遍（可能被重合点清理过），不记历史
+      const map = mapRef.current;
+      if (map) pushBankEditDraft(map, next);
+      return;
+    }
+    // 新操作要截断 redo 分支：撤销几步后再改，原来的「重做」已经没有意义
+    history.stack = history.stack.slice(0, history.cursor + 1);
+    history.stack.push(next);
+    history.cursor = history.stack.length - 1;
+
+    bankEditCoordsRef.current = next;
+    setBankEditCoords(next);
+    const base = history.stack[0];
+    setBankEditDirty(coordsSignature(base) !== coordsSignature(next));
+    setBankEditHistoryVersion(v => v + 1);
+    const map = mapRef.current;
+    if (map) pushBankEditDraft(map, next);
+  };
+
+  /** 撤销 / 重做共用的「跳转到栈上某一步」。 */
+  const jumpBankEditHistory = (delta: number) => {
+    const history = bankEditHistoryRef.current;
+    const target = history.cursor + delta;
+    if (target < 0 || target >= history.stack.length) return;
+    history.cursor = target;
+    const coords = history.stack[target];
+    bankEditCoordsRef.current = coords;
+    setBankEditCoords(coords);
+    const base = history.stack[0];
+    setBankEditDirty(coordsSignature(base) !== coordsSignature(coords));
+    setBankEditHistoryVersion(v => v + 1);
+    const map = mapRef.current;
+    if (map) pushBankEditDraft(map, coords);
+  };
+
+  /**
+   * 进入某条岸段的折点编辑。
+   *
+   * <p>几何来源是 `bankGeometryCacheRef`（进任务时已缓存），**不重新请求**：
+   * 编辑必须与地图上正在显示的那条线逐点一致，多打一次接口只会引入
+   * 「缓存是旧的、服务端是新的」这种错位。
+   */
+  const enterBankEdit = async (bankId: string) => {
+    const coords = normalizeBankCoords(bankGeometryCacheRef.current[bankId]);
+    if (!coords) {
+      setToast({ tone: 'warn', text: '该岸段几何读不出来（需要 LineString 且至少 2 个折点），无法编辑' });
+      return;
+    }
+
+    setBankEditPicking(false);
+    let bankName = bankId;
+    let usage: { taskCount: number; sectionCount: number } | null = null;
+    try {
+      const payload = await fetchJSON(`/v0/bank/banks/${encodeURIComponent(bankId)}/usage`);
+      if (payload?.bank_name) bankName = String(payload.bank_name);
+      usage = {
+        taskCount: Number(payload?.task_count ?? 0),
+        sectionCount: Number(payload?.section_count ?? 0),
+      };
+    } catch {
+      // 影响面取不到不影响编辑能力，只是少一条提示 —— 不要因此拒绝进入编辑
+    }
+
+    const target = { bankId, bankName };
+    bankEditTargetRef.current = target;
+    bankEditActiveRef.current = true;
+    bankEditCoordsRef.current = coords;
+    bankEditHistoryRef.current = { stack: [coords], cursor: 0 };
+    setBankEditTarget(target);
+    setBankEditCoords(coords);
+    setBankEditUsage(usage);
+    setBankEditDirty(false);
+    setBankEditHistoryVersion(v => v + 1);
+
+    const map = mapRef.current;
+    if (!map) return;
+    ensureBankEditLayers(map);
+    pushBankEditDraft(map, coords);
+    // 旧位置的色带与虚线必须藏掉：草稿线是「这条岸段现在在哪」的唯一真相，
+    // 留着旧色带会让人以为改失败了。
+    bankBandLayerIds(bankId).forEach(layerId => {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', 'none');
+    });
+    // 灰底线（uploaded-data）里也要摘掉这条岸段，否则旧位置还留一条 2px 灰线。
+    const others = Object.entries(bankVisibleSegmentsRef.current)
+      .filter(([id]) => id !== bankId)
+      .flatMap(([, feats]) => feats);
+    const segSrc = map.getSource('uploaded-data') as mapboxgl.GeoJSONSource | undefined;
+    if (segSrc) segSrc.setData(turf.featureCollection(others as any));
+  };
+
+  /**
+   * 退出编辑。
+   *
+   * @param refreshBand 是否按当前缓存几何重绘该岸段色带。取消时几何没变，但色带在编辑期间
+   *                    被藏掉了，所以**两种退出都要重绘**；参数留着是为了未来「切任务」
+   *                    这类不该重绘的场景。
+   */
+  const exitBankEdit = (refreshBand: boolean) => {
+    const target = bankEditTargetRef.current;
+    const map = mapRef.current;
+
+    bankEditActiveRef.current = false;
+    bankEditTargetRef.current = null;
+    bankEditCoordsRef.current = null;
+    bankEditDragRef.current = null;
+    bankEditHistoryRef.current = { stack: [], cursor: -1 };
+    setBankEditTarget(null);
+    setBankEditCoords(null);
+    setBankEditUsage(null);
+    setBankEditDirty(false);
+    setBankEditHistoryVersion(v => v + 1);
+
+    if (map) {
+      removeBankEditLayers(map);
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = '';
+    }
+    if (refreshBand && target) {
+      // 闸门已在上面放开，这里能真正重绘。只刷这一条岸段：全量重绘会顺带
+      // 重算其它岸段的里程投影，纯属浪费。
+      applyShorelineGradient(lastSectionsByTaskRef.current[selectedTask ?? ''] ?? [], target.bankId);
+    }
+  };
+
+  /** 保存折点改动到 `bank_geometry`。成功后重绘色带；失败保留编辑态，让人能再试。 */
+  const saveBankGeometry = async () => {
+    const target = bankEditTargetRef.current;
+    const coords = bankEditCoordsRef.current;
+    if (!target || !coords) return;
+
+    setBankEditSaving(true);
+    try {
+      const payload = await fetchJSON(
+        `/v0/bank/banks/${encodeURIComponent(target.bankId)}/geometry`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bank_geometry: { type: 'LineString', coordinates: coords } }),
+        },
+      );
+
+      bankGeometryCacheRef.current[target.bankId] = {
+        type: 'LineString',
+        coordinates: coords,
+      } as unknown as GeoJSON.LineString;
+      // 里程投影缓存：键里含岸段总长，改了折点本来就会失效；显式清掉是为了不留旧条目。
+      for (const key of Array.from(bandProgressCacheRef.current.keys())) {
+        if (key.startsWith(`${target.bankId}|`)) bandProgressCacheRef.current.delete(key);
+      }
+
+      exitBankEdit(true);
+      const affected = Number(payload?.task_count ?? 0);
+      setToast({
+        tone: affected > 1 ? 'warn' : 'ok',
+        text: affected > 1
+          ? `岸段已保存：${affected} 个任务的色带位置随之改变；已生成的报告/图片需重新生成`
+          : '岸段已保存，色带已重绘；已生成的报告/图片需重新生成',
+      });
+    } catch (e: any) {
+      setToast({ tone: 'warn', text: `保存失败：${e?.message || '未知错误'}` });
+    } finally {
+      setBankEditSaving(false);
+    }
+  };
+
+  // 用 ref 暴露提交函数：地图事件监听只在进入编辑时注册一次，
+  // 若把 commit 放进依赖，每次折点变化都会重建全部监听 —— 拖拽中途被打断。
+  useEffect(() => {
+    bankEditCommitRef.current = commitBankEditCoords;
+  });
+
+  useEffect(() => {
+    bankEditPickingRef.current = bankEditPicking;
+  }, [bankEditPicking]);
+
+  /**
+   * 拾取模式：点地图选一条岸段。
+   *
+   * <p>为什么不在按钮上直接给一个下拉列表：任务里的岸段可能有几十条，
+   * 名字相近（`Mzs` 系列），列表选不中「地图上我看到的那条」。
+   * 点选才是「我指哪条就改哪条」。
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !bankEditPicking) return;
+
+    map.getCanvas().style.cursor = 'crosshair';
+    const handler = (e: mapboxgl.MapMouseEvent) => {
+      const layerIds = (map.getStyle()?.layers ?? [])
+        .map(layer => layer.id)
+        .filter(id =>
+          id === 'uploaded-lines-base' || id.startsWith('bankline-result-') || id.startsWith('bankline-nodata-'));
+      let bankId: string | null = null;
+      if (layerIds.length > 0) {
+        const features = map.queryRenderedFeatures(e.point, { layers: layerIds });
+        for (const feature of features) {
+          const fromLayer = bankIdFromLayerId(String((feature.layer as any)?.id ?? ''));
+          const fromProps = feature.properties?.bank_id ? String(feature.properties.bank_id) : null;
+          if (fromLayer || fromProps) {
+            bankId = fromLayer ?? fromProps;
+            break;
+          }
+        }
+      }
+      if (!bankId) {
+        setToast({ tone: 'warn', text: '这里没有岸段，请点在彩色或灰色的岸段线上' });
+        return;
+      }
+      void enterBankEdit(bankId);
+    };
+
+    map.on('click', handler);
+    return () => {
+      map.off('click', handler);
+      map.getCanvas().style.cursor = '';
+    };
+    // enterBankEdit 只读 ref 与 setState，注册时捕获那一份即可
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bankEditPicking]);
+
+  /**
+   * 编辑态的鼠标交互：拖动折点 / 双击线插点 / Alt 点击删点。
+   *
+   * <p>拖拽实现刻意「每帧只写地图、不写 React」：`bankEditCoordsRef` 承担拖拽中的真值，
+   * `mouseup` 才提交一次 state。一条岸段平均上百个折点，每帧 setState 会让整页重渲染，
+   * 手感立刻变成卡顿。
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !bankEditTarget) return;
+    const canvas = map.getCanvas();
+    const prevCursor = canvas.style.cursor;
+
+    const onVertexDown = (e: mapboxgl.MapMouseEvent & { features?: mapboxgl.MapboxGeoJSONFeature[] }) => {
+      const index = Number(e.features?.[0]?.properties?.index);
+      if (!Number.isFinite(index)) return;
+
+      // Alt / Option + 点击 = 删掉这个折点。用组合键而不是右键：
+      // 右键在这张图上被框选分析占用，再抢会打架。
+      if ((e.originalEvent as MouseEvent | undefined)?.altKey) {
+        const current = bankEditCoordsRef.current;
+        if (!current) return;
+        const next = deleteVertex(current, index);
+        if (!next) {
+          setToast({ tone: 'warn', text: '至少要保留 2 个折点，无法再删' });
+          return;
+        }
+        commitBankEditCoords(next);
+        return;
+      }
+
+      bankEditDragRef.current = { index };
+      map.dragPan.disable();
+      canvas.style.cursor = 'grabbing';
+      (e.originalEvent as MouseEvent | undefined)?.preventDefault?.();
+    };
+
+    const onMove = (e: mapboxgl.MapMouseEvent) => {
+      const drag = bankEditDragRef.current;
+      if (!drag) return;
+      const current = bankEditCoordsRef.current;
+      if (!current) return;
+      const next = moveVertex(current, drag.index, e.lngLat.lng, e.lngLat.lat);
+      bankEditCoordsRef.current = next;
+      pushBankEditDraft(map, next);
+    };
+
+    const onUp = () => {
+      if (!bankEditDragRef.current) return;
+      bankEditDragRef.current = null;
+      map.dragPan.enable();
+      canvas.style.cursor = '';
+      const current = bankEditCoordsRef.current;
+      if (!current) return;
+      // 收尾清一次重合折点：手抖常把两个折点拖到同一坐标，0 长度段会让
+      // `lineSliceAlong` 抛错（色带整段消失）。
+      commitBankEditCoords(dropCoincidentVertices(current));
+    };
+
+    const onDblClick = (e: mapboxgl.MapMouseEvent) => {
+      const current = bankEditCoordsRef.current;
+      if (!current) return;
+      const hit = nearestPointOnBank(current, e.lngLat.lng, e.lngLat.lat);
+      if (!hit) return;
+      // 插的是**投影到线上的点**，不是鼠标位置：否则新折点会把岸线拽出一个尖角
+      commitBankEditCoords(insertVertexAfter(current, hit.segmentIndex, hit.point[0], hit.point[1]));
+    };
+
+    const onEnterVertex = () => {
+      if (!bankEditDragRef.current) canvas.style.cursor = 'grab';
+    };
+    const onLeaveVertex = () => {
+      if (!bankEditDragRef.current) canvas.style.cursor = '';
+    };
+
+    map.on('mousedown', BANK_EDIT_VERTEX_HIT_LAYER_ID, onVertexDown as any);
+    map.on('mousemove', onMove);
+    map.on('mouseup', onUp);
+    // 鼠标在地图外松开时 Mapbox 收不到 mouseup，拖拽会「粘住」不放 ⇒ 补一个 window 监听
+    window.addEventListener('mouseup', onUp);
+    map.on('dblclick', BANK_EDIT_DRAFT_LAYER_ID, onDblClick as any);
+    map.on('mouseenter', BANK_EDIT_VERTEX_HIT_LAYER_ID, onEnterVertex);
+    map.on('mouseleave', BANK_EDIT_VERTEX_HIT_LAYER_ID, onLeaveVertex);
+    // 双击会同时触发一次缩放，编辑时那一下缩放会让刚插的点跑出视野
+    map.doubleClickZoom.disable();
+
+    return () => {
+      map.off('mousedown', BANK_EDIT_VERTEX_HIT_LAYER_ID, onVertexDown as any);
+      map.off('mousemove', onMove);
+      map.off('mouseup', onUp);
+      window.removeEventListener('mouseup', onUp);
+      map.off('dblclick', BANK_EDIT_DRAFT_LAYER_ID, onDblClick as any);
+      map.off('mouseenter', BANK_EDIT_VERTEX_HIT_LAYER_ID, onEnterVertex);
+      map.off('mouseleave', BANK_EDIT_VERTEX_HIT_LAYER_ID, onLeaveVertex);
+      map.doubleClickZoom.enable();
+      map.dragPan.enable();
+      canvas.style.cursor = prevCursor || '';
+    };
+    // commitBankEditCoords 通过 ref 间接调用；监听只在进入编辑时注册一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bankEditTarget]);
+
+  // Esc 退出编辑。有未保存改动时先确认 —— 拖了几十个折点被一次误按全丢掉，
+  // 比多点一次麻烦得多。
+  useEffect(() => {
+    if (!bankEditTarget) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (bankEditDirty && !window.confirm('放弃未保存的岸段折点改动？')) return;
+      exitBankEdit(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bankEditTarget, bankEditDirty]);
+
+  // 切任务时强制退出编辑：编辑态的折点属于上一个任务的岸段，
+  // 留着会让人在新任务的地图上拖一条「看不见归属」的线。
+  useEffect(() => {
+    if (!bankEditTargetRef.current) return;
+    bankEditActiveRef.current = false;
+    bankEditTargetRef.current = null;
+    bankEditCoordsRef.current = null;
+    bankEditDragRef.current = null;
+    bankEditHistoryRef.current = { stack: [], cursor: -1 };
+    setBankEditTarget(null);
+    setBankEditCoords(null);
+    setBankEditUsage(null);
+    setBankEditDirty(false);
+    setBankEditPicking(false);
+    setBankEditHistoryVersion(v => v + 1);
+  }, [selectedTask]);
+
 
   // 搜索命中跳转：等地图真正就绪再飞（mapReady 之前 mapRef 还是 null）。
   // pendingFocus 由顶部搜索框写入；这里消费一次就清空 —— StrictMode 下 effect 会跑两次，
@@ -3201,6 +3957,17 @@ function ResultPage(props: ResultPageProps) {
   //  JSX 渲染
   // ============================================================
 
+  // 撤销/重做按钮的可用态。栈本身在 ref 里（地图回调要读最新值），
+  // 靠 version 计数做失效信号 —— 只有这三个小布尔需要参与渲染。
+  const bankEditCanUndo = useMemo(
+    () => bankEditHistoryRef.current.cursor > 0,
+    [bankEditHistoryVersion],
+  );
+  const bankEditCanRedo = useMemo(() => {
+    const history = bankEditHistoryRef.current;
+    return history.cursor >= 0 && history.cursor < history.stack.length - 1;
+  }, [bankEditHistoryVersion]);
+
   return (
     <div className="editor-layout">
       <div className="editor-sidebar-panel" style={{ width: leftPanelWidth, minWidth: leftPanelWidth, display: 'flex' }}>
@@ -3295,12 +4062,33 @@ function ResultPage(props: ResultPageProps) {
                 ))}
               </div>
 
-                    <button
-                className="toggle-sections-btn"
-                onClick={() => setShowSections(!showSections)}
-              >
-                {showSections ? '隐藏断面' : '显示断面'}
-              </button>
+                    <div className="result-actions-row">
+                      <button
+                        className="toggle-sections-btn"
+                        onClick={() => setShowSections(!showSections)}
+                      >
+                        {showSections ? '隐藏断面' : '显示断面'}
+                      </button>
+                      {/* 岸段折点编辑入口。放在「显示断面」旁边：两者都是「图上画什么」的开关。
+                          进入后先选岸段再编辑，不做成下拉列表 —— 任务里岸段可能几十条、名字相近，
+                          列表选不中「地图上我看到的这一条」。 */}
+                      <button
+                        className={`toggle-sections-btn ${bankEditTarget || bankEditPicking ? 'hidden' : ''}`}
+                        onClick={() => {
+                          if (bankEditTarget) {
+                            if (bankEditDirty && !window.confirm('放弃未保存的岸段折点改动？')) return;
+                            exitBankEdit(true);
+                            return;
+                          }
+                          setBankEditPicking(v => !v);
+                        }}
+                        title={bankEditTarget
+                          ? '退出岸段折点编辑'
+                          : '拖动折点修改岸段位置（会写入共享岸段，所有引用它的任务都会跟着变）'}
+                      >
+                        {bankEditTarget ? '退出岸段编辑' : bankEditPicking ? '取消选择岸段' : '编辑岸段折点'}
+                      </button>
+                    </div>
 
               {loading && <div className="loading-spinner">数据加载中...</div>}
               {error && <p className="error-message">错误: {error}</p>}
@@ -3321,6 +4109,10 @@ function ResultPage(props: ResultPageProps) {
                   <div className="legend-hint">
                     四个风险等级以实色显示；灰色虚线表示该断面/岸段暂无计算结果。
                     这类岸段仍会完整显示，便于人工补充评定。
+                  </div>
+                  <div className="legend-hint">
+                    断面在<strong>靠岸一侧的端点</strong>带一个小圆点，圆点颜色与断面一致 ——
+                    顺着圆点就能看出这条断面挂在哪一段岸上。
                   </div>
                 </div>
               )}
@@ -3566,6 +4358,32 @@ function ResultPage(props: ResultPageProps) {
       <div className="editor-map-panel" data-tour="result-workspace" style={{ display: 'flex', flexDirection: 'column' }}>
         <div ref={mapContainer} className="map-full" style={{ flex: 1 }} />
 
+        {/* 岸段折点编辑：拾取提示 / 编辑浮栏。都压在图上，不占侧栏宽度。 */}
+        {bankEditPicking && !bankEditTarget && (
+          <div className="map-bank-pick-hint">
+            点击要编辑折点的岸段（彩色实线或灰色虚线）· Esc 取消
+          </div>
+        )}
+        {bankEditTarget && bankEditCoords && (
+          <BankGeometryEditBar
+            bankId={bankEditTarget.bankId}
+            bankName={bankEditTarget.bankName}
+            vertexCount={bankEditCoords.length}
+            dirty={bankEditDirty}
+            canUndo={bankEditCanUndo}
+            canRedo={bankEditCanRedo}
+            saving={bankEditSaving}
+            usage={bankEditUsage}
+            onUndo={() => jumpBankEditHistory(-1)}
+            onRedo={() => jumpBankEditHistory(1)}
+            onSave={() => void saveBankGeometry()}
+            onCancel={() => {
+              if (bankEditDirty && !window.confirm('放弃未保存的岸段折点改动？')) return;
+              exitBankEdit(true);
+            }}
+          />
+        )}
+
         {/* 框选分析：提示条 + 结果面板都浮在这张图上（不遮右侧报告区与左侧任务列表）。
             颜色/文案与编辑器那套一致，只是这里统计的是「已落库结果」的色带。 */}
         {areaAnalysis?.drawing && (
@@ -3612,12 +4430,40 @@ function ResultPage(props: ResultPageProps) {
                         已人工修改
                       </span>
                     )}
+                    {matrixDetail?.manual_invalid === true && (
+                      <span
+                        className="matrix-invalid-tag"
+                        title={matrixDetail?.manual_invalid_reason
+                          || '该断面已被标记为无效：不参与着色、框选统计、报告配图与导出（结果数据仍保留）'}
+                      >
+                        已标记无效
+                      </span>
+                    )}
                   </div>
                   <div className="matrix-modal-subtitle">
                     {matrixSectionName ? `${matrixSectionName} | ` : ''}断面ID: {matrixSectionId || '-'}
                   </div>
                 </div>
                 <div className="matrix-modal-header-actions">
+                  {/*
+                    「设为无效」与「编辑结果」是两件事，刻意分成两个按钮：
+                      · 编辑结果 = 改数值（会重算档位、写 edit_state，进编辑态）；
+                      · 设为无效 = 改可见性（只动 cross_sections.manual_invalid，结果一行不碰）。
+                    合并成一个"编辑"会让人以为标记无效等于删数据。
+                    没有结果的断面（not_computed）同样可以标记 —— 不需要落在任务之外的校验。
+                  */}
+                  <button
+                    className={`matrix-modal-edit ghost${matrixDetail?.manual_invalid === true ? ' active' : ''}`}
+                    onClick={handleToggleManualInvalid}
+                    disabled={!matrixDetail || matrixLoading || invalidSaving}
+                    title={matrixDetail?.manual_invalid === true
+                      ? '恢复为有效断面：颜色与统计立即回来（结果一直保留着，不需要重算）'
+                      : '标记为无效断面：图上变成灰色虚线，不参与着色、框选统计、报告配图与导出'}
+                  >
+                    {invalidSaving
+                      ? '提交中…'
+                      : matrixDetail?.manual_invalid === true ? '恢复为有效断面' : '设为无效断面'}
+                  </button>
                   <button
                     className="matrix-modal-edit"
                     onClick={() => setResultEditing(v => !v)}
