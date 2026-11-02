@@ -21,11 +21,9 @@ interface Props {
   onNodeSelect: (node: TreeNode) => void;
   onNodeDoubleClick: (node: TreeNode) => void;
   onNodeAction: (node: TreeNode, actionKey: string) => void;
-  /** 多选变化回调：把「当前选中的节点」抛给上层，用于批量操作条 */
-  onSelectionChange?: (nodes: TreeNode[]) => void;
 }
 
-export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNodeDoubleClick, onNodeAction, onSelectionChange }: Props) {
+export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNodeDoubleClick, onNodeAction }: Props) {
   const expanded = useResourceTreeStore((s) => s.expanded);
   const selectedId = useResourceTreeStore((s) => s.selectedId);
   const selectedIds = useResourceTreeStore((s) => s.selectedIds);
@@ -113,7 +111,7 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
       const next = applyRangeSelect(
         selectableRows,
         node.id,
-        { selectedIds: new Set(selectedIds), anchorIndex },
+        { selectedIds: new Set(selectedIds), anchorIndex: anchorIndex >= 0 ? anchorIndex : null },
         mod,
       );
       setSelection(next.selectedIds, next.anchorIndex ?? -1);
@@ -123,25 +121,16 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
       // 地图联动（loadBankById / 定位断面…）只属于「普通单选」的意图；
       // Shift / Ctrl 是"挑范围"，不应顺手把每一行都打开到地图上。
       if (!mod.shift && !mod.ctrlOrMeta) onNodeSelect(node);
-      // 把当前选中节点清单抛给上层（批量操作条据此渲染）
-      const byId = new Map(selectableRows.map((r) => [r.node.id, r.node]));
-      const selectedNodes: TreeNode[] = [];
-      next.selectedIds.forEach((id) => {
-        const n = byId.get(id);
-        if (n) selectedNodes.push(n);
-      });
-      onSelectionChange?.(selectedNodes);
     },
-    [selectableRows, selectedIds, anchorIndex, setSelection, selectNode, onNodeSelect, onSelectionChange],
+    [selectableRows, selectedIds, anchorIndex, setSelection, selectNode, onNodeSelect],
   );
 
   // 点击树空白处清空多选（不影响单选入口）
   const handleBlankClick = useCallback(() => {
     if (selectedIds.size > 0) {
       clearSelection();
-      onSelectionChange?.([]);
     }
-  }, [selectedIds.size, clearSelection, onSelectionChange]);
+  }, [selectedIds.size, clearSelection]);
 
   const handleContextMenu = useCallback((node: TreeNode, x: number, y: number) => {
     if (getActions(node.actions || []).length === 0) return;

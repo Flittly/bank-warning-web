@@ -77,7 +77,8 @@ export function applyRangeSelect(
   }
 
   // ③ Shift（含 Ctrl/Cmd + Shift）：把 [anchor, clicked] 这段加进来
-  const anchor = prev.anchorIndex ?? clickedIdx;
+  const rawAnchor = prev.anchorIndex;
+  const anchor = rawAnchor !== null && rawAnchor >= 0 ? rawAnchor : clickedIdx;
   const lo = Math.min(anchor, clickedIdx);
   const hi = Math.max(anchor, clickedIdx);
   const base = mod.ctrlOrMeta ? new Set(prev.selectedIds) : new Set<string>();
