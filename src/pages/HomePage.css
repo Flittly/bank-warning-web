@@ -1,0 +1,540 @@
+/* ============================================================
+   起始工作台（/home）
+   布局参照工程软件起始页：居中标题 → 功能卡 → 步骤条 → 主从两栏。
+   视觉语汇与编辑器、结果页一致：白卡片 + slate 描边 + 蓝色主操作。
+   本页不渲染左侧活动栏（见 App.tsx 的 isHome 判断）。
+   ============================================================ */
+.home-page {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  color: var(--ds-text);
+  background: var(--ds-canvas);
+  /* 参考图的卡片圆角更小（约 8px）。只在本页覆盖令牌，
+     避免把编辑器、结果页的既有圆角一起改掉。 */
+  --ds-radius-lg: 8px;
+  --ds-radius-md: 6px;
+  --ds-radius-sm: 4px;
+}
+
+.home-shell {
+  /* 必须显式 border-box：width:100% + 左右 padding 在 content-box 下会让窄屏横向溢出。 */
+  box-sizing: border-box;
+  /* 原先上限 1240px：在 1920 宽的屏幕上两侧各留 300 多像素空白，四张卡片被压到 280px 左右，
+     看起来"中间一小块"。上限抬到 1680px 并收紧左右内边距，卡片才有正常的横向占比；
+     仍然居中，超宽屏不会无限拉伸。 */
+  width: min(1680px, 100%);
+  margin: 0 auto;
+  padding: clamp(16px, 2vw, 30px) clamp(14px, 1.6vw, 26px) var(--ds-space-8);
+}
+
+/* ---------- 标题 ---------- */
+.home-hero {
+  padding: var(--ds-space-3) 0 var(--ds-space-5);
+  text-align: center;
+}
+.home-hero h1 {
+  margin: 0;
+  color: var(--ds-neutral-950);
+  font-size: clamp(22px, 1.9vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.home-hero p {
+  margin: 8px 0 0;
+  color: var(--ds-text-muted);
+  font-size: var(--ds-text-xs);
+  letter-spacing: 0.01em;
+}
+
+/* ---------- 功能卡 ---------- */
+.home-entries {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ds-space-3);
+}
+.home-entry {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  /* 卡片高度随视口温和放大：宽屏（1920）够大，窄屏自动回落到 126px。 */
+  min-height: clamp(126px, 9.2vw, 168px);
+  padding: clamp(14px, 1.2vw, 20px) clamp(14px, 1.2vw, 20px) clamp(12px, 1vw, 16px);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  /* 三层背景（自上而下）：
+     1) 左侧白色蒙版 —— 保证标题/副标题永远落在纯白上，可读性不依赖图的留白够不够；
+     2) 右下角主题色光晕 —— 原有效果，改用变量按卡片区分；
+     3) 3D 主图 —— 主体天然在右侧，cover 铺满后左半屏基本被蒙版吃掉。
+     换配色/换图只改下面每张卡的 --entry-tint / --entry-art 两行即可。 */
+  --entry-tint: rgba(59, 130, 246, 0.14);
+  --entry-art: url('../assets/home/home-entry-editor.webp');
+  background-color: var(--ds-surface);
+  background-image:
+    linear-gradient(96deg, var(--ds-surface) 0%, rgba(255, 255, 255, 0.92) 22%,
+      rgba(255, 255, 255, 0.55) 40%, rgba(255, 255, 255, 0) 58%),
+    radial-gradient(120% 130% at 108% 118%, var(--entry-tint) 0%, rgba(255, 255, 255, 0) 62%),
+    var(--entry-art);
+  background-repeat: no-repeat;
+  background-size: 100% 100%, 100% 100%, cover;
+  background-position: center, center, 100% 50%;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--ds-duration-fast) var(--ds-ease-out),
+    border-color var(--ds-duration-fast), box-shadow var(--ds-duration-fast);
+}
+.home-entry.is-calc {
+  --entry-tint: rgba(13, 148, 136, 0.14);
+  --entry-art: url('../assets/home/home-entry-calc.webp');
+}
+.home-entry.is-report {
+  --entry-tint: rgba(245, 158, 11, 0.14);
+  --entry-art: url('../assets/home/home-entry-report.webp');
+}
+.home-entry.is-knowledge {
+  --entry-tint: rgba(99, 102, 241, 0.13);
+  --entry-art: url('../assets/home/home-entry-knowledge.webp');
+}
+.home-entry:hover {
+  border-color: var(--ds-primary-border);
+  box-shadow: var(--ds-shadow-raised);
+  transform: translateY(-1px);
+}
+.home-entry:active { transform: translateY(0); }
+
+.home-entry-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+.home-entry-copy strong {
+  color: var(--ds-neutral-950);
+  font-size: clamp(15px, 1.05vw, 18px);
+  font-weight: 650;
+}
+.home-entry-copy small {
+  color: var(--ds-text-muted);
+  font-size: 12px;
+}
+.home-entry-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  /* margin-top:auto 让四张卡的「进入」胶囊始终贴底，放大后也不会高低错落。 */
+  margin-top: auto;
+  padding: 4px 11px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-round);
+  color: var(--ds-text-secondary);
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color var(--ds-duration-fast), border-color var(--ds-duration-fast), background var(--ds-duration-fast);
+}
+.home-entry:hover .home-entry-go {
+  border-color: var(--ds-primary-border);
+  color: var(--ds-primary-hover);
+  background: var(--ds-surface);
+}
+/* 卡片右下角原本的 lucide 线性图标：现在那里是 3D 渲染主体，
+   再叠一个半透明线性图标只会糊成一团，所以留 DOM 不显示（删掉也无副作用）。 */
+.home-entry-art {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  display: none;
+  pointer-events: none;
+}
+
+/* ---------- 步骤条 ---------- */
+.home-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0;
+  margin: var(--ds-space-3) 0 0;
+  padding: 0 clamp(14px, 1.2vw, 22px);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface);
+  list-style: none;
+}
+.home-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 50px;
+  padding-right: 6px;
+  color: var(--ds-text-secondary);
+  font-size: var(--ds-text-xs);
+}
+.home-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--ds-primary-hover);
+  background: var(--ds-primary-soft);
+  font: 600 10px var(--ds-font-mono);
+}
+.home-step-label { white-space: nowrap; }
+.home-step-arrow { flex: 0 0 auto; margin-left: 2px; color: var(--ds-neutral-300); }
+
+/* ---------- 主从两栏 ---------- */
+.home-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(288px, 21vw, 360px);
+  gap: var(--ds-space-3);
+  margin-top: var(--ds-space-3);
+  align-items: start;
+}
+.home-panel {
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface);
+  box-shadow: var(--ds-shadow-raised);
+}
+.home-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-3);
+}
+.home-panel-head h2 {
+  margin: 0;
+  color: var(--ds-neutral-950);
+  font-size: var(--ds-text-lg);
+  font-weight: 650;
+}
+.home-panel-meta {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 两个动作卡 ---------- */
+.home-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ds-space-3);
+  padding: 0 var(--ds-space-4) var(--ds-space-4);
+}
+.home-shortcut {
+  position: relative;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  gap: var(--ds-space-3);
+  width: 100%;
+  min-height: 88px;
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-surface-subtle);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ds-duration-fast), background var(--ds-duration-fast);
+}
+.home-shortcut:hover { border-color: var(--ds-primary-border); background: var(--ds-surface); }
+.home-shortcut.is-primary {
+  background:
+    radial-gradient(100% 140% at 100% 120%, rgba(59, 130, 246, 0.12) 0%, rgba(59, 130, 246, 0) 60%),
+    var(--ds-surface-subtle);
+}
+.home-shortcut-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  color: var(--ds-text-secondary);
+  background: var(--ds-surface);
+}
+.home-shortcut.is-primary .home-shortcut-icon {
+  border-color: transparent;
+  color: #ffffff;
+  background: var(--ds-primary);
+}
+.home-shortcut-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.home-shortcut-copy strong {
+  overflow: hidden;
+  color: var(--ds-neutral-900);
+  font-size: 0.875rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-shortcut-copy small { color: var(--ds-text-muted); font-size: 12px; }
+.home-shortcut-go {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--ds-neutral-300);
+}
+.home-shortcut:hover .home-shortcut-go { color: var(--ds-primary-hover); }
+.home-shortcut-art {
+  position: absolute;
+  right: -8px;
+  bottom: -14px;
+  color: rgba(59, 130, 246, 0.12);
+  pointer-events: none;
+}
+
+/* ---------- 状态标签页 ---------- */
+.home-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-5);
+  padding: 0 var(--ds-space-4);
+  border-bottom: 1px solid var(--ds-border);
+}
+.home-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 9px 0 10px;
+  border: none;
+  color: var(--ds-text-muted);
+  background: transparent;
+  font-size: var(--ds-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--ds-duration-fast);
+}
+.home-tab:hover { color: var(--ds-text); }
+.home-tab.is-active { color: var(--ds-primary-hover); }
+.home-tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--ds-primary);
+}
+.home-tab i {
+  color: var(--ds-neutral-400);
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.home-tab.is-active i { color: var(--ds-primary); }
+
+/* ---------- 任务行 ---------- */
+.home-rows { padding: 2px var(--ds-space-2) 0; }
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 var(--ds-space-2);
+  border-radius: var(--ds-radius-sm);
+  transition: background var(--ds-duration-fast);
+}
+.home-row:nth-child(even) { background: #fbfcfe; }
+.home-row:hover { background: var(--ds-primary-soft); }
+.home-row-mark {
+  flex: 0 0 auto;
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--ds-neutral-300);
+}
+.home-row-mark.is-running { background: var(--ds-warning); }
+.home-row-mark.is-completed { background: var(--ds-risk-0); }
+.home-row-mark.is-failed { background: var(--ds-danger); }
+.home-row-name {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  color: var(--ds-neutral-900);
+  background: transparent;
+  font-size: 0.875rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.home-row-name:hover { color: var(--ds-primary-hover); text-decoration: underline; }
+.home-row-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: var(--ds-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.home-row-tag {
+  flex: 0 0 auto;
+  min-width: 50px;
+  padding: 2px 8px;
+  border-radius: var(--ds-radius-round);
+  color: var(--ds-text-secondary);
+  background: var(--ds-surface-sunken);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+.home-row-tag.is-running { color: #9a5b00; background: var(--ds-warning-soft); }
+.home-row-tag.is-completed { color: #047857; background: var(--ds-success-soft); }
+.home-row-tag.is-failed { color: #b91c1c; background: var(--ds-danger-soft); }
+.home-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-width: 118px;
+  justify-content: flex-end;
+}
+.home-row:hover .home-row-actions .home-link { color: var(--ds-primary-hover); }
+
+.home-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  color: var(--ds-text-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--ds-duration-fast);
+}
+.home-link:hover { color: var(--ds-primary-hover); text-decoration: underline; }
+
+.home-row.is-skeleton { gap: var(--ds-space-3); }
+.home-row-mark.ds-skeleton { width: 4px; height: 16px; }
+.home-row-name.ds-skeleton { flex: 0 1 260px; height: 12px; }
+.home-row-tag.ds-skeleton { width: 46px; height: 14px; }
+
+.home-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-4);
+  min-height: 96px;
+  box-sizing: border-box;
+  margin: var(--ds-space-3) var(--ds-space-2);
+  padding: var(--ds-space-4);
+  border: 1px dashed var(--ds-border-strong);
+  border-radius: var(--ds-radius-md);
+  color: var(--ds-text-muted);
+  font-size: var(--ds-text-xs);
+}
+.home-empty.ds-alert { border-style: solid; }
+
+.home-panel-foot {
+  display: flex;
+  justify-content: center;
+  padding: var(--ds-space-3) 0 var(--ds-space-4);
+}
+.home-panel-foot .home-link {
+  color: var(--ds-primary-hover);
+  font-size: var(--ds-text-xs);
+}
+
+/* ---------- 常见问题 ---------- */
+.home-faq ul {
+  margin: 0;
+  padding: 0 var(--ds-space-4);
+  list-style: none;
+}
+.home-faq li { border-bottom: 1px solid var(--ds-border); }
+.home-faq li:last-child { border-bottom: none; }
+.home-faq li > button {
+  display: block;
+  width: 100%;
+  padding: 9px 0;
+  border: none;
+  color: var(--ds-text-secondary);
+  background: transparent;
+  font-size: var(--ds-text-xs);
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+.home-faq li > button:hover { color: var(--ds-primary-hover); }
+.home-faq li.is-open > button { color: var(--ds-neutral-950); font-weight: 600; }
+.home-faq p {
+  margin: -2px 0 10px;
+  padding-left: 9px;
+  border-left: 2px solid var(--ds-primary-border);
+  color: var(--ds-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.home-page button:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 2px; }
+
+/* ---------- 响应式 ---------- */
+/* 超宽屏：卡片已由 clamp 放大，这里只把右侧常见问题栏再放宽一点，避免长句换行过碎。 */
+@media (min-width: 1600px) {
+  .home-columns { grid-template-columns: minmax(0, 1fr) 380px; }
+}
+
+/* 四张卡在 1080 以下每张不足 270px，「进入」胶囊会与插画打架 ⇒ 改两列；
+   左右两栏同时堆叠，避免右侧常见问题被压成一条窄缝。 */
+@media (max-width: 1080px) {
+  .home-entries { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-columns { grid-template-columns: minmax(0, 1fr); }
+  .home-faq ul { padding-bottom: var(--ds-space-2); }
+}
+
+@media (max-width: 760px) {
+  .home-shell { padding-top: 14px; }
+  .home-steps { flex-wrap: wrap; justify-content: flex-start; padding: var(--ds-space-2) var(--ds-space-3); }
+  .home-steps li { min-height: 30px; }
+  .home-step-arrow { display: none; }
+  /* 功能卡保持两列：一列四张在窄屏要占掉近 400px 高度，压缩后首屏能看到任务。 */
+  .home-entries { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-entry { min-height: 104px; padding: var(--ds-space-3); }
+  .home-entry-copy small { display: none; }
+  .home-shortcuts { grid-template-columns: minmax(0, 1fr); }
+  .home-row-time { display: none; }
+  .home-row-actions { min-width: 0; }
+}
+
+@media (max-width: 520px) {
+  .home-entry { min-height: 96px; }
+  .home-entry-copy strong { font-size: 0.875rem; }
+  .home-entry-go { padding: 3px 9px; font-size: 11px; }
+  .home-entry-art { right: 10px; bottom: 8px; transform: scale(0.78); transform-origin: right bottom; }
+  .home-panel-head { padding-inline: var(--ds-space-3); }
+  .home-shortcuts, .home-tabs, .home-faq ul { padding-inline: var(--ds-space-3); }
+  .home-row-tag { display: none; }
+  /* 窄屏把操作换到第二行：任务名拿满宽度，避免被「继续编辑 / 结果」挤成省略号。 */
+  .home-row { flex-wrap: wrap; padding: 7px var(--ds-space-2); row-gap: 2px; }
+  .home-row-actions { width: 100%; padding-left: 14px; }
+}
+
+@media (max-width: 380px) {
+  .home-entries { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-entry { transition: none; }
+  .home-entry:hover { transform: none; }
+}

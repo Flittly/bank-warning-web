@@ -289,12 +289,6 @@
   border-radius: 10px;
   flex-shrink: 0;
 }
-.batchCount {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--tree-sel-fg);
-  white-space: nowrap;
-}
 .batchGroup {
   display: inline-flex;
   align-items: center;

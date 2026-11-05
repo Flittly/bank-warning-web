@@ -39,7 +39,7 @@
   display: flex;
   align-items: center;
   /* 左侧收紧到 14px（原为左右共用的 24px）。
-     注意 logo.png 自带白边：2048px 宽里有 121px 左侧留白（5.9%），
+     注意 logo.png 自带白边：左侧留白约 5.9%（144px 宽里 8.5px），
      contain 到 48×40 后 ≈ 2.84px 视觉留白 —— 所以改前的"看着左边还有距离"
      其实是 24 + 2.84 ≈ 26.8px。收到 14px 后视觉 ≈ 16.8px。
      右侧仍是 24px：.nav-right 由 space-between 推到右侧，与左内边距无关。 */
@@ -235,6 +235,30 @@
   overflow: hidden;
 }
 
+/* ---------- 起始工作台顶栏：只留一个 LOGO ---------- */
+.home-topbar {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 54px;
+  padding: 0 16px;
+}
+.home-brand {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: opacity var(--ds-duration-fast, 120ms);
+}
+.home-brand:hover { opacity: 0.78; }
+/* logo.png 自带白色底：在 #eef1f6 画布上会看出一个白方块。
+   multiply 让白底融进背景，图标本体颜色不受影响。 */
+.home-brand img { display: block; mix-blend-mode: multiply; }
+
+/* ---------- 工作区左侧活动栏（编辑器 / 结果 / 知识库） ----------
+   保持基线样式：42px 窄图标条、无文字标签、直接贴在顶栏下方。 */
 .activity-bar {
   width: 42px;
   min-width: 42px;
@@ -280,6 +304,86 @@
   border-radius: 0;
   background: rgba(37, 99, 235, 0.12);
   color: #2563eb;
+}
+
+/* ---------- 起始工作台的条带侧栏（仅 /home，参照工程软件起始页） ----------
+   图标在上、标签在下，下沿固定为设置与账户；宽度固定 66px，
+   靠 flex:0 0 auto 保证不会被内容区挤压。
+   只改写 .activity-bar--home，工作区那条 42px 的窄条因此完全不受影响。 */
+.activity-bar--home {
+  justify-content: space-between;
+  width: 66px;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 10px 0 10px 10px;
+  padding: 8px 6px;
+  border: 1px solid var(--ds-border, #e2e8f0);
+  border-right: 1px solid var(--ds-border, #e2e8f0);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+}
+.activity-group,
+.activity-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+.activity-group { overflow-y: auto; scrollbar-width: none; }
+.activity-group::-webkit-scrollbar { display: none; }
+.activity-foot {
+  padding-top: 6px;
+  border-top: 1px solid var(--ds-border, #e2e8f0);
+}
+.activity-bar--home .activity-btn {
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  height: auto;
+  min-height: 48px;
+  padding: 6px 0;
+  border-radius: 10px;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+.activity-bar--home .activity-btn:hover { background: #f1f5f9; color: #334155; }
+.activity-bar--home .activity-btn.active {
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  font-weight: 600;
+}
+.activity-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  /* 只有首页条带收窄并隐藏文字；工作区窄条本来就是纯图标，无需变化。 */
+  .activity-bar--home { width: 52px; margin: 6px 0 6px 6px; padding: 6px 4px; }
+  .activity-bar--home .activity-btn { min-height: 40px; padding: 4px 0; }
+  .activity-bar--home .activity-label { display: none; }
 }
 
 .map-wrapper {
@@ -1640,32 +1744,8 @@
   z-index: 0;
 }
 
-/* 知识库绿圆光斑 */
-.knowledge-sidebar {
-  position: relative;
-}
-.knowledge-sidebar::before {
-  content: '';
-  position: absolute;
-  width: 220px; height: 220px;
-  top: 10%; right: -70px;
-  background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%);
-  border-radius: 50%;
-  filter: blur(24px);
-  pointer-events: none;
-  z-index: 0;
-}
-.knowledge-sidebar::after {
-  content: '';
-  position: absolute;
-  width: 160px; height: 160px;
-  bottom: 25%; left: -50px;
-  background: radial-gradient(circle, rgba(52,211,153,0.1) 0%, transparent 70%);
-  border-radius: 50%;
-  filter: blur(30px);
-  pointer-events: none;
-  z-index: 0;
-}
+/* 知识库已改成 catalog-* 版式（与报告/技能中心一致），原先那套玻璃拟态侧栏的
+   `.knowledge-sidebar` 绿色光斑样式一并删掉 —— 类名已不存在于任何组件里。 */
 
 .task-list-container {
   display: flex;

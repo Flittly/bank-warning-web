@@ -1,0 +1,121 @@
+/* ============================================================
+   Design tokens / 设计令牌
+   明暗结构：白色工程界面（白底 + 冷灰分层 + 蓝色主操作 + 少量黄色品牌点缀）。
+   ⚠ 风险等级色（绿/蓝/橙/红）属于业务语义，任何主题改造都不得覆盖。
+   ============================================================ */
+:root {
+  /* Primitive palette — 与页面既有 slate 色阶对齐，保证新旧界面同色系。 */
+  --ds-neutral-950: #0f172a;
+  --ds-neutral-900: #1e293b;
+  --ds-neutral-850: #273449;
+  --ds-neutral-800: #334155;
+  --ds-neutral-700: #475569;
+  --ds-neutral-600: #55657a;
+  --ds-neutral-500: #64748b;
+  --ds-neutral-400: #94a3b8;
+  --ds-neutral-300: #cbd5e1;
+  --ds-neutral-200: #e2e8f0;
+  --ds-neutral-100: #f1f5f9;
+  --ds-neutral-50: #f8fafc;
+  --ds-white: #ffffff;
+
+  /* 品牌点缀（黄）：只用于分隔线、情绪强调，不承担主操作色。 */
+  --ds-accent-soft: #fff8e6;
+  --ds-accent-300: #f8dd78;
+  --ds-accent: #f2c94c;
+  --ds-accent-strong: #c99a12;
+
+  /* 主操作色（蓝）：与断面编辑器、结果查看器现有按钮保持一致。 */
+  --ds-primary: #3b82f6;
+  --ds-primary-hover: #2563eb;
+  --ds-primary-active: #1d4ed8;
+  --ds-primary-soft: #eff6ff;
+  --ds-primary-border: rgba(59, 130, 246, 0.35);
+
+  /* Semantic color layers */
+  --ds-brand: var(--ds-accent);
+  --ds-brand-soft: var(--ds-accent-soft);
+  --ds-canvas: #eef1f6;
+  --ds-surface: var(--ds-white);
+  --ds-surface-subtle: var(--ds-neutral-50);
+  --ds-surface-sunken: var(--ds-neutral-100);
+  --ds-border: var(--ds-neutral-200);
+  --ds-border-strong: var(--ds-neutral-300);
+  --ds-text: var(--ds-neutral-900);
+  --ds-text-secondary: var(--ds-neutral-700);
+  --ds-text-muted: var(--ds-neutral-500);
+  --ds-focus: var(--ds-primary);
+
+  /* 导航与侧栏（浅色玻璃）：与 App.css 中原有白色导航同源。 */
+  --ds-shell-bg: var(--ds-white);
+  --ds-shell-surface: rgba(248, 250, 252, 0.86);
+  --ds-shell-border: var(--ds-neutral-200);
+  --ds-shell-text: var(--ds-neutral-800);
+  --ds-shell-muted: var(--ds-neutral-500);
+
+  /* Feedback colors — 与地图风险色保持一致，不做品牌色替换。 */
+  --ds-success: #0f9d70;
+  --ds-success-soft: #ecfdf5;
+  --ds-warning: #b45309;
+  --ds-warning-soft: #fffbeb;
+  --ds-danger: #dc2626;
+  --ds-danger-soft: #fef2f2;
+  --ds-info: #1d4ed8;
+  --ds-info-soft: #eff6ff;
+  --ds-risk-0: #10b981;
+  --ds-risk-1: #3b82f6;
+  --ds-risk-2: #f97316;
+  --ds-risk-3: #ef4444;
+  --ds-no-data: #94a3b8;
+
+  /* Typography */
+  --ds-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --ds-font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  --ds-text-xs: 0.75rem;
+  --ds-text-sm: 0.8125rem;
+  --ds-text-md: 0.875rem;
+  --ds-text-lg: 1rem;
+  --ds-text-xl: 1.25rem;
+  --ds-text-2xl: 1.75rem;
+  --ds-text-3xl: 2.25rem;
+  --ds-leading-tight: 1.3;
+  --ds-leading-body: 1.65;
+
+  /* 4px spacing grid */
+  --ds-space-1: 0.25rem;
+  --ds-space-2: 0.5rem;
+  --ds-space-3: 0.75rem;
+  --ds-space-4: 1rem;
+  --ds-space-5: 1.25rem;
+  --ds-space-6: 1.5rem;
+  --ds-space-8: 2rem;
+  --ds-space-10: 2.5rem;
+  --ds-space-12: 3rem;
+  --ds-space-16: 4rem;
+
+  /* Shape and elevation — 白底界面靠描边分层，阴影只用于浮层。 */
+  --ds-radius-sm: 6px;
+  --ds-radius-md: 10px;
+  --ds-radius-lg: 14px;
+  --ds-radius-xl: 18px;
+  --ds-radius-round: 999px;
+  --ds-shadow-raised: 0 2px 10px rgba(15, 23, 42, 0.06);
+  --ds-shadow-overlay: 0 12px 32px rgba(15, 23, 42, 0.14);
+
+  /* Interaction */
+  --ds-duration-fast: 120ms;
+  --ds-duration-normal: 180ms;
+  --ds-duration-slow: 280ms;
+  --ds-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ds-control-sm: 30px;
+  --ds-control-md: 36px;
+  --ds-control-lg: 44px;
+
+  /* Layer scale */
+  --ds-z-sticky: 20;
+  --ds-z-dropdown: 60;
+  --ds-z-nav: 100;
+  --ds-z-modal: 1000;
+  --ds-z-toast: 1100;
+}

@@ -22,17 +22,19 @@ interface Props {
 }
 
 /**
- * 多选批量操作条：悬浮在资源树上方，选中 ≥2 个（或含批量动作的）节点时出现。
+ * 多选批量操作条：悬浮在资源树上方，**只有真正的多选（≥2 个节点）**才出现。
  * 按类型分组展示各自支持的批量动作，避免"混合选择时只给删除"这种一刀切。
+ *
+ * 为什么卡在 2：单选一行是日常操作（点一下就为了在地图上定位），若每次都弹一条
+ * 批量条，它会把下面的树顶下去、并且和行尾图标/右键菜单完全重复。
  */
 export default function BatchActionBar({ nodes, onBatchAction, onClear }: Props) {
   const groups = groupSelectedByKind(nodes);
-  const total = nodes.length;
-  if (total === 0) return null;
+  // 没有可执行批量动作的类型（如参数模板）即使多选也不出条，避免只剩一个「×」的空条。
+  if (nodes.length < 2 || groups.size === 0) return null;
 
   return (
     <div className={styles.batchBar}>
-      <span className={styles.batchCount}>已选 {total} 项</span>
       {[...groups.entries()].map(([kind, list]) => (
         <span key={kind} className={styles.batchGroup}>
           <span className={styles.batchKind}>{KIND_LABEL[kind] || kind}</span>

@@ -1,5 +1,6 @@
 import type { SectionParams } from '../../types/sections';
 import { getAccessToken } from '../../auth/tokenManager';
+import { sharedGetJSON } from '../../utils/sharedGet';
 
 export interface BasicParamListItem {
   id?: number;
@@ -14,13 +15,9 @@ function authHeaders(): Record<string, string> {
 }
 
 export async function fetchBasicParamsList(): Promise<BasicParamListItem[]> {
-  const res = await fetch('/v0/bank/basic-params', {
-    headers: { ...authHeaders() },
-  });
-  if (!res.ok) {
-    throw new Error(`获取基础参数模板列表失败: ${res.statusText}`);
-  }
-  const data = await res.json();
+  // 走 sharedGetJSON：ResourceSidebar 挂载时也会拉这份列表，
+  // 并发请求同一 URL 时合并成一次网络往返（见 utils/sharedGet.ts）
+  const data = await sharedGetJSON('/v0/bank/basic-params', { ...authHeaders() });
   return (data?.params || []) as BasicParamListItem[];
 }
 

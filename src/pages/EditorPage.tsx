@@ -25,6 +25,7 @@ import { useRuleStore } from '../store/useRuleStore';
 import { RULE_CATALOG, disabledRuleIds, isMutedFailCode, isRuleOn, ruleById, rulesetKeyOf } from '../rules/catalog';
 import type { RuleId } from '../rules/types';
 import { authHeaders } from '../utils/apiClient';
+import { sharedGetJSON } from '../utils/sharedGet';
 import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
 import ResizeHandle from '../components/ResizeHandle';
@@ -105,10 +106,11 @@ import {
 
 interface EditorPageProps {
   setPage?: (page: 'editor' | 'result', taskId?: string) => void;
+  initialTaskId?: string;
 }
 
 function EditorPage(props: EditorPageProps) {
-  const { setPage } = props;
+  const { setPage, initialTaskId } = props;
   // === 持久化状态（使用 zustand store） ===
   const uploadedData = useEditorStore((s) => s.uploadedData);
   const setUploadedData = useEditorStore((s) => s.setUploadedData);
@@ -638,25 +640,33 @@ function EditorPage(props: EditorPageProps) {
   /**
    * 断面校验（带网络层重试）。
    *
-   * 重试存在的原因：批量校验时浏览器会并发下发成百上千个请求，一旦触及
-   * Chromium 每渲染进程「挂起请求」上限（kMaxOutstandingRequestsPerProcess），
-   * 超出部分会被直接以 net::ERR_INSUFFICIENT_RESOURCES 拒绝，JS 侧就是
-   * TypeError: Failed to fetch，断面会永久停在「未验证」。
-   * 配合下面的 mapWithConcurrency 限流后，这里再补一次短退避重试兜底瞬时抖动。
+   * 重试存在的原因（`TypeError: Failed to fetch` 有三类成因，都是"没拿到 HTTP 响应"）：
+   *   1. 批量校验并发过高，触及 Chromium 每渲染进程「挂起请求」上限
+   *      （kMaxOutstandingRequestsPerProcess），超出部分被 net::ERR_INSUFFICIENT_RESOURCES 直接拒绝；
+   *   2. keep-alive 连接竞态：对端（nginx / Tomcat）刚好关掉空闲连接，浏览器却复用了它，
+   *      得到 net::ERR_EMPTY_RESPONSE。表现为"上千条里偶尔一两条失败"，且立刻重试容易撞上同一条坏连接；
+   *   3. 服务端在响应头写完之前断开（容器重启、上游 502）。
+   * 三类都只影响那一次请求，重试即可恢复。GET 浏览器会自动重放，POST 不会，所以必须自己重试。
+   *
+   * ⚠ 退避不能用固定值：固定 150ms 时第 2 次仍可能落在同一条已死连接上（实测仍失败）。
+   *   改为指数退避 + 随机抖动，给对端把坏连接从连接池剔除的时间，同时避免整批请求同频重试。
    */
-  const validateSectionAsync = async (sectionId: string, retries = 1): Promise<'valid' | 'invalid' | 'pending'> => {
+  const validateSectionAsync = async (sectionId: string, retries = 2): Promise<'valid' | 'invalid' | 'pending'> => {
     let lastErr: any = null;
+    let attempts = 0;
     for (let attempt = 0; attempt <= retries; attempt++) {
+      attempts = attempt + 1;
       try {
         return await validateSectionOnce(sectionId);
       } catch (err: any) {
         lastErr = err;
         if (!isNetworkLevelError(err) || attempt >= retries) break;
-        await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+        const backoff = 300 * 2 ** attempt + Math.random() * 250;
+        await new Promise((r) => setTimeout(r, backoff));
       }
     }
 
-    console.warn(`断面验证请求失败: ${sectionId}`, lastErr);
+    console.warn(`断面验证请求失败（已尝试 ${attempts} 次）: ${sectionId}`, lastErr);
     // 请求失败不变红，保持黄色 pending；下次可手动刷新或重试
     patchSectionValidationProps(sectionId, {
       validation_status: 'pending',
@@ -944,11 +954,8 @@ function EditorPage(props: EditorPageProps) {
 
   const fetchBankGroups = async () => {
     try {
-      const res = await fetch('/v0/bank/banks', { headers: { ...authHeaders() } });
-      if (!res.ok) {
-        throw new Error(`${res.status} ${res.statusText}`);
-      }
-      const data = await res.json();
+      // 走 sharedGetJSON：与 ResourceSidebar 并发拉同一份 /v0/bank/banks 时只发一次
+      const data = await sharedGetJSON('/v0/bank/banks', { ...authHeaders() });
       const banks = (data?.banks || data?.data || data) as any[];
       const list = Array.isArray(banks) ? banks : [];
 
@@ -1883,6 +1890,17 @@ function EditorPage(props: EditorPageProps) {
       message.error({ content: `加载任务「${label}」失败：${e?.message || String(e)}`, key: toastKey, duration: 6 });
     }
   };
+
+  // 起始工作台的「继续编辑」通过 /editor?task=<taskId> 复用现有整任务加载链路。
+  // ref 去重同时覆盖 React StrictMode 的 effect 双调用，避免重复清空并加载地图。
+  const initialTaskLoadedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialTaskId || initialTaskLoadedRef.current === initialTaskId) return;
+    initialTaskLoadedRef.current = initialTaskId;
+    void loadTaskOntoMap(initialTaskId);
+    // loadTaskOntoMap 每次渲染都会重建；这里只响应 URL 中的任务变化。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTaskId]);
 
   const deleteBankById = async (bankId: string) => {
     if (!bankId) return;

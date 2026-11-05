@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Edit3, Database } from 'lucide-react';
 import { authHeaders } from '../../utils/apiClient';
+import { sharedGetJSON } from '../../utils/sharedGet';
 import { buildResourceTree } from '../../tree/treeModel';
 import type { TreeNode } from '../../tree/types';
 import { useResourceTreeStore } from '../../store/useResourceTreeStore';
@@ -48,9 +49,9 @@ interface Props {
 }
 
 async function fetchJSON(path: string) {
-  const res = await fetch(path, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`${path} ${res.status}`);
-  return res.json();
+  // 走「在途合并」：EditorPage 也会拉 banks / basic-params，
+  // 同一次挂载里两处并发请求同一份数据，合并后只发一次（见 utils/sharedGet.ts）
+  return sharedGetJSON(path, { ...authHeaders() });
 }
 
 // —— 下半区高度：用户拖到多少就记住多少（换页面/刷新后仍然保持一致的手感）——

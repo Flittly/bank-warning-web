@@ -1,0 +1,191 @@
+@import "./tokens.css";
+
+/* ============================================================
+   Design system / 基础组件
+   仅使用 .ds-* 命名空间；不重写 App.css 里既有的导航、活动栏与地图样式，
+   避免出现"两套皮肤互相覆盖"。底部地图工具条 .emt-create 完全不在本文件范围内。
+   ============================================================ */
+:root {
+  font-family: var(--ds-font-sans);
+  color: var(--ds-text);
+  background: var(--ds-canvas);
+  color-scheme: light;
+}
+
+::selection {
+  color: var(--ds-neutral-950);
+  background: #dbeafe;
+}
+
+/* ---------- Button ---------- */
+.ds-button {
+  min-height: var(--ds-control-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  box-sizing: border-box;
+  padding: 0 var(--ds-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-md);
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-text-md);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--ds-duration-fast), background var(--ds-duration-fast),
+    border-color var(--ds-duration-fast), box-shadow var(--ds-duration-fast);
+}
+
+.ds-button:disabled { opacity: 0.45; cursor: not-allowed; }
+.ds-button:focus-visible,
+.ds-icon-button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+
+.ds-button--primary {
+  color: #ffffff;
+  background: var(--ds-primary);
+  border-color: var(--ds-primary);
+  box-shadow: 0 1px 2px rgba(29, 78, 216, 0.18);
+}
+.ds-button--primary:hover:not(:disabled) { background: var(--ds-primary-hover); border-color: var(--ds-primary-hover); }
+.ds-button--primary:active:not(:disabled) { background: var(--ds-primary-active); border-color: var(--ds-primary-active); }
+
+.ds-button--secondary {
+  color: var(--ds-text);
+  background: var(--ds-surface);
+  border-color: var(--ds-border-strong);
+}
+.ds-button--secondary:hover:not(:disabled) {
+  color: var(--ds-primary-active);
+  background: var(--ds-primary-soft);
+  border-color: var(--ds-primary-border);
+}
+
+/* 黄色点缀按钮：数量要少，只给"品牌性"动作，避免与主操作蓝抢注意力。 */
+.ds-button--accent {
+  color: var(--ds-neutral-950);
+  background: var(--ds-accent);
+  border-color: var(--ds-accent);
+}
+.ds-button--accent:hover:not(:disabled) { background: var(--ds-accent-300); border-color: var(--ds-accent-300); }
+
+.ds-button--ghost { color: var(--ds-text-secondary); background: transparent; border-color: transparent; }
+.ds-button--ghost:hover:not(:disabled) { color: var(--ds-primary-active); background: var(--ds-primary-soft); }
+.ds-button--danger { color: #ffffff; background: var(--ds-danger); border-color: var(--ds-danger); }
+.ds-button--lg { min-height: var(--ds-control-lg); padding-inline: var(--ds-space-5); font-size: var(--ds-text-md); }
+
+.ds-icon-button {
+  width: var(--ds-control-md);
+  height: var(--ds-control-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-md);
+  color: var(--ds-text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--ds-duration-fast), color var(--ds-duration-fast), border-color var(--ds-duration-fast);
+}
+.ds-icon-button:hover:not(:disabled) {
+  color: var(--ds-primary-active);
+  background: var(--ds-primary-soft);
+  border-color: var(--ds-primary-border);
+}
+.ds-icon-button:active:not(:disabled) { background: #dbeafe; }
+
+/* ---------- Card ---------- */
+.ds-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-raised);
+}
+.ds-card--interactive { transition: border-color var(--ds-duration-normal), box-shadow var(--ds-duration-normal); }
+.ds-card--interactive:hover { border-color: var(--ds-primary-border); box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08); }
+
+/* ---------- Badge ---------- */
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  box-sizing: border-box;
+  padding: 1px 9px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-round);
+  color: var(--ds-text-secondary);
+  background: var(--ds-surface-subtle);
+  font-size: var(--ds-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ds-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ds-badge--success { color: #047857; background: var(--ds-success-soft); border-color: rgba(15, 157, 112, 0.24); }
+.ds-badge--warning { color: #b45309; background: var(--ds-warning-soft); border-color: rgba(180, 83, 9, 0.24); }
+.ds-badge--danger { color: var(--ds-danger); background: var(--ds-danger-soft); border-color: rgba(220, 38, 38, 0.24); }
+.ds-badge--info { color: var(--ds-info); background: var(--ds-info-soft); border-color: var(--ds-primary-border); }
+
+/* ---------- Form ---------- */
+.ds-input {
+  min-height: var(--ds-control-md);
+  box-sizing: border-box;
+  padding: 0 var(--ds-space-3);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-md);
+  color: var(--ds-text);
+  background: var(--ds-surface);
+  font: var(--ds-text-md) var(--ds-font-sans);
+  transition: border-color var(--ds-duration-fast), box-shadow var(--ds-duration-fast);
+}
+.ds-input:focus { outline: none; border-color: var(--ds-primary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14); }
+.ds-input:disabled { color: var(--ds-text-muted); background: var(--ds-neutral-100); cursor: not-allowed; }
+
+/* ---------- Alert / Skeleton ---------- */
+.ds-alert { padding: var(--ds-space-3) var(--ds-space-4); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); font-size: var(--ds-text-sm); }
+.ds-alert--error { color: #b91c1c; background: var(--ds-danger-soft); border-color: #fecaca; }
+
+.ds-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-neutral-100);
+}
+.ds-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.9) 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: ds-skeleton-slide 1.4s infinite;
+}
+@keyframes ds-skeleton-slide { to { transform: translateX(100%); } }
+
+/* ---------- Ant Design 对齐（只动形状与焦点，不动配色，保证与改造前一致） ---------- */
+.ant-btn { border-radius: var(--ds-radius-md); font-family: var(--ds-font-sans); }
+.ant-btn:focus-visible,
+.ant-input:focus-visible,
+.ant-input-affix-wrapper:focus-visible,
+.ant-select-selector:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 2px; }
+.ant-message { z-index: var(--ds-z-toast); }
+
+/* 窄屏只做"不撑破"的收敛：英文副标题隐藏、中文标题省略。
+   宽屏样式完全沿用 App.css 原有导航，不做任何重绘。 */
+@media (max-width: 900px) {
+  .nav-title-en { display: none; }
+  .nav-title { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-button,
+  .ds-icon-button,
+  .ds-card--interactive { transition: none; }
+  .ds-skeleton::after { animation: none; }
+}

@@ -538,7 +538,7 @@
 
 .bankParamsBtn {
   flex-shrink: 0;
-  width: 28px; height: 28px; minWidth: 28px; minHeight: 28px;
+  width: 28px; height: 28px; min-width: 28px; min-height: 28px;
   padding: 0;
   border: 1px solid rgba(0,0,0,0.1);
   background: rgba(255,255,255,0.55);

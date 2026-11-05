@@ -245,6 +245,10 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
       ctxParts.push(...chatTasks.map(t => `📋 ${t.taskName || t.taskId}`));
     }
     const contextText = ctxParts.length > 0 ? ctxParts.join('  ') : undefined;
+    // 先快照：下面会立刻清空 chips，若在请求体里直接读 chatTasks，
+    // 依赖的是"闭包里还是旧值"这种隐式语义，改一次顺序就会静默发空数组。
+    const taskIdsAtSend = (chatTasks || []).map(t => t.taskId);
+    const reportIdsAtSend = (chatReports || []).map(r => r.filename);
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: question, contextText }]);
     // 持久化用户消息
@@ -269,8 +273,8 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
           question,
           sessionId: sessionIdAtSend,
           skills: selectedSkills || [],
-          taskIds: chatTasks ? chatTasks.map(t => t.taskId) : [],
-          reportIds: chatReports ? chatReports.map(r => r.filename) : [],
+          taskIds: taskIdsAtSend,
+          reportIds: reportIdsAtSend,
           model: selectedModel,
         },
         (event: ChatStreamEvent) => {

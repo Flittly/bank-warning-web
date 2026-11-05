@@ -3,6 +3,7 @@ import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { getBasemapStyle } from '../map/basemapStyle';
+import { disableMapboxAuthCheck } from '../map/mapboxAuth';
 import '../App.css';
 import { getVerticalFootPointFromAny } from '../utils/verticalFootPoint';
 import ChatPanel from '../components/ChatPanel';
@@ -3933,6 +3934,8 @@ function ResultPage(props: ResultPageProps) {
     });
 
     mapRef.current = map;
+    // 同 EditorMap：mapbox 在首帧后自检 token，失败会清空画布 ⇒ 结果页也会「闪一下变全白」。
+    disableMapboxAuthCheck(map);
     // 开发期把地图挂到 window：结果页的图层（断面 / 色带 / 框选高亮）全在 canvas 上，
     // DOM 里查不到，真机脚本（CDP）只能靠它读 `getSource()._data` / `getStyle().layers`
     // 来区分「没画」和「画了但被压住」。生产构建不会带上（`import.meta.env.DEV` 为 false 时被裁掉）。

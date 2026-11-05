@@ -1,12 +1,15 @@
 ﻿import { Routes, Route, Outlet, useNavigate, useLocation, useParams, useSearchParams, Navigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { HelpCircle, Menu } from 'lucide-react';
+import { HelpCircle, Menu, Settings } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
-import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined, HomeOutlined } from '@ant-design/icons';
 import EditorPage from './pages/EditorPage';
 import ResultPage from './pages/ResultPage';
 import KnowledgePage from './pages/KnowledgePage';
 import LoginPage from './pages/LoginPage';
+import HomePage from './pages/HomePage';
+import ReportsPage from './pages/ReportsPage';
+import SkillsPage from './pages/SkillsPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminUserPage from './pages/AdminUserPage';
 import SkillApprovalsPage from './pages/SkillApprovalsPage';
@@ -21,10 +24,12 @@ import { useAuth } from './auth/useAuth';
 import TourGuide from './components/TourGuide';
 import SettingsModal from './components/SettingsModal';
 import './App.css';
+import './styles/design-system.css';
 
 function EditorPageWrapper() {
   const navigate = useNavigate();
-  return <EditorPage setPage={(page, taskId) => {
+  const [searchParams] = useSearchParams();
+  return <EditorPage initialTaskId={searchParams.get('task') || undefined} setPage={(page, taskId) => {
     if (page === 'result') navigate(`/result/${taskId || ''}`);
     if (page === 'editor') navigate('/editor');
   }} />;
@@ -39,6 +44,7 @@ function ResultPageWrapper() {
 // ⚠ key 必须与下面 items 里的 key 一一对应：任何一个对不上，d 就是 undefined，
 //   React 会渲染出一个没有 d 的 <path>，那个图标会静默变成空白（不报错、不警告）。
 const ACTIVITY_ICONS: Record<string, string> = {
+  home: 'm3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z M9 22V12h6v10',
   editor: 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
   tasks: 'M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13',
   reports: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
@@ -49,44 +55,135 @@ const ACTIVITY_ICONS: Record<string, string> = {
   knowledge: 'M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20',
 };
 
-function ActivityBar() {
+type ActivityVariant = 'home' | 'work';
+
+// 「中心」页：与首页同级，从首页点进去后条带必须保留（否则页面没有回到其它中心的入口）。
+const CENTER_PATHS = ['/reports', '/skills', '/knowledge'];
+
+function ActivityBar({
+  variant,
+  menuItems,
+  onOpenSettings,
+}: {
+  variant: ActivityVariant;
+  menuItems: any[];
+  onOpenSettings: () => void;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   const path = location.pathname;
   const panel = searchParams.get('panel') || 'tasks';
+  const isHome = path.startsWith('/home');
   const isEditor = path.startsWith('/editor');
   const isKnowledge = path.startsWith('/knowledge');
   const isResult = path.startsWith('/result');
 
-  const items = [
-    { key: 'editor', label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
-    { key: 'tasks', label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
-    { key: 'reports', label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
-    { key: 'skills', label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
-    { key: 'progress', label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
-    { key: 'knowledge', label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
+  // 工作区（编辑器 / 结果 / 知识库）恢复原来的窄图标条：条目与顺序保持基线一致，
+  // 只有 title 提示，不显示文字标签，也不再挂设置与账户（这两项工作区走顶部导航的用户菜单）。
+  if (variant === 'work') {
+    const workItems = [
+      { key: 'editor', label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
+      { key: 'tasks', label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
+      { key: 'reports', label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
+      { key: 'skills', label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
+      { key: 'progress', label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
+      { key: 'knowledge', label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
+    ];
+
+    return (
+      <nav className="activity-bar" data-tour="activity-bar" aria-label="主导航">
+        {workItems.map((it) => (
+          <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label} data-tour={`activity-${it.key}`}>
+            <svg
+              width={18}
+              height={18}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={it.active ? '#2563eb' : '#334155'}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={ACTIVITY_ICONS[it.key]} />
+            </svg>
+          </button>
+        ))}
+      </nav>
+    );
+  }
+
+  // 起始工作台：只保留 首页 / 报告 / 技能 / 知识库 四个入口 + 底部设置与账户。
+  // 标签用 2~3 个字：条带只有 66px 宽，长标签会换行把整条撑高。
+  // ⚠ 这三个入口各自是独立路由（/reports、/skills、/knowledge），
+  //   不能再指到 /result?panel=… —— 那样会落到结果页（地图工作区），看起来就像进了编辑器。
+  const homeItems = [
+    { key: 'home', label: '首页', active: isHome, onClick: () => navigate('/home') },
+    { key: 'reports', label: '报告', active: path.startsWith('/reports'), onClick: () => navigate('/reports') },
+    { key: 'skills', label: '技能', active: path.startsWith('/skills'), onClick: () => navigate('/skills') },
+    { key: 'knowledge', label: '知识库', active: path.startsWith('/knowledge'), onClick: () => navigate('/knowledge') },
   ];
 
+  const initial = (user?.realName || user?.username || 'U').trim().slice(0, 1).toUpperCase();
+
   return (
-    <div className="activity-bar" data-tour="activity-bar">
-      {items.map((it) => (
-        <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label} data-tour={`activity-${it.key}`}>
-          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={it.active ? '#2563eb' : '#334155'} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d={ACTIVITY_ICONS[it.key]} />
-          </svg>
+    <nav className="activity-bar activity-bar--home" data-tour="activity-bar" aria-label="主导航">
+      <div className="activity-group">
+        {homeItems.map((it) => (
+          <button key={it.key} type="button" className={`activity-btn ${it.active ? 'active' : ''}`} onClick={it.onClick} title={it.label} data-tour={`activity-${it.key}`}>
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d={ACTIVITY_ICONS[it.key]} />
+            </svg>
+            <span className="activity-label">{it.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="activity-foot">
+        <button type="button" className="activity-btn" onClick={onOpenSettings} title="设置" data-tour="activity-settings">
+          <Settings size={18} strokeWidth={2} />
+          <span className="activity-label">设置</span>
         </button>
-      ))}
-    </div>
+        <Dropdown menu={{ items: menuItems }} placement="topRight" trigger={['click']}>
+          <button type="button" className="activity-btn" title={user?.username || '账户'} data-tour="activity-account">
+            <span className="activity-avatar">{initial}</span>
+            <span className="activity-label">账户</span>
+          </button>
+        </Dropdown>
+      </div>
+    </nav>
   );
 }
 
 function AppLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [showTour, setShowTour] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const tourCheckedRef = useRef(false);
+
+  // 起始工作台用极简顶栏（仅 LOGO）+ 左侧条带导航；其它页面仍用完整导航栏（搜索 + 用户菜单）。
+  // 用 pathname 判断而不是路由嵌套，是为了让 /home 与其它页面共用同一套导航与鉴权，
+  // 避免多一个 Layout 组件走两套逻辑。
+  const isHome = location.pathname.startsWith('/home');
+
+  /**
+   * 左侧栏的出现规则（三种，互斥）：
+   * - `/home`、`/reports`、`/skills`、`/knowledge`
+   *     → `home`：简版条带（首页/报告/技能/知识库 + 设置/账户）。
+   *       这四个页面是同一层级的「中心」，从首页点进去侧栏必须留着，
+   *       否则一进报告/技能/知识库就"断头"，只能靠浏览器后退回首页。
+   *       KnowledgePage 自己的文档列表是页面内的第二级栏，与全局条带并存（条带 → 列表 → 正文）。
+   * - `/editor`、`/result…`          → `work`：完整窄图标条，只在任务工作区里出现
+   * - 其它（/admin/… 等）            → `none`：不挂任何侧栏
+   */
+  const isCenterPage = CENTER_PATHS.some((p) => location.pathname.startsWith(p));
+  const railMode: ActivityVariant | 'none' = isHome || isCenterPage
+    ? 'home'
+    : location.pathname.startsWith('/editor') || location.pathname.startsWith('/result')
+      ? 'work'
+      : 'none';
 
   // 首次访问自动弹出新手引导
   useEffect(() => {
@@ -109,6 +206,12 @@ function AppLayout() {
 
   const dropdownItems = useMemo(() => {
     const items: any[] = [
+      {
+        key: 'home',
+        icon: <HomeOutlined />,
+        label: '起始工作台',
+        onClick: () => navigate('/home'),
+      },
       {
         key: 'tour',
         icon: <HelpCircle size={14} />,
@@ -163,8 +266,17 @@ function AppLayout() {
 
   return (
     <div className="app-container">
+      {/* 起始工作台只留左上角一个 LOGO：全局搜索与用户菜单收起，
+          设置与账户入口移入左侧条带（ActivityBar 底部）。 */}
+      {isHome ? (
+        <header className="home-topbar">
+          <button type="button" className="home-brand" onClick={() => navigate('/home')} title="长江崩岸重点险工段智能风险评估应用平台">
+            <img src="/logo.png" alt="长江崩岸风险评估平台" width="46" height="38" />
+          </button>
+        </header>
+      ) : (
       <div className="main-nav">
-        <div className="nav-logo" onClick={() => navigate('/editor')}>
+        <div className="nav-logo" onClick={() => navigate('/home')}>
           <img src="/logo.png" alt="YRBC-IRAP" width="48" height="40" style={{ flexShrink: 0, objectFit: 'contain' }} />
           <div className="nav-titles">
             <span className="nav-title">长江崩岸重点险工段智能风险评估应用平台</span>
@@ -238,8 +350,11 @@ function AppLayout() {
           )}
         </div>
       </div>
-      <div className="app-body">
-        <ActivityBar />
+      )}
+      <div className={`app-body${isHome ? ' app-body--home' : ''}`}>
+        {railMode !== 'none' && (
+          <ActivityBar variant={railMode} menuItems={dropdownItems} onOpenSettings={() => setShowSettings(true)} />
+        )}
         <main className="app-main">
           <Outlet />
         </main>
@@ -267,13 +382,17 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route element={<AuthGuard />}>
-        <Route index element={<Navigate to="/editor" replace />} />
-        <Route element={<AppLayout />}>
-          <Route path="/editor" element={<EditorPageWrapper />} />
-          <Route path="/result" element={<ResultPageWrapper />} />
-          <Route path="/result/:taskId" element={<ResultPageWrapper />} />
-          <Route path="/knowledge" element={<KnowledgePage />} />
-        </Route>
+        <Route index element={<Navigate to="/home" replace />} />
+          <Route element={<AppLayout />}>
+            <Route path="/home" element={<HomePage />} />
+            <Route path="/editor" element={<EditorPageWrapper />} />
+            <Route path="/result" element={<ResultPageWrapper />} />
+            <Route path="/result/:taskId" element={<ResultPageWrapper />} />
+            {/* 三条独立路径：报告中心 / 技能中心 / 知识库，各自取数、各自渲染，不经过编辑器 */}
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/knowledge" element={<KnowledgePage />} />
+          </Route>
         <Route element={<AuthGuard requireAdmin />}>
           <Route path="/admin/users" element={<AdminUserPage />} />
           <Route path="/admin/skill-approvals" element={<SkillApprovalsPage />} />

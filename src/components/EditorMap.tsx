@@ -4,6 +4,7 @@ import type { ExpressionSpecification } from 'mapbox-gl';
 import * as turf from '@turf/turf';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { getBasemapStyle } from '../map/basemapStyle';
+import { disableMapboxAuthCheck } from '../map/mapboxAuth';
 import { boxFromCorners, boxPolygon, isValidBox, type BoxBounds } from '../map/boxSelection';
 import { sectionIdOfFeature } from '../map/sectionBoxDelete';
 import { snapPointToBank, type BankAnchor, type LngLat } from '../map/sectionBankBinding';
@@ -823,7 +824,30 @@ function EditorMap(props: EditorMapProps) {
     });
 
     mapRef.current = map;
+    // 必须紧接构造之后：mapbox 在「首帧渲染完成、刚 idle」时才去校验 token，
+    // 失败就 gl.clear() 清屏，表现为「底图闪一下、岸线断面一起全白」。
+    disableMapboxAuthCheck(map);
     map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+
+    // 样式加载失败时 mapbox 只抛一个笼统的 'error'，随后 `load` 永不触发：
+    // 所有 addLayer 都不执行 ⇒ 岸线、断面、框选层统统不存在，地图纯白，
+    // 控制台却只剩一句 downstream 的 `The layer 'xxx' does not exist`。
+    // 这里把根因打成一句人话，避免下次又顺着下游报错排查。
+    let styleErrorLogged = false;
+    map.on('error', (ev) => {
+      if (styleErrorLogged || map.isStyleLoaded()) return;
+      const detail = (ev as unknown as { error?: Error }).error?.message ?? String(ev);
+      // token 自检已在 disableMapboxAuthCheck 里关掉；万一它又冒出来，
+      // 不能误报成「样式加载失败」，否则排查方向整个跑偏。
+      if (/access token/i.test(detail)) {
+        console.warn('[底图] mapbox 仍在做 token 自检，请检查 disableMapboxAuthCheck 是否失效');
+        return;
+      }
+      styleErrorLogged = true;
+      console.error(
+        `[底图] 样式加载失败，地图会整片空白（岸线/断面都不会出现）。原始错误：${detail}`,
+      );
+    });
 
     // 持久化地图视角
     map.on('moveend', () => {
