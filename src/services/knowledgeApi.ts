@@ -51,7 +51,12 @@ export async function deleteDocument(id: string): Promise<void> {
 
 export async function searchKnowledge(query: string, topK = 5): Promise<SearchResult[]> {
   const res = await fetch(`${BASE}/search?query=${encodeURIComponent(query)}&topK=${topK}`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to search: ${res.status}`);
+  if (!res.ok) {
+    // 阶段 1：后端会把「密钥未配置 / 无身份 / 检索失败」以 503 + error 文本返回，
+    // 这里把原文带出来，前端「检索测试」区就能显示真实原因，而不是伪装成 0 条结果。
+    const body = await res.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error || `检索失败（HTTP ${res.status}）`);
+  }
   return res.json();
 }
 
