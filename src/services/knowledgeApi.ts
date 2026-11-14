@@ -66,20 +66,32 @@ export async function fetchKnowledgeStats(): Promise<KnowledgeStats> {
   return res.json();
 }
 
-export async function uploadKnowledgeText(type: string, title: string, content: string): Promise<{ success: boolean; docId: string }> {
+export interface UploadResult {
+  success: boolean;
+  docId: string;
+  chunks: number;
+  isPublic: boolean;
+  error?: string;
+}
+
+export async function uploadKnowledgeText(type: string, title: string, content: string, isPublic = false): Promise<UploadResult> {
   const res = await fetch(`${BASE}/knowledge`, {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, title, content }),
+    body: JSON.stringify({ type, title, content, isPublic }),
   });
-  if (!res.ok) throw new Error(`Failed to upload text: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || `上传失败: ${res.status}`);
+  }
+  return data;
 }
 
-export async function uploadKnowledgePdf(file: File, type: string, title?: string): Promise<{ success: boolean; docId: string; chunks: number }> {
+export async function uploadKnowledgePdf(file: File, type: string, isPublic = false, title?: string): Promise<UploadResult> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('type', type);
+  formData.append('isPublic', String(isPublic));
   if (title) formData.append('title', title);
   const res = await fetch(`${BASE}/knowledge/upload`, {
     method: 'POST',

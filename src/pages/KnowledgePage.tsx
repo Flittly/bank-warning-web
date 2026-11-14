@@ -58,6 +58,7 @@ export default function KnowledgePage() {
   const [hitQuery, setHitQuery] = useState('');
   const [hitting, setHitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   // 列表 + 统计（knowledgeApi 不接 AbortSignal，用 cancelled 标记代替）
@@ -168,9 +169,9 @@ export default function KnowledgePage() {
     setUploading(true);
     try {
       if (file.name.endsWith('.pdf') || file.name.endsWith('.docx')) {
-        await uploadKnowledgePdf(file, type);
+        await uploadKnowledgePdf(file, type, isPublic);
       } else {
-        await uploadKnowledgeText(type, file.name, await file.text());
+        await uploadKnowledgeText(type, file.name, await file.text(), isPublic);
       }
       setReloadKey((key) => key + 1);
     } catch (reason: unknown) {
@@ -211,13 +212,29 @@ export default function KnowledgePage() {
           </div>
           <div className="catalog-head-actions">
             <label
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 12, color: 'var(--ds-text, #1f2937)',
+                cursor: uploading ? 'not-allowed' : 'pointer',
+              }}
+              title="勾选后所有登录用户都能检索到这份资料；不勾选则只有自己和管理员可见"
+            >
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(event) => setIsPublic(event.target.checked)}
+                disabled={uploading}
+              />
+              公开
+            </label>
+            <label
               className="ds-button ds-button--primary"
               style={{ cursor: uploading ? 'progress' : 'pointer' }}
             >
               <Upload size={14} /> {uploading ? '上传中…' : '上传文档'}
               <input
                 type="file"
-                accept=".pdf,.docx,.txt,.md"
+                accept=".pdf,.docx,.txt,.md,.json,.py"
                 onChange={handleUpload}
                 disabled={uploading}
                 style={{ display: 'none' }}
