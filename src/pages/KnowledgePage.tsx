@@ -168,12 +168,15 @@ export default function KnowledgePage() {
     const type = window.prompt('请输入文档分类（如 hydraulic / engineering）：', '文档') || '文档';
     setUploading(true);
     try {
-      if (file.name.endsWith('.pdf') || file.name.endsWith('.docx')) {
-        await uploadKnowledgePdf(file, type, isPublic);
-      } else {
-        await uploadKnowledgeText(type, file.name, await file.text(), isPublic);
-      }
+      const result = file.name.endsWith('.pdf') || file.name.endsWith('.docx')
+        ? await uploadKnowledgePdf(file, type, isPublic)
+        : await uploadKnowledgeText(type, file.name, await file.text(), isPublic);
       setReloadKey((key) => key + 1);
+      // 后端现在会回报「嵌入成功/失败段数」：部分失败时文档已在列表里，
+      // 但只有部分段落可被检索到，必须说出来，不能让人以为整篇都进库了。
+      if (result.failed && result.failed > 0) {
+        setError(`已写入 ${result.embedded ?? 0} 段，${result.failed} 段嵌入失败，这部分内容检索不到`);
+      }
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : '上传失败');
     } finally {

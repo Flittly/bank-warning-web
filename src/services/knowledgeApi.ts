@@ -77,6 +77,10 @@ export interface UploadResult {
   docId: string;
   chunks: number;
   isPublic: boolean;
+  /** 真正写入向量库的段数（后端阶段 7 新增）。旧后端不返回时为 undefined。 */
+  embedded?: number;
+  /** 嵌入失败被跳过的段数。>0 说明这篇文档只有部分能被检索到。 */
+  failed?: number;
   error?: string;
 }
 
