@@ -19,7 +19,13 @@ export interface KnowledgeDocDetail {
 
 export interface SearchResult {
   content: string;
-  score: number;
+  /**
+   * 混合检索打开后，关键词路单路命中的结果没有分数（后端返回 null）。
+   * 不能当成 0 分处理，否则界面会显示「相似度 0.000」。
+   */
+  score: number | null;
+  /** 后端显式标记这一条有没有分数，用于区分 0.000 与「根本没有分数」。 */
+  scored?: boolean;
   docId: string;
 }
 

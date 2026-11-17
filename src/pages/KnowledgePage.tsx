@@ -403,7 +403,11 @@ export default function KnowledgePage() {
                         <span className="knowledge-hit-doc">
                           <FileText size={13} /> {hit.docId}
                         </span>
-                        <span className="knowledge-hit-score">相似度 {hit.score.toFixed(3)}</span>
+                        <span className="knowledge-hit-score">
+                          {typeof hit.score === 'number'
+                            ? `相似度 ${hit.score.toFixed(3)}`
+                            : '仅关键词命中'}
+                        </span>
                       </header>
                       <p className="knowledge-hit-body">
                         {hit.content.length > 320 ? `${hit.content.slice(0, 320)}…` : hit.content}
