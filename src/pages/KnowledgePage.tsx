@@ -404,7 +404,7 @@ export default function KnowledgePage() {
                     <article className="knowledge-hit" key={`${hit.docId}-${index}`}>
                       <header className="knowledge-hit-head">
                         <span className="knowledge-hit-doc">
-                          <FileText size={13} /> {hit.docId}
+                          <FileText size={13} /> {hit.sourceLabel ?? hit.docId}
                         </span>
                         <span className="knowledge-hit-score">
                           {typeof hit.score === 'number'

@@ -27,6 +27,14 @@ export interface SearchResult {
   /** 后端显式标记这一条有没有分数，用于区分 0.000 与「根本没有分数」。 */
   scored?: boolean;
   docId: string;
+  /**
+   * 命中段号（1 基）与总段数。检索结果来自某一篇被切成多块的文档，
+   * 只说文件名无法定位到具体位置；两项都为 null 表示后端没能确定来源位置。
+   */
+  chunkIndex?: number | null;
+  totalChunks?: number | null;
+  /** 后端拼好的来源标签（如「BMS.docx · 第 3/4 段」），优先于本地拼接。 */
+  sourceLabel?: string;
 }
 
 export interface KnowledgeStats {
@@ -79,7 +87,10 @@ export interface UploadResult {
   isPublic: boolean;
   /** 真正写入向量库的段数（后端阶段 7 新增）。旧后端不返回时为 undefined。 */
   embedded?: number;
-  /** 嵌入失败被跳过的段数。>0 说明这篇文档只有部分能被检索到。 */
+  /**
+   * 嵌入失败的段数。>0 表示这一批<b>整批没有生效</b>（库中仍是上一版），
+   * 不是「只有部分能被检索到」——后端按整批成功才落库的口径。
+   */
   failed?: number;
   error?: string;
 }
