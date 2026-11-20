@@ -11,6 +11,7 @@ import { snapPointToBank, type BankAnchor, type LngLat } from '../map/sectionBan
 import type { SelectionGroup } from '../types/selection';
 import { getVerticalFootCoordsFromAny } from '../utils/verticalFootPoint';
 import { useEditorStore } from '../store/useEditorStore';
+import type { DemPreview } from '../services/demPreviewService';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -116,6 +117,65 @@ function buildValidationColorExpression() {
     '#ef4444',
     '#f59e0b',
   ] as any;
+}
+
+// —— DEM 栅格预览层 ——
+const DEM_PREVIEW_SOURCE = 'dem-preview';
+const DEM_PREVIEW_LAYER = 'dem-preview-layer';
+
+/**
+ * 把（或清掉）DEM 预览图铺到地图上。
+ *
+ * <p>必须压在 `river-surface-fill` 之下：它是底料而不是标注，盖在断面线与岸段色带上面
+ * 会把这些要素全糊住。
+ *
+ * <p>source / layer 都按需创建、无数据即删，不留常驻空壳：Mapbox 的 `image` source
+ * 创建时就必须拿到合法的 url 与四角坐标，空壳只能塞假数据，一旦哪条分支忘了替换，
+ * 图上就会留一张错位的图。
+ */
+function applyDemPreviewLayer(map: mapboxgl.Map, preview: DemPreview | null | undefined): void {
+  if (!preview) {
+    // 先删层再删 source：反过来会因「source 仍被图层引用」而抛错
+    if (map.getLayer(DEM_PREVIEW_LAYER)) map.removeLayer(DEM_PREVIEW_LAYER);
+    if (map.getSource(DEM_PREVIEW_SOURCE)) map.removeSource(DEM_PREVIEW_SOURCE);
+    return;
+  }
+
+  const ensureLayer = () => {
+    if (map.getLayer(DEM_PREVIEW_LAYER)) return;
+    // 压到第一个业务图层之下；它还没建出来（样式刚换）就退化成最上层
+    const beforeId = map.getLayer('river-surface-fill') ? 'river-surface-fill' : undefined;
+    map.addLayer(
+      {
+        id: DEM_PREVIEW_LAYER,
+        type: 'raster',
+        source: DEM_PREVIEW_SOURCE,
+        paint: {
+          // 留一点透明度：完全实心会把底图的地名压死，反而更难核对位置
+          'raster-opacity': 0.9,
+          'raster-resampling': 'linear',
+          // 关掉淡入淡出，否则连续切换两份 DEM 时会短暂看到两张图叠着
+          'raster-fade-duration': 0,
+        },
+      },
+      beforeId,
+    );
+  };
+
+  const existing = map.getSource(DEM_PREVIEW_SOURCE) as mapboxgl.ImageSource | undefined;
+  if (existing) {
+    // 换图只更新图片与坐标，不重建 source —— 重建会让图层闪一下
+    existing.updateImage({ url: preview.imageUrl, coordinates: preview.coordinates });
+    ensureLayer();
+    return;
+  }
+
+  map.addSource(DEM_PREVIEW_SOURCE, {
+    type: 'image',
+    url: preview.imageUrl,
+    coordinates: preview.coordinates,
+  });
+  ensureLayer();
 }
 
 function buildArrowIconImageData(color: string): ImageData {
@@ -267,6 +327,8 @@ interface EditorMapProps {
   createCrossLineByEndpoints: (start: number[], end: number[], anchor?: BankAnchor | null) => void;
   tiffBoundsData: GeoJSON.FeatureCollection | null;
   showTiffBounds: boolean;
+  /** 双击 DEM 后的栅格预览（灰度高程 + 红色 nodata）；null / 不传 = 不显示 */
+  demPreview?: DemPreview | null;
   /** 长江河面范围（4326，来自 river_yangtze）；没开启过图层时为 null */
   riverSurfaceData?: GeoJSON.FeatureCollection | null;
   /** 是否绘制长江河面参考图层（规则：与长江河面相交） */
@@ -334,6 +396,7 @@ function EditorMap(props: EditorMapProps) {
     createCrossLineByEndpoints,
     tiffBoundsData,
     showTiffBounds,
+    demPreview,
     riverSurfaceData,
     showRiverSurface = false,
     resizeTrigger,
@@ -350,6 +413,8 @@ function EditorMap(props: EditorMapProps) {
   const uploadedDataRef = useRef<GeoJSON.FeatureCollection | null>(uploadedData);
   const tiffBoundsDataRef = useRef<GeoJSON.FeatureCollection | null>(tiffBoundsData);
   const riverSurfaceDataRef = useRef<GeoJSON.FeatureCollection | null>(riverSurfaceData ?? null);
+  const demPreviewRef = useRef<DemPreview | null>(demPreview ?? null);
+  demPreviewRef.current = demPreview ?? null;
   useEffect(() => { uploadedDataRef.current = uploadedData; }, [uploadedData]);
   useEffect(() => { tiffBoundsDataRef.current = tiffBoundsData; }, [tiffBoundsData]);
   useEffect(() => { riverSurfaceDataRef.current = riverSurfaceData ?? null; }, [riverSurfaceData]);
@@ -555,6 +620,25 @@ function EditorMap(props: EditorMapProps) {
       map.off('idle', applyVisibility);
     };
   }, [showTiffBounds]);
+
+  // DEM 栅格预览：有数据就铺上、没有就撤掉
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const apply = () => applyDemPreviewLayer(map, demPreview);
+
+    // 同样不能写成 `if (!map.isStyleLoaded()) return;` 直接早退：
+    // 依赖只有 [demPreview]，值不再变化就不会重跑 ⇒ 图层会永久缺失。
+    if (map.isStyleLoaded()) {
+      apply();
+      return undefined;
+    }
+    map.once('idle', apply);
+    return () => {
+      map.off('idle', apply);
+    };
+  }, [demPreview]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2147,6 +2231,13 @@ function EditorMap(props: EditorMapProps) {
           if (source) source.setData(turf.featureCollection([]));
         }
       });
+
+      // 卫星/标准底图切换会整图重建（new Map），DEM 预览层随之消失；
+      // 数据在 ref 里，这里按 ref 补回来 —— 与 tiff-bounds 的恢复方式一致。
+      // 放在 load 回调末尾：此时 river-surface-fill 已建好，栅格层才能被压到它下面。
+      if (demPreviewRef.current) {
+        applyDemPreviewLayer(map, demPreviewRef.current);
+      }
     });
 
     return () => {

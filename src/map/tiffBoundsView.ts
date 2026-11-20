@@ -82,6 +82,33 @@ export function toggleDemBounds(
     : { showTiffBounds: true, focusedDemKeys: next };
 }
 
+/**
+ * 把某一条 DEM 的范围从图上收掉 —— 「已加载到屏幕」行尾那个 ✕ 走这条。
+ *
+ * <p>与 {@link toggleDemBounds} 的关键差别：**不管当前是「全部」还是「聚焦几条」，
+ * 都只收这一条**，绝不顺手把别的打开。全部模式下没有「列表」，就用 `allKeys`
+ * 把它收窄成"除它之外的其余条"；`allKeys` 也给不出来时只能整组关掉。
+ *
+ * <p>返回的 `focusedDemKeys` 一律是非空数组或 null —— 空数组在
+ * {@link resolveVisibleTiffBounds} 里等于「不过滤 = 全部」，会造成"收掉一条结果全冒出来"。
+ */
+export function removeDemBounds(
+  state: DemBoundsToggleState,
+  key: unknown,
+  allKeys: readonly unknown[] = [],
+): DemBoundsToggleState {
+  const k = normalizeDemKey(key);
+  if (!k || !state.showTiffBounds) return state;
+
+  const focused = (state.focusedDemKeys || []).map(normalizeDemKey).filter(Boolean);
+  const base = focused.length ? focused : allKeys.map(normalizeDemKey).filter(Boolean);
+  const next = base.filter((x) => x !== k);
+
+  return next.length === 0
+    ? { showTiffBounds: false, focusedDemKeys: null }
+    : { showTiffBounds: true, focusedDemKeys: next };
+}
+
 export function resolveVisibleTiffBounds({
   showTiffBounds,
   tiffBoundsData,

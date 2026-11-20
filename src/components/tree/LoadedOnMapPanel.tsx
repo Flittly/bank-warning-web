@@ -51,7 +51,12 @@ export interface LoadedOnMapActions {
   onRemoveAllSections?: () => void;
   /** 只聚焦显示这一条 DEM 的范围 */
   onFocusDem?: (tiffKey: string) => void;
-  /** 隐藏全部 DEM 范围 */
+  /**
+   * 把某一条 DEM 移出地图：`preview` 撤掉灰度影像、`bounds` 收起范围框；
+   * 同一条两者都有时由上层一并清掉（面板不判断，只把 `row.kind` 传下去）。
+   */
+  onRemoveDem?: (tiffKey: string, kind: 'bounds' | 'preview') => void;
+  /** 隐藏全部 DEM（影像与范围框一起） */
   onHideDems?: () => void;
   /**
    * 终止某个正在运行的任务（确认框与提示文案都在上层，面板不自己弹窗）。
@@ -270,9 +275,9 @@ export default function LoadedOnMapPanel({
     }
     if (g.key === 'dems' && actions?.onHideDems) {
       return (
-        <button type="button" className={styles.groupBtn} title="隐藏地图上的 DEM 范围框"
+        <button type="button" className={styles.groupBtn} title="把地图上的 DEM 全部移出（灰度影像与范围框）"
           onClick={(e) => { e.stopPropagation(); actions.onHideDems!(); }}>
-          <EyeOff size={11} /> 隐藏
+          <EyeOff size={11} /> 全部移出
         </button>
       );
     }
@@ -289,12 +294,14 @@ export default function LoadedOnMapPanel({
     const remove = () => {
       if (g.key === 'banks') actions?.onRemoveBank?.(row.id);
       else if (g.key === 'sections') actions?.onRemoveSection?.(row.id);
+      else if (g.key === 'dems') actions?.onRemoveDem?.(row.id, row.kind ?? 'bounds');
     };
     const canFocus = g.key === 'dems'
       ? Boolean(actions?.onFocusDem)
       : g.key === 'banks' ? Boolean(actions?.onFocusBank) : Boolean(actions?.onFocusSection);
+    // DEM 以前这里恒为 false —— 影像铺上去之后没有任何入口能撤掉，只能靠图例卡片右上角那个 ✕。
     const canRemove = g.key === 'dems'
-      ? false
+      ? Boolean(actions?.onRemoveDem)
       : g.key === 'banks' ? Boolean(actions?.onRemoveBank) : Boolean(actions?.onRemoveSection);
     if (!canFocus && !canRemove) return null;
     return (
@@ -306,7 +313,10 @@ export default function LoadedOnMapPanel({
           </button>
         )}
         {canRemove && (
-          <button type="button" className={styles.rowBtn} title="移出地图"
+          <button type="button" className={styles.rowBtn}
+            title={g.key === 'dems'
+              ? (row.kind === 'preview' ? '移出地图（撤掉灰度影像与范围框）' : '移出地图（收起范围框）')
+              : '移出地图'}
             onClick={(e) => { e.stopPropagation(); remove(); }}>
             <X size={12} />
           </button>

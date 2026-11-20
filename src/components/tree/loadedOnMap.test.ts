@@ -5,6 +5,7 @@ import {
   DEFAULT_ROW_LIMIT,
   formatElapsed,
   isRunningStatus,
+  mergeDemLoadedItems,
   parseServerTime,
   pickRunningTasks,
 } from './loadedOnMap';
@@ -293,5 +294,57 @@ describe('已加载到屏幕 · 分组视图', () => {
     // 行的次要信息透传：岸段带 bank_id、断面带所属岸段
     expect(v.groups[0].rows.map((r) => `${r.label}/${r.meta}`)).toEqual(['扬中岸段/b1', '九江岸段/b2']);
     expect(v.groups[1].rows[0].meta).toBe('b1');
+  });
+});
+
+/**
+ * DEM 组：范围框与灰度影像合并成"一行一个 DEM"。
+ *
+ * 事故背景：双击 DEM 会同时打开范围框和影像，而影像**不进 tiff_bounds 清单**，
+ * 只按 demKeys 列行的话，图上明明铺着影像、面板里却一条都不列，也没有 ✕ 能撤掉。
+ */
+describe('mergeDemLoadedItems', () => {
+  const A = 'tiff/YZ/2012/standard/201204/2012-YZ.tif';
+
+  it('只有范围框 ⇒ bounds / 范围框', () => {
+    expect(mergeDemLoadedItems({ boundsKeys: [A] })).toEqual([
+      { key: A, label: '2012-YZ.tif', kind: 'bounds', meta: '范围框' },
+    ]);
+  });
+
+  it('只有影像 ⇒ preview / 影像（范围框清单里没有它）', () => {
+    expect(mergeDemLoadedItems({ previews: [{ key: A }] })).toEqual([
+      { key: A, label: '2012-YZ.tif', kind: 'preview', meta: '影像' },
+    ]);
+  });
+
+  it('同一 key 两者都有 ⇒ 合并成一行，不出现两条同名条目', () => {
+    const items = mergeDemLoadedItems({ boundsKeys: [A], previews: [{ key: A }] });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'preview', meta: '影像 + 范围' });
+  });
+
+  it('顺序先按范围框、再补只有影像的；label 可覆盖，缺省取文件名', () => {
+    const B = 'tiff/Mzs/2019/standard/201904/201904.tif';
+    const items = mergeDemLoadedItems({
+      boundsKeys: [A],
+      previews: [{ key: B, label: '洞庭湖 2019' }],
+    });
+    expect(items.map((i) => `${i.key.split('/').pop()}|${i.kind}|${i.meta}`)).toEqual([
+      '2012-YZ.tif|bounds|范围框',
+      '201904.tif|preview|影像',
+    ]);
+    expect(items[1].label).toBe('洞庭湖 2019');
+  });
+
+  it('空 key / 空输入不产生垃圾行', () => {
+    expect(mergeDemLoadedItems({})).toEqual([]);
+    expect(mergeDemLoadedItems({ boundsKeys: ['', '   ', null as any], previews: [{ key: '' }] })).toEqual([]);
+  });
+
+  it('进 buildLoadedGroups 后 row.kind 与 meta 一起落到面板行上', () => {
+    const groups = buildLoadedGroups({ demItems: mergeDemLoadedItems({ previews: [{ key: A }] }) });
+    const dems = groups.find((g) => g.key === 'dems')!;
+    expect(dems.rows[0]).toMatchObject({ id: A, kind: 'preview', meta: '影像' });
   });
 });

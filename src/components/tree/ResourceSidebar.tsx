@@ -11,7 +11,7 @@ import ResourceTree from './ResourceTree';
 import LoadedOnMapPanel from './LoadedOnMapPanel';
 import BatchActionBar from './BatchActionBar';
 import type { LoadedBoxSelection, LoadedOnMapActions } from './LoadedOnMapPanel';
-import { buildLoadedGroups, pickRunningTasks } from './loadedOnMap';
+import { buildLoadedGroups, mergeDemLoadedItems, pickRunningTasks } from './loadedOnMap';
 import VerticalResizeHandle from '../VerticalResizeHandle';
 import styles from './ResourceSidebar.module.css';
 
@@ -34,6 +34,14 @@ interface Props {
   handlers: ResourceSidebarHandlers;
   /** 当前画在地图上的 DEM 范围 tiff_key 列表（没显示范围时传空数组） */
   demKeys?: string[];
+  /**
+   * 当前铺在地图上的 DEM 灰度影像（双击 DEM 才有）。
+   *
+   * <p>与 `demKeys` 是两个来源：范围框来自 `tiff_bounds` 清单，影像来自预览接口。
+   * 只传 `demKeys` 会出现"图上明明有影像，下半区却一条都不列"的情况 —— 影像根本不进
+   * `tiff_bounds`，更撤不掉。
+   */
+  demPreviews?: Array<{ key: string; label?: string }> | null;
   /** 地图上当前选中的断面 id，用于在下半区高亮对应行 */
   activeSectionId?: string | null;
   /**
@@ -77,7 +85,7 @@ function readStoredHeight(): number {
   }
 }
 
-export default function ResourceSidebar({ handlers, demKeys, activeSectionId, tiffBoundsVisible, boxSelection }: Props) {
+export default function ResourceSidebar({ handlers, demKeys, demPreviews, activeSectionId, tiffBoundsVisible, boxSelection }: Props) {
   const setData = useResourceTreeStore((s) => s.setData);
   const dataVersion = useResourceTreeStore((s) => s.dataVersion);
   const banks = useResourceTreeStore((s) => s.banks);
@@ -186,6 +194,7 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId, ti
   );
 
   // —— 下半区数据 ——
+  // 范围框与灰度影像合并成「一行一个 DEM」：双击后两者同时存在，分两行会让人误以为加载了两份。
   const demItems = useMemo(() => {
     const labelOf = (key: string) => {
       const t: any = (tiffs || []).find(
@@ -193,8 +202,8 @@ export default function ResourceSidebar({ handlers, demKeys, activeSectionId, ti
       );
       return String(t?.file_name || key.split('/').pop() || key);
     };
-    return (demKeys || []).map((k) => ({ key: String(k), label: labelOf(String(k)) }));
-  }, [demKeys, tiffs]);
+    return mergeDemLoadedItems({ boundsKeys: demKeys, previews: demPreviews, labelOf });
+  }, [demKeys, demPreviews, tiffs]);
 
   // 树上「这条 DEM 的范围正开着」的高亮依据（与下半区 demo 列表同一份数据）。
   const activeDemKeySet = useMemo(() => new Set((demKeys || []).map((k) => String(k))), [demKeys]);

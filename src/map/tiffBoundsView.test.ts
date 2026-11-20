@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FeatureCollection } from 'geojson';
-import { isDemBoundsShown, resolveVisibleTiffBounds, toggleDemBounds } from './tiffBoundsView';
+import { isDemBoundsShown, removeDemBounds, resolveVisibleTiffBounds, toggleDemBounds } from './tiffBoundsView';
 
 const A = 'tiff/Yangtze/2018/standard/1998-2018/2018-Yangtze-uvhH.tif';
 const B = 'tiff/YZ/2018/standard/201804/2018-YZ.tif';
@@ -152,5 +152,38 @@ describe('isDemBoundsShown（树上"已开"高亮的依据）', () => {
     expect(isDemBoundsShown({ showTiffBounds: true, focusedDemKeys: [A] }, '')).toBe(false);
     // 空数组按"全部"处理（与 resolveVisibleTiffBounds 一致）
     expect(isDemBoundsShown({ showTiffBounds: true, focusedDemKeys: [] }, A)).toBe(true);
+  });
+});
+
+/**
+ * 「已加载到屏幕」行尾 ✕ 的行为。
+ *
+ * 与 toggleDemBounds 的差别只有一条，但很容易写错：**全部模式下收掉一条，绝不能
+ * 变成"只显示这一条"**（那是 toggle 的语义），也不能返回空数组（空数组 = 不过滤 = 全显示）。
+ */
+describe('removeDemBounds', () => {
+  it('聚焦模式下只摘掉这一条，其余保持', () => {
+    expect(removeDemBounds({ showTiffBounds: true, focusedDemKeys: [A, B] }, A))
+      .toEqual({ showTiffBounds: true, focusedDemKeys: [B] });
+  });
+
+  it('全部模式下按传入的全量清单收窄，变成「除它之外」', () => {
+    expect(removeDemBounds({ showTiffBounds: true, focusedDemKeys: null }, A, [A, B]))
+      .toEqual({ showTiffBounds: true, focusedDemKeys: [B] });
+  });
+
+  it('收掉最后一条时把总开关一起关掉，而不是返回空数组', () => {
+    expect(removeDemBounds({ showTiffBounds: true, focusedDemKeys: [A] }, A))
+      .toEqual({ showTiffBounds: false, focusedDemKeys: null });
+    expect(removeDemBounds({ showTiffBounds: true, focusedDemKeys: null }, A, [A]))
+      .toEqual({ showTiffBounds: false, focusedDemKeys: null });
+  });
+
+  it('本来没开 / key 为空 / key 不在清单里 ⇒ 原样返回，不误伤其他条', () => {
+    const off = { showTiffBounds: false, focusedDemKeys: null };
+    expect(removeDemBounds(off, A)).toBe(off);
+    const on = { showTiffBounds: true, focusedDemKeys: [A, B] };
+    expect(removeDemBounds(on, '   ')).toBe(on);
+    expect(removeDemBounds(on, 'tiff/none.tif')).toEqual({ showTiffBounds: true, focusedDemKeys: [A, B] });
   });
 });

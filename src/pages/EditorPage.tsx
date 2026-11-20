@@ -32,8 +32,14 @@ import ResizeHandle from '../components/ResizeHandle';
 import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, ChevronDown, CheckCircle2, SquareDashedMousePointer, Trash2 } from 'lucide-react';
 import { invalidateTaskParamsCache, setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
+import {
+  DEM_PREVIEW_COLORS,
+  fetchDemPreview,
+  releaseDemPreview,
+  type DemPreview,
+} from '../services/demPreviewService';
 import { fetchRiverSurface, invalidateRiverSurfaceCache } from '../services/riverSurfaceApi';
-import { resolveVisibleTiffBounds, toggleDemBounds } from '../map/tiffBoundsView';
+import { removeDemBounds, resolveVisibleTiffBounds, toggleDemBounds } from '../map/tiffBoundsView';
 import {
   assessBoxAgainstDems,
   bankCandidatesFromBanks,
@@ -154,6 +160,18 @@ function EditorPage(props: EditorPageProps) {
   const [resizeTrigger, setResizeTrigger] = useState(0);
   const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
   const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
+
+  // === DEM 栅格预览（双击资源树里的 DEM → 灰度高程铺到地图上）===
+  // 图片是 blob URL，不进 React 的不可变数据流：一旦被卸载就必须显式 revoke，
+  // 否则每看一份 DEM 就在内存里留一张几百 KB 的 PNG，直到刷新页面。
+  const [demPreview, setDemPreview] = useState<DemPreview | null>(null);
+  const [demPreviewStatus, setDemPreviewStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  // 同时只保留一张图：快速连点不同 DEM 时，慢的那次回来不能盖掉后点的那张
+  const demPreviewAbortRef = useRef<AbortController | null>(null);
+  // 与 state 并行维护一份 ref：释放 blob 要在 setState 之外做（updater 里放副作用，
+  // StrictMode 下会被双调用），而渲染期的 ref 同步又滞后一拍，所以由 setter 自己更新。
+  const demPreviewRef = useRef<DemPreview | null>(null);
 
   // === 长江范围参考图层（规则：与长江河面相交）===
   // 开关状态放 store（两种侧栏模式共用 + 持久化），图层数据放这里（请求/缓存由服务层管）。
@@ -3430,6 +3448,59 @@ function EditorPage(props: EditorPageProps) {
     return true;
   };
 
+  /**
+   * 双击 DEM：让后端把它渲染成「灰度高程 + 红色 nodata」的栅格铺到地图上。
+   *
+   * <p>为什么不做前端渲染：DEM 是单波段浮点 TIF（千万级像素、可能是地方投影），
+   * 浏览器既解析不了 TIF、也扛不住整幅解码。后端那次 4326 重投影顺带把长边降到 1536，
+   * 出来的 PNG 只有几百 KB。
+   */
+  const handleDemPreview = useCallback(async (tiffKey: string) => {
+    if (!tiffKey) return;
+
+    demPreviewAbortRef.current?.abort();
+    const controller = new AbortController();
+    demPreviewAbortRef.current = controller;
+
+    setDemPreviewStatus('loading');
+    try {
+      const preview = await fetchDemPreview(tiffKey, controller.signal);
+      if (controller.signal.aborted) {
+        // 已被更新的一次请求顶掉：这张图不会进地图，得自己释放
+        releaseDemPreview(preview);
+        return;
+      }
+      const previous = demPreviewRef.current;
+      demPreviewRef.current = preview;
+      setDemPreview(preview);
+      releaseDemPreview(previous);
+      setDemPreviewStatus('ready');
+    } catch (error: any) {
+      if (controller.signal.aborted || error?.name === 'AbortError') return;
+      const text = error?.message || 'DEM 预览加载失败';
+      setDemPreviewStatus('error');
+      message.error(text);
+    }
+  }, []);
+
+  /** 撤掉 DEM 预览（图层与 blob 一起收） */
+  const clearDemPreview = useCallback(() => {
+    demPreviewAbortRef.current?.abort();
+    demPreviewAbortRef.current = null;
+    const previous = demPreviewRef.current;
+    demPreviewRef.current = null;
+    setDemPreview(null);
+    releaseDemPreview(previous);
+    setDemPreviewStatus('idle');
+  }, []);
+
+  // 卸载时收尾：blob 不 revoke 会一直占到刷新页面
+  useEffect(() => () => {
+    demPreviewAbortRef.current?.abort();
+    releaseDemPreview(demPreviewRef.current);
+    demPreviewRef.current = null;
+  }, []);
+
   const handleTreeNodeSelect = (node: TreeNode) => {
     const key = node.ref?.key || '';
     if (node.kind === 'task' && key) {
@@ -3461,6 +3532,11 @@ function EditorPage(props: EditorPageProps) {
       setShowTiffBounds(true);
       // 只聚焦被点中的这一条，避免把整库 DEM 的范围一起铺到地图上
       if (key) setFocusedDemKeys([String(key)]);
+      // 换到另一条 DEM 才撤掉当前栅格：点同一条不该把刚双击加载出来的图撤掉，
+      // 否则「点一下看看属性」会把预览弄没，用户得重新双击
+      if (key && demPreviewRef.current && demPreviewRef.current.tiffKey !== String(key)) {
+        clearDemPreview();
+      }
       return;
     }
   };
@@ -3481,8 +3557,12 @@ function EditorPage(props: EditorPageProps) {
     if (node.ref?.entity === 'bank') {
       void loadBankById(node.ref.key);
     } else if (node.ref?.entity === 'dem') {
+      // 双击 = 「看内容」：范围框留着（标边界），同时把栅格铺上去
       setShowTiffBounds(true);
-      if (node.ref.key) setFocusedDemKeys([String(node.ref.key)]);
+      if (node.ref.key) {
+        setFocusedDemKeys([String(node.ref.key)]);
+        void handleDemPreview(String(node.ref.key));
+      }
     }
   };
 
@@ -4318,12 +4398,27 @@ function EditorPage(props: EditorPageProps) {
     return [...new Set(keys)];
   }, [showTiffBounds, visibleTiffBoundsData]);
 
-  // ② 当前在地图上选中的断面（面板据此高亮对应行）
+  // ② 当前铺在地图上的 DEM 灰度影像（双击 DEM 才有）。
+  //    它**不写入 tiff_bounds**，所以 demKeysOnMap 里看不到它；不单独喂给下半区，
+  //    就会出现「图上明明有影像、面板里一条都不列、也没有入口能撤掉」。
+  const demPreviewItems = useMemo(
+    // 只给 key：展示名交给侧栏用 tiffs 清单的 file_name 解析，跟资源树里叫法一致
+    () => (demPreview ? [{ key: demPreview.tiffKey }] : []),
+    [demPreview],
+  );
+
+  // ③ 当前在地图上选中的断面（面板据此高亮对应行）
   const activeSectionIdOnMap = useMemo(() => {
     const list = (perpendicularData?.features || []) as any[];
     if (selectedCrossLineIndex == null || !list[selectedCrossLineIndex]) return null;
     return sectionIdOfFeature(list[selectedCrossLineIndex]) || null;
   }, [perpendicularData, selectedCrossLineIndex]);
+
+  /** DEM 高程显示（米）。缺失或非有限值统一显示破折号，别让 NaN 漏到界面上。 */
+  const fmtDemMeters = (value: number | null | undefined): string => {
+    if (value == null || !Number.isFinite(value)) return '—';
+    return `${value.toFixed(1)} m`;
+  };
 
   return (
     <div className="editor-layout">
@@ -4334,6 +4429,7 @@ function EditorPage(props: EditorPageProps) {
           {sidebarMode === 'tree' && (
             <ResourceSidebar
               demKeys={demKeysOnMap}
+              demPreviews={demPreviewItems}
               activeSectionId={activeSectionIdOnMap}
               tiffBoundsVisible={showTiffBounds}
               boxSelection={boxSelection}
@@ -4354,7 +4450,15 @@ function EditorPage(props: EditorPageProps) {
           onStartBoxSelect: (scope) => startBoxSelect(scope),
           onClearBoxSelect: clearBoxSelection,
           onFocusDem: (key) => { setShowTiffBounds(true); setFocusedDemKeys([String(key)]); },
-          onHideDems: () => { setShowTiffBounds(false); setFocusedDemKeys(null); },
+          // 一行代表「这个 DEM 在图上的一切」：影像撤掉、范围框收起。
+          // 双击后两者同时存在，若按 kind 分开处理，用户要连点两次 ✕ 才清得干净。
+          onRemoveDem: (key) => {
+            if (demPreviewRef.current?.tiffKey === key) clearDemPreview();
+            const next = removeDemBounds({ showTiffBounds, focusedDemKeys }, key, demKeysOnMap);
+            setShowTiffBounds(next.showTiffBounds);
+            setFocusedDemKeys(next.focusedDemKeys);
+          },
+          onHideDems: () => { clearDemPreview(); setShowTiffBounds(false); setFocusedDemKeys(null); },
           // —— 下半区运行横幅的「终止」：与资源树 task.stop 走同一条实现 ——
           onStopTask: (id, name) => handleStopTask(id, name),
         }}
@@ -4521,12 +4625,93 @@ function EditorPage(props: EditorPageProps) {
           sectionBoxDeleteBounds={sectionBoxPreview?.bounds ?? null}
           sectionBoxDeleteIds={sectionBoxPreview?.sectionIds ?? null}
           showTiffBounds={showTiffBounds}
+          demPreview={demPreview}
           riverSurfaceData={riverSurfaceData}
           showRiverSurface={showRiverSurface}
           resizeTrigger={resizeTrigger}
           satellite={satellite}
           colorBanks={colorBanks}
         />
+        {/* DEM 预览图例：把「暗=低 / 亮=高 / 红=无数据」写清楚。
+            没有图例的话，红色很容易被误读成洪水淹没范围或高风险区。 */}
+        {demPreview && (
+          <div
+            data-tour="dem-preview-legend"
+            style={{
+              position: 'absolute', top: 12, left: 12, zIndex: 10,
+              width: 228,
+              background: 'rgba(255,255,255,0.92)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              border: '1px solid rgba(0,0,0,0.08)',
+              borderRadius: 12,
+              boxShadow: '0 4px 16px rgba(15,23,42,0.12)',
+              padding: '10px 12px',
+              fontSize: 12,
+              color: '#0f172a',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span
+                title={demPreview.tiffKey}
+                style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}
+              >
+                {demPreview.tiffKey.split('/').pop() || demPreview.tiffKey}
+              </span>
+              {demPreviewStatus === 'loading' && (
+                <span style={{ flexShrink: 0, color: '#64748b', fontSize: 11 }}>更新中…</span>
+              )}
+              <button
+                type="button"
+                onClick={clearDemPreview}
+                title="关闭 DEM 预览"
+                style={{ flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', padding: 0, lineHeight: 1, fontSize: 14 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569', marginBottom: 4 }}>
+              <span>高程</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {fmtDemMeters(demPreview.meta.min)} ~ {fmtDemMeters(demPreview.meta.max)}
+              </span>
+            </div>
+            <div
+              style={{
+                height: 8, borderRadius: 4,
+                border: '1px solid rgba(0,0,0,0.08)',
+                background: `linear-gradient(90deg, rgb(${DEM_PREVIEW_COLORS.dark},${DEM_PREVIEW_COLORS.dark},${DEM_PREVIEW_COLORS.dark}), rgb(${DEM_PREVIEW_COLORS.light},${DEM_PREVIEW_COLORS.light},${DEM_PREVIEW_COLORS.light}))`,
+              }}
+            />
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, color: '#334155' }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: DEM_PREVIEW_COLORS.nodata, flexShrink: 0 }} />
+              <span>
+                无数据
+                {demPreview.meta.nodata != null ? `（${demPreview.meta.nodata}）` : ''}
+                {demPreview.meta.nodataRatio != null
+                  ? ` · ${(demPreview.meta.nodataRatio * 100).toFixed(1)}%`
+                  : ''}
+              </span>
+            </div>
+          </div>
+        )}
+        {demPreviewStatus === 'loading' && !demPreview && (
+          <div
+            style={{
+              position: 'absolute', top: 12, left: 12, zIndex: 10,
+              padding: '6px 10px', borderRadius: 10,
+              background: 'rgba(255,255,255,0.92)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              border: '1px solid rgba(0,0,0,0.08)',
+              fontSize: 12, color: '#334155',
+            }}
+          >
+            正在生成 DEM 预览…
+          </div>
+        )}
         {/* 框选删除的确认条：画完框先看到"框里是哪几条"（地图上红色虚线），
             再决定删不删。放在工具栏上方，不遮挡底部操作条。 */}
         {sectionBoxPreview && (

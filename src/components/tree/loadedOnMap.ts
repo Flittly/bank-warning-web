@@ -21,6 +21,21 @@ export interface LoadedRow {
   currentTask?: boolean;
   /** 所在图层当前被隐藏（例如断面总开关关掉了）：资源仍在图上，只是没画出来 */
   dimmed?: boolean;
+  /**
+   * 「DEM」组里这一行代表什么：
+   * `bounds` = 只有蓝色范围框；`preview` = 还铺了灰度影像（双击 DEM 才有）。
+   * 其它组不填 —— 行尾的 ✕ 需要靠它决定撤掉什么。
+   */
+  kind?: 'bounds' | 'preview';
+}
+
+/** 「已加载到屏幕」里 DEM 组的输入项（由 `mergeDemLoadedItems` 产出，也可手工传）。 */
+export interface DemLoadedItem {
+  key: string;
+  label: string;
+  kind?: 'bounds' | 'preview';
+  /** 覆盖默认 meta 文案（同一条 DEM 既有影像又有范围框时写「影像 + 范围」） */
+  meta?: string;
 }
 
 export interface LoadedGroup {
@@ -104,8 +119,8 @@ export interface BuildLoadedGroupsInput {
   perpendicularData?: GeoJSON.FeatureCollection | null;
   /** 断面图层总开关：关闭时断面仍在图上但不绘制 */
   showCrossLines?: boolean;
-  /** 当前实际画在地图上的 DEM 范围（已解析出显示名） */
-  demItems?: Array<{ key: string; label: string }> | null;
+  /** 当前实际画在地图上的 DEM（范围框和/或灰度影像，已解析出显示名） */
+  demItems?: DemLoadedItem[] | null;
   currentTaskId?: string | null;
   /** 已加载的任务断面清单（懒加载，只有当前任务一定会被拉取） */
   sectionsByTask?: Record<string, any[]> | null;
@@ -161,11 +176,15 @@ export function buildLoadedGroups(input: BuildLoadedGroupsInput): LoadedGroup[] 
     });
   }
 
-  const demRows: LoadedRow[] = (input.demItems || []).map((d) => ({
-    id: d.key,
-    label: d.label,
-    meta: '范围框',
-  }));
+  const demRows: LoadedRow[] = (input.demItems || []).map((d) => {
+    const kind = d.kind === 'preview' ? 'preview' : 'bounds';
+    return {
+      id: d.key,
+      label: d.label,
+      kind,
+      meta: d.meta ?? (kind === 'preview' ? '影像' : '范围框'),
+    };
+  });
 
   return [
     {
@@ -182,11 +201,63 @@ export function buildLoadedGroups(input: BuildLoadedGroupsInput): LoadedGroup[] 
     },
     {
       key: 'dems',
-      title: 'DEM 范围',
-      hint: '地图上未显示 DEM 范围：在资源树里点 DEM 的「显示范围」或它的范围图标。',
+      title: 'DEM',
+      hint: '地图上未显示 DEM：在资源树里双击 DEM 载入灰度影像，或点「显示范围」只画范围框。',
       rows: demRows,
     },
   ];
+}
+
+/**
+ * 把「范围框清单」与「灰度影像清单」合并成 DEM 组的一行一项。
+ *
+ * <p>为什么要合并：同一条 DEM 双击后**同时**有范围框和影像，若各列一行，用户会看到
+ * 两条同名条目、还得点两次 ✕ 才清干净。这里按 key 去重，影像优先，meta 说明它还带着
+ * 范围框（`影像 + 范围`）—— 一行就是一个 DEM，✕ 一次把这条彻底移出。
+ *
+ * <p>顺序：先按范围框清单，再补只有影像的 —— 保持资源树里点选的先后感。
+ */
+export function mergeDemLoadedItems(input: {
+  /** 当前在地图上画着范围框的 DEM key */
+  boundsKeys?: readonly unknown[] | null;
+  /** 当前铺着灰度影像的 DEM */
+  previews?: ReadonlyArray<{ key: unknown; label?: string }> | null;
+  /** key → 展示名（通常查 tiffs 清单的 file_name，取不到就退化成文件名） */
+  labelOf?: (key: string) => string;
+}): DemLoadedItem[] {
+  const labelOf = input.labelOf ?? ((key: string) => key.split('/').pop() || key);
+  const norm = (v: unknown) => String(v ?? '').trim();
+
+  const boundsOrder: string[] = [];
+  const boundsSet = new Set<string>();
+  for (const k of input.boundsKeys || []) {
+    const key = norm(k);
+    if (!key || boundsSet.has(key)) continue;
+    boundsSet.add(key);
+    boundsOrder.push(key);
+  }
+
+  const previewLabel = new Map<string, string>();
+  const previewOrder: string[] = [];
+  for (const p of input.previews || []) {
+    const key = norm(p?.key);
+    if (!key) continue;
+    if (!previewLabel.has(key)) previewOrder.push(key);
+    previewLabel.set(key, norm(p?.label) || previewLabel.get(key) || '');
+  }
+
+  // 顺序：先按范围框清单，再补只有影像的 —— 保持资源树里点选的先后感
+  const order = [...boundsOrder, ...previewOrder.filter((k) => !boundsSet.has(k))];
+  return order.map((key) => {
+    const hasBounds = boundsSet.has(key);
+    const hasPreview = previewLabel.has(key);
+    return {
+      key,
+      label: previewLabel.get(key) || labelOf(key),
+      kind: hasPreview ? 'preview' : 'bounds',
+      meta: hasPreview ? (hasBounds ? '影像 + 范围' : '影像') : '范围框',
+    };
+  });
 }
 
 // ——————————————————————————————————————————————————————————————
