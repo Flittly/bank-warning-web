@@ -10,9 +10,11 @@ import {
   Search,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react';
 import {
   deleteDocument,
+  extractorLabel,
   fetchDocumentDetail,
   fetchKnowledgeList,
   fetchKnowledgeStats,
@@ -60,6 +62,14 @@ export default function KnowledgePage() {
   const [uploading, setUploading] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  /**
+   * 上传后的一次性结果提示。
+   *
+   * 以前上传成功是「静默」的：只刷新列表，用户不知道进了几段，
+   * 更不知道 PDF 是不是回落成了纯文本抽取。降级恰恰是这个环节最容易
+   * 埋雷的地方——列表里看不出差别，只有回头搜不到表里的数才发现。
+   */
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
 
   // 列表 + 统计（knowledgeApi 不接 AbortSignal，用 cancelled 标记代替）
   useEffect(() => {
@@ -172,12 +182,28 @@ export default function KnowledgePage() {
         ? await uploadKnowledgePdf(file, type, isPublic)
         : await uploadKnowledgeText(type, file.name, await file.text(), isPublic);
       setReloadKey((key) => key + 1);
-      // 后端现在会回报「嵌入成功/失败段数」：部分失败时文档已在列表里，
-      // 但只有部分段落可被检索到，必须说出来，不能让人以为整篇都进库了。
+      // 后端口径（KnowledgeController.finishIngest）：只要有一段没嵌成功就 discardStaged()，
+      // 整批作废、旧版本留在库里。所以这里**不能**说"已写入 N 段、这部分检索不到"——
+      // 实际情况是一段都没进库、库里还是上一版。
       if (result.failed && result.failed > 0) {
-        setError(`已写入 ${result.embedded ?? 0} 段，${result.failed} 段嵌入失败，这部分内容检索不到`);
+        setNotice(null);
+        setError(`${result.failed} 段嵌入失败，本批作废，库中仍是上一版内容`);
+      } else if (result.success === false) {
+        setNotice(null);
+        setError(result.error || '入库未生效，库中仍是上一版内容');
+      } else {
+        const label = extractorLabel(result.extractor);
+        setError(null);
+        setNotice({
+          tone: result.degraded ? 'warn' : 'ok',
+          text: result.degraded
+            ? `已入库 ${result.chunks} 段，但这份文件走了降级抽取${label ? `（${label}）` : ''}：`
+              + '表格与标题层级没有还原，表里的数值可能检索不到'
+            : `已入库 ${result.chunks} 段${label ? `（${label}）` : ''}`,
+        });
       }
     } catch (reason: unknown) {
+      setNotice(null);
       setError(reason instanceof Error ? reason.message : '上传失败');
     } finally {
       setUploading(false);
@@ -305,6 +331,34 @@ export default function KnowledgePage() {
           </div>
         </div>
 
+        {notice && (
+          <div
+            role="status"
+            style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+              margin: '0 0 12px', padding: '8px 12px',
+              borderRadius: 8, fontSize: 12, lineHeight: 1.6,
+              color: notice.tone === 'warn' ? '#92400e' : 'var(--ds-text, #1f2937)',
+              background: notice.tone === 'warn' ? '#fffbeb' : 'var(--ds-surface-muted, #f3f4f6)',
+              border: `1px solid ${notice.tone === 'warn' ? '#fde68a' : 'var(--ds-border, #e5e7eb)'}`,
+            }}
+          >
+            <span style={{ flex: 1 }}>{notice.text}</span>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              aria-label="关闭提示"
+              style={{
+                flexShrink: 0, display: 'inline-flex', padding: 0,
+                border: 'none', background: 'transparent',
+                color: 'inherit', cursor: 'pointer', opacity: 0.7,
+              }}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
         <div className="catalog-split">
           <section className="catalog-panel" aria-label="知识文档" data-tour="knowledge-sidebar">
             <header className="catalog-panel-head">
@@ -353,8 +407,27 @@ export default function KnowledgePage() {
                   <span className="catalog-tag catalog-tag--doc">{doc.type || '未分类'}</span>
                   <span className="catalog-row-main">
                     <span className="catalog-row-title">{doc.fileName || doc.docId}</span>
-                    <span className="catalog-row-meta">{doc.chunks} 分块 · {doc.docId}</span>
+                    {/* 单行省略：副标题里带 docId，两行会把行高撑起来，
+                        旁边再挂一个「降级」徽标就更容易挤断 */}
+                    <span className="catalog-row-meta" style={{ minWidth: 0 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {doc.chunks} 分块 · {doc.docId}
+                      </span>
+                    </span>
                   </span>
+                  {doc.degraded && (
+                    <span
+                      title="这份文件走了降级抽取：表格被拍平成散行、标题层级丢失，表里的数值可能搜不到。"
+                      style={{
+                        marginLeft: 'auto', flexShrink: 0,
+                        padding: '1px 6px', borderRadius: 999,
+                        fontSize: 11, lineHeight: 1.6,
+                        color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a',
+                      }}
+                    >
+                      降级
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -443,6 +516,14 @@ export default function KnowledgePage() {
                   <p className="knowledge-doc-meta">
                     <span>分类 {detail.type || '—'}</span>
                     <span>{detail.chunks} 分块</span>
+                    {extractorLabel(active.extractor) && (
+                      <span title={active.degraded
+                        ? '降级抽取：表格被拍平成散行、标题层级丢失，表里的数值可能搜不到'
+                        : '入库时实际使用的抽取方式'}>
+                        {extractorLabel(active.extractor)}
+                        {active.degraded ? ' · 降级' : ''}
+                      </span>
+                    )}
                     <span>{detail.docId}</span>
                   </p>
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{detail.content}</ReactMarkdown>

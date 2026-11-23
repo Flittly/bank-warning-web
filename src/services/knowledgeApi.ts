@@ -5,6 +5,30 @@ export interface KnowledgeDoc {
   type: string;
   fileName: string;
   chunks: number;
+  /**
+   * 实际生效的提取器。取值来自后端 `KnowledgeController` 的四个常量：
+   * `inline`（文本直传）/ `docling`（PDF 结构化）/ `pypdf`（PDF 纯文本，降级）/
+   * `docx-structure`（Word 结构化）。旧后端不返回时为 undefined。
+   */
+  extractor?: string;
+  /**
+   * 是否走了有损降级路径。PDF 回落 pypdf 时为 true——表格被拍平成散行、
+   * 标题层级全部丢失，表现为「表里的数值搜不到」，但界面上看不出任何异常。
+   */
+  degraded?: boolean;
+}
+
+/** 提取器的中文说法。未收录的取值原样显示，避免新提取器在界面上变成空白。 */
+const EXTRACTOR_LABELS: Record<string, string> = {
+  docling: '结构化抽取',
+  'docx-structure': '结构化抽取',
+  pypdf: '纯文本抽取',
+  inline: '文本直传',
+};
+
+export function extractorLabel(extractor?: string): string {
+  if (!extractor) return '';
+  return EXTRACTOR_LABELS[extractor] || extractor;
 }
 
 export interface KnowledgeDocDetail {
@@ -92,6 +116,9 @@ export interface UploadResult {
    * 不是「只有部分能被检索到」——后端按整批成功才落库的口径。
    */
   failed?: number;
+  /** 实际生效的提取器与是否降级（口径同 {@link KnowledgeDoc}）。 */
+  extractor?: string;
+  degraded?: boolean;
   error?: string;
 }
 
