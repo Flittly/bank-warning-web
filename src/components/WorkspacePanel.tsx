@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { X, Edit3, X as XIcon, Save } from 'lucide-react';
@@ -61,7 +62,7 @@ function WorkspacePanel({ tabs, activeTabIndex, onSelectTab, onCloseTab, onUpdat
       setEditing(false);
       setEditContent('');
     } catch (e) {
-      alert('保存失败: ' + (e instanceof Error ? e.message : '未知错误'));
+      message.error('保存失败: ' + (e instanceof Error ? e.message : '未知错误'), 4);
     } finally {
       setSaving(false);
     }

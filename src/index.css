@@ -1,3 +1,18 @@
+/* 全局基线：只做「重置 + 排版基线」，不放任何组件皮肤。
+ *
+ * ⚠ 这里曾有三条 Vite 模板残留的裸元素规则（`button` / `a` / `h1`），
+ * 它们是全局污染源：裸 `button` 的 `background-color:#1a1a1a` + `padding:0.6em 1.2em`
+ * 会把每一个没写背景色的原生按钮变成深色大按钮，`h1{font-size:3.2em}` 让页面标题
+ * 直接变成 51.2px。历史上已造成 4 次「元素静默消失 / 尺寸离谱」的事故。
+ * 需要皮肤请用 `.ds-button` / 页面私有类，**不要**在这里加裸元素样式。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
   line-height: 1.5;
@@ -13,56 +28,18 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+/* 焦点可见性兜底：只统一焦点环，不动元素的盒子与配色（WCAG 2.4.7）。
+ * 具体控件的 `:focus-visible` 由各自皮肤决定，这里是最后一层保险。 */
+:focus-visible {
+  outline: 2px solid var(--ds-primary, #3b82f6);
+  outline-offset: 2px;
 }
 
 .mapboxgl-ctrl-logo {

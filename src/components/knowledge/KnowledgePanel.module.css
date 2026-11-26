@@ -1,0 +1,424 @@
+.panel {
+  /* 与资源树侧栏同一套底色：两块面板在左栏里来回切换时不能有"换了个应用"的割裂感 */
+  --kp-bg: rgba(255, 255, 255, 0.72);
+  --kp-fg: #1e293b;
+  --kp-dim: #94a3b8;
+  --kp-border: #e2e8f0;
+  --kp-hover: #f1f5f9;
+  --kp-accent: #2563eb;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--kp-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: var(--kp-fg);
+  font-size: 13px;
+}
+
+/* ---------- 顶部工具区（搜索 / 上传） ---------- */
+.toolbar {
+  flex: 0 0 auto;
+  padding: 0 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.searchRow {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.searchRow > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.uploadBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px dashed var(--kp-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.5);
+  color: #475569;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, color 120ms;
+}
+
+.uploadBtn:hover:not(:disabled) {
+  border-color: var(--kp-accent);
+  background: rgba(37, 99, 235, 0.06);
+  color: var(--kp-accent);
+}
+
+.uploadBtn:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* ---------- 列表区 ---------- */
+.listZone {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 8px 8px;
+  border-top: 1px solid var(--kp-border);
+}
+
+.listHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 6px 7px;
+  background: var(--kp-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 12px;
+  color: #475569;
+}
+
+.listHead strong {
+  font-weight: 600;
+}
+
+.listHead .count {
+  margin-left: auto;
+  color: var(--kp-dim);
+  font-size: 11px;
+}
+
+.backBtn {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--kp-accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.backBtn:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+/* ---------- 行 ---------- */
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.row:hover {
+  background: var(--kp-hover);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--kp-accent);
+  outline-offset: -2px;
+}
+
+.rowIcon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--kp-dim);
+}
+
+.rowBody {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rowTitle {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--kp-fg);
+}
+
+.rowMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.chip {
+  flex: 0 0 auto;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.metaText {
+  color: var(--kp-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.deleteBtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kp-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms, background 120ms;
+}
+
+/* 悬停/键盘聚焦才露出删除：一行一个 🗑 常亮会让列表看着很"危险" */
+.row:hover .deleteBtn,
+.row:focus-within .deleteBtn,
+.deleteBtn:focus-visible {
+  opacity: 1;
+}
+
+.deleteBtn:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+}
+
+/* 触摸设备没有 hover，直接常亮，否则删除永远点不到 */
+@media (hover: none) {
+  .deleteBtn {
+    opacity: 1;
+  }
+}
+
+/* ---------- 命中片段 ---------- */
+.hit {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--kp-border);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hit:hover {
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+.hitHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--kp-dim);
+  min-width: 0;
+}
+
+.hitSource {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1d4ed8;
+}
+
+.hitScore {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.hitText {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #475569;
+}
+
+/* ---------- 空 / 错 / 载入 ---------- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 12px;
+  color: var(--kp-dim);
+  font-size: 12px;
+  text-align: center;
+}
+
+.error {
+  margin: 8px 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.06);
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ---------- 底栏 ---------- */
+.footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--kp-border);
+  font-size: 11px;
+  color: var(--kp-dim);
+  min-width: 0;
+}
+
+.footerText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footerLink {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: 6px;
+  color: var(--kp-accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.footerLink:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+/* ---------- 详情弹窗（侧栏 260px 放不下正文，用弹窗读） ---------- */
+.detailBody {
+  max-height: 62vh;
+  overflow-y: auto;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: #1e293b;
+}
+
+.detailBody :where(h1, h2, h3, h4) {
+  margin: 1.1em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.detailBody h1 { font-size: 1.15rem; }
+.detailBody h2 { font-size: 1.05rem; }
+.detailBody h3 { font-size: 0.95rem; }
+
+.detailBody p {
+  margin: 0.6em 0;
+}
+
+.detailBody :where(ul, ol) {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+}
+
+.detailBody li {
+  margin: 0.25em 0;
+}
+
+.detailBody code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-family: var(--ds-font-mono, monospace);
+  font-size: 0.9em;
+}
+
+.detailBody pre {
+  margin: 0.8em 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  overflow-x: auto;
+}
+
+.detailBody pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.detailBody table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 12.5px;
+}
+
+.detailBody :where(th, td) {
+  border: 1px solid #e2e8f0;
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.detailBody th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.detailBody blockquote {
+  margin: 0.8em 0;
+  padding: 2px 12px;
+  border-left: 3px solid #cbd5e1;
+  color: #475569;
+}

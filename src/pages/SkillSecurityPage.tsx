@@ -231,7 +231,7 @@ export default function SkillSecurityPage() {
     <div className="admin-page">
       <nav className="admin-nav">
         <div className="admin-nav-left">
-          <button className="admin-nav-back" onClick={() => navigate('/editor')} title="返回">
+          <button className="admin-nav-back" onClick={() => navigate('/home')} title="返回起始工作台" aria-label="返回起始工作台">
             <ArrowLeftOutlined />
           </button>
           <span className="admin-nav-title">Skill 安全档位</span>

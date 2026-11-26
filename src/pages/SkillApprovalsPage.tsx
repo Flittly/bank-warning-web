@@ -45,6 +45,10 @@ export default function SkillApprovalsPage() {
   const [loading, setLoading] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<Approval | null>(null);
   const [comment, setComment] = useState('');
+  // 正在提交的那一条（批准 / 驳回 / 重新提交共用）。
+  // 审批是幂等之外的写操作：没有 busy 态时连点两次会发两次请求，
+  // 重复批准会写坏审批链。按钮 loading + 其余行 disabled 一起兜。
+  const [busyId, setBusyId] = useState<string | number | null>(null);
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const token = getAccessToken();
@@ -96,13 +100,24 @@ export default function SkillApprovalsPage() {
     return false;
   };
 
+  // 统一的"带 busy 的写操作"：Modal.confirm 的 onOk 返回 Promise 时会自动让确认键转圈，
+  // 同时把 busyId 置上，让表格里的按钮一起置灰（防止改点另一行）。
+  const runBusy = async (id: string | number, fn: () => Promise<unknown>) => {
+    setBusyId(id);
+    try {
+      await fn();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const approve = (row: Approval) => {
     Modal.confirm({
       title: '批准审批',
       content: `批准 ${row.skillName}@${row.version} 使用权限「${row.permission}」？`,
       okText: '批准',
       cancelText: '取消',
-      onOk: () => post(`${API_BASE}/approvals/${row.id}/approve`),
+      onOk: () => runBusy(row.id, () => post(`${API_BASE}/approvals/${row.id}/approve`)),
     });
   };
 
@@ -112,13 +127,14 @@ export default function SkillApprovalsPage() {
       content: `将 ${row.skillName}@${row.version} 的权限「${row.permission}」重新提交审批？`,
       okText: '重新提交',
       cancelText: '取消',
-      onOk: () => post(`${API_BASE}/approvals/${row.id}/resubmit`),
+      onOk: () => runBusy(row.id, () => post(`${API_BASE}/approvals/${row.id}/resubmit`)),
     });
   };
 
-  const confirmReject = () => {
+  const confirmReject = async () => {
     if (!rejectTarget) return;
-    post(`${API_BASE}/approvals/${rejectTarget.id}/reject`, { comment });
+    const target = rejectTarget;
+    await runBusy(target.id, () => post(`${API_BASE}/approvals/${target.id}/reject`, { comment }));
     setRejectTarget(null);
     setComment('');
   };
@@ -134,10 +150,22 @@ export default function SkillApprovalsPage() {
       width: 170,
       render: (_: unknown, record: Approval) => (
         <>
-          <Button type="primary" size="small" style={{ marginRight: 6 }} onClick={() => approve(record)}>
+          <Button
+            type="primary"
+            size="small"
+            style={{ marginRight: 6 }}
+            loading={busyId === record.id}
+            disabled={busyId !== null && busyId !== record.id}
+            onClick={() => approve(record)}
+          >
             批准
           </Button>
-          <Button danger size="small" onClick={() => setRejectTarget(record)}>
+          <Button
+            danger
+            size="small"
+            disabled={busyId !== null}
+            onClick={() => setRejectTarget(record)}
+          >
             驳回
           </Button>
         </>
@@ -160,12 +188,24 @@ export default function SkillApprovalsPage() {
       render: (_: unknown, record: Approval) => (
         <>
           {record.status === 'PENDING' && (
-            <Button type="primary" size="small" style={{ marginRight: 6 }} onClick={() => approve(record)}>
+            <Button
+              type="primary"
+              size="small"
+              style={{ marginRight: 6 }}
+              loading={busyId === record.id}
+              disabled={busyId !== null && busyId !== record.id}
+              onClick={() => approve(record)}
+            >
               批准
             </Button>
           )}
           {record.status === 'REJECTED' && (
-            <Button size="small" onClick={() => resubmit(record)}>
+            <Button
+              size="small"
+              loading={busyId === record.id}
+              disabled={busyId !== null && busyId !== record.id}
+              onClick={() => resubmit(record)}
+            >
               重新提交
             </Button>
           )}
@@ -206,7 +246,7 @@ export default function SkillApprovalsPage() {
     <div className="admin-page">
       <nav className="admin-nav">
         <div className="admin-nav-left">
-          <button className="admin-nav-back" onClick={() => navigate('/editor')} title="返回">
+          <button className="admin-nav-back" onClick={() => navigate('/home')} title="返回起始工作台" aria-label="返回起始工作台">
             <ArrowLeftOutlined />
           </button>
           <span className="admin-nav-title">Skill 审批</span>
@@ -279,7 +319,7 @@ export default function SkillApprovalsPage() {
         }}
         okText="驳回"
         cancelText="取消"
-        okButtonProps={{ danger: true }}
+        okButtonProps={{ danger: true, loading: busyId === rejectTarget?.id }}
       >
         <p>
           驳回 {rejectTarget?.skillName}@{rejectTarget?.version} 的权限「{rejectTarget?.permission}」

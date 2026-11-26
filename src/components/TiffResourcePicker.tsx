@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   deleteTiffResource,
@@ -117,7 +118,7 @@ function TiffResourcePicker({
 
   const handleDelete = async () => {
     if (!selectedValue) {
-      alert('请先选择要删除的 TIFF');
+      message.warning('请先选择要删除的 TIFF');
       return;
     }
 
@@ -133,7 +134,7 @@ function TiffResourcePicker({
       setStatusText(`已删除 ${selectedValue}`);
     } catch (err: any) {
       console.error('删除 TIFF 失败:', err);
-      alert(`删除失败: ${err?.message || String(err)}`);
+      message.error(`删除失败: ${err?.message || String(err)}`, 4);
     } finally {
       setIsDeleting(false);
     }
@@ -141,12 +142,12 @@ function TiffResourcePicker({
 
   const handleUploadSubmit = async () => {
     if (!uploadForm.file) {
-      alert('请先选择 TIFF 文件');
+      message.warning('请先选择 TIFF 文件');
       return;
     }
 
     if (!uploadForm.segment.trim() || !uploadForm.year.trim() || !uploadForm.timepoint.trim()) {
-      alert('请填写河段名、年份和时间点');
+      message.warning('请填写河段名、年份和时间点');
       return;
     }
 
@@ -168,7 +169,7 @@ function TiffResourcePicker({
       }
     } catch (err: any) {
       console.error('上传 TIFF 失败:', err);
-      alert(`上传失败: ${err?.message || String(err)}`);
+      message.error(`上传失败: ${err?.message || String(err)}`, 4);
     } finally {
       setIsUploading(false);
     }

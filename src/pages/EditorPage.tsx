@@ -17,6 +17,7 @@ import modalStyles from '../components/Modal.module.css';
 import EditorSidebar from '../components/EditorSidebar';
 import CrossLineFineTuneBar from '../components/CrossLineFineTuneBar';
 import ResourceSidebar from '../components/tree/ResourceSidebar';
+import KnowledgePanel from '../components/knowledge/KnowledgePanel';
 import EditorMap from '../components/EditorMap';
 import TiffResourcePicker from '../components/TiffResourcePicker';
 import type { TreeNode } from '../tree/types';
@@ -109,6 +110,7 @@ import {
   isNetworkLevelError,
   mapWithConcurrency,
 } from '../utils/concurrency';
+import { useAutoCollapseOnNarrow } from '../utils/useAutoCollapseOnNarrow';
 
 interface EditorPageProps {
   setPage?: (page: 'editor' | 'result', taskId?: string) => void;
@@ -155,6 +157,8 @@ function EditorPage(props: EditorPageProps) {
   const [basicParamsList, setBasicParamsList] = useState<any[]>([]);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [chatCollapsed, setChatCollapsed] = useState<boolean>(false);
+  // 窄屏自动收起 AI 面板：350 + 350 的固定宽度会把弹性地图挤成 0 宽（见 hook 注释）
+  useAutoCollapseOnNarrow(setChatCollapsed);
   const [leftPanelWidth, setLeftPanelWidth] = useState(350);
   const [rightPanelWidth, setRightPanelWidth] = useState(350);
   const [resizeTrigger, setResizeTrigger] = useState(0);
@@ -229,6 +233,8 @@ function EditorPage(props: EditorPageProps) {
     scope: BoxScope;
   } | null>(null);
   const sidebarMode = useEditorStore((s) => s.sidebarMode);
+  // 左栏放「数据资源」还是「知识库」。与 sidebarMode 正交：知识库视图下忽略 tree/classic。
+  const leftPanelView = useEditorStore((s) => s.leftPanelView);
   const [demPickerOpen, setDemPickerOpen] = useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
   // 「补充岸段到已有任务」弹窗。候选清单在打开时算好（全库岸段 − 该任务已有），
@@ -4426,7 +4432,8 @@ function EditorPage(props: EditorPageProps) {
         <div style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
           <input ref={bankUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleFileUpload} />
           <input ref={sectionsUploadInputRef} type="file" accept=".geojson,application/json" style={{ display: 'none' }} onChange={handleSectionsFileUpload} />
-          {sidebarMode === 'tree' && (
+          {leftPanelView === 'knowledge' && <KnowledgePanel />}
+          {leftPanelView === 'resources' && sidebarMode === 'tree' && (
             <ResourceSidebar
               demKeys={demKeysOnMap}
               demPreviews={demPreviewItems}
@@ -4464,7 +4471,7 @@ function EditorPage(props: EditorPageProps) {
         }}
             />
           )}
-          {sidebarMode === 'classic' && (
+          {leftPanelView === 'resources' && sidebarMode === 'classic' && (
         <EditorSidebar
           uploadedData={uploadedData}
           bankGroups={bankGroups}

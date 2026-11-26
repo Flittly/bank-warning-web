@@ -31,6 +31,12 @@ interface Props {
   depth: number;
   expanded: boolean;
   selected: boolean;
+  /** 在 flattenTree 之后的行序号（roving tabindex 与键盘导航按它定位） */
+  rowIndex: number;
+  /** 是否为当前 roving 焦点行：只有这一行 tabIndex=0，其余 -1 */
+  active: boolean;
+  /** 行被点击或聚焦时上报序号，让容器把 roving 焦点跟过来 */
+  onFocusRow: (rowIndex: number) => void;
   /** 当前画在地图上的 DEM tiff_key 集合（把对应行的开关标成"已开"） */
   activeDemKeys?: Set<string>;
   /** 搜索词：命中的片段用 <mark> 标出（非搜索态传空数组） */
@@ -69,7 +75,8 @@ const ROW_H = 28;
 const ROW_TALL = 42;
 
 export default function ResourceTreeNode({
-  node, depth, expanded, selected, activeDemKeys, highlightTerms, onToggle, onSelect, onDoubleClick, onAction, onContextMenu,
+  node, depth, expanded, selected, rowIndex, active, onFocusRow, activeDemKeys, highlightTerms,
+  onToggle, onSelect, onDoubleClick, onAction, onContextMenu,
 }: Props) {
   const hasChildren = Boolean(node.children && node.children.length > 0);
   const Icon = ICONS[node.icon || node.kind] || FileText;
@@ -87,6 +94,8 @@ export default function ResourceTreeNode({
 
   const handleClick = (e: MouseEvent) => {
     e.stopPropagation();
+    // 鼠标点行也要把 roving 焦点挪过来：否则之后按 ↑↓ 会从"上一次键盘位置"开始跳
+    onFocusRow(rowIndex);
     // 规则行不是数据资产：点整行＝看这条规则在拦什么（开关与眼睛各自 stopPropagation，
     // 不会走到这里）。不给它选中/展开，避免多选锚点落在一个没有 ref 的节点上。
     if (node.kind === 'rule') {
@@ -110,6 +119,19 @@ export default function ResourceTreeNode({
         onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(node); }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e.clientX, e.clientY); }}
         title={node.title || node.label}
+        /* ---- 键盘可达性（WAI-ARIA tree pattern）----
+           整行是一个 treeitem：Tab 只落在 roving 焦点那一行（tabIndex 0/‑1），
+           用 ↑↓ 在行间移动、→ 展开/← 折叠，全部由 ResourceTree 的容器级 onKeyDown 处理
+           （行会被虚拟滚动卸载，键盘逻辑放容器才不会随行消失）。
+           aria-expanded 只在真有子节点时出现，否则读屏会播报一个永远折叠的假节点。 */
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-expanded={hasChildren ? expanded : undefined}
+        aria-selected={node.selectable ? selected : undefined}
+        aria-current={active ? 'true' : undefined}
+        tabIndex={active ? 0 : -1}
+        data-row-index={rowIndex}
+        onFocus={() => onFocusRow(rowIndex)}
       >
         <span className={styles.chevron}>
           {hasChildren ? (expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : null}
@@ -157,14 +179,20 @@ export default function ResourceTreeNode({
             {getActions(hoverKeys).map((a) => {
               const AIcon = ACTION_ICONS[a.icon] || Settings;
               return (
-                <span
+                /* 用 <button> 而不是 <span onClick>：span 不在 Tab 序列里，键盘用户永远够不到
+                   「加载到地图 / 属性 / 删除」。aria-label 兜住只有图标的可访问名
+                   （title 在多数读屏器里不算名字，触屏也不显示）。 */
+                <button
                   key={a.key}
+                  type="button"
                   className={`${styles.hIcon} ${a.key === 'dem.toggleBounds' && demActive ? styles.hIconActive : ''}`}
                   title={a.key === 'dem.toggleBounds' && demActive ? '不再显示该 DEM 的范围' : a.label}
+                  aria-label={a.key === 'dem.toggleBounds' && demActive ? '不再显示该 DEM 的范围' : a.label}
                   onClick={(e) => { e.stopPropagation(); onAction(node, a.key); }}
+                  onFocus={() => onFocusRow(rowIndex)}
                 >
                   <AIcon size={13} />
-                </span>
+                </button>
               );
             })}
           </span>

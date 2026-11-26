@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# 带后缀的构建产物（dist_kp1 / dist_p1a / dist_p1a2 …，来自 vite build --outDir），共约 20MB
+dist_*/
 *.local
 
 # Editor directories and files

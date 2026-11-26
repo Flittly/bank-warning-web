@@ -199,6 +199,25 @@
   color: #ef4444;
   background: rgba(239,68,68,0.1);
 }
+/* 任务操作菜单的第二个入口（右键之外）。样式与「×」同族，但常态可见：
+   触屏没有右键、键盘也 Tab 不到卡片本身，只留右键等于这两个入口都是死的。 */
+.task-more-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.task-more-btn:hover,
+.task-more-btn:focus-visible {
+  color: #334155;
+  background: rgba(15,23,42,0.08);
+}
 .toggle-sections-btn {
   background: rgba(255,255,255,0.4);
   backdrop-filter: blur(8px);
@@ -413,6 +432,24 @@
   height: 100%;
   position: relative;
   overflow: hidden;
+  min-width: 0;
+}
+
+/* 窄屏三栏降级。
+   侧栏宽度是内联 style（EditorPage.tsx / ResultPage.tsx 都写死 350），
+   所以这里必须 !important 才压得住；配套的 useAutoCollapseOnNarrow 会在同一断点收起 AI 面板，
+   两条一起才让 `.editor-map-panel`（flex:1）拿到非零宽度。 */
+@media (max-width: 900px) {
+  .editor-layout > .editor-sidebar-panel {
+    width: 260px !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .editor-layout > .editor-sidebar-panel {
+    width: 200px !important;
+  }
 }
 
 .editor-map-toolbar {

@@ -23,6 +23,7 @@ import AuthGuard from './auth/AuthGuard';
 import { useAuth } from './auth/useAuth';
 import TourGuide from './components/TourGuide';
 import SettingsModal from './components/SettingsModal';
+import { useEditorStore } from './store/useEditorStore';
 import './App.css';
 import './styles/design-system.css';
 
@@ -77,19 +78,38 @@ function ActivityBar({
   const panel = searchParams.get('panel') || 'tasks';
   const isHome = path.startsWith('/home');
   const isEditor = path.startsWith('/editor');
-  const isKnowledge = path.startsWith('/knowledge');
   const isResult = path.startsWith('/result');
+  // 编辑器左栏放资源还是知识库：知识库不再是独立路由，改成左栏内的一种视图。
+  const leftPanelView = useEditorStore((s) => s.leftPanelView);
+  const setLeftPanelView = useEditorStore((s) => s.setLeftPanelView);
+  const editorOnKnowledge = isEditor && leftPanelView === 'knowledge';
 
   // 工作区（编辑器 / 结果 / 知识库）恢复原来的窄图标条：条目与顺序保持基线一致，
   // 只有 title 提示，不显示文字标签，也不再挂设置与账户（这两项工作区走顶部导航的用户菜单）。
   if (variant === 'work') {
     const workItems = [
-      { key: 'editor', label: '断面编辑器', active: isEditor, onClick: () => navigate('/editor') },
+      {
+        key: 'editor',
+        label: '断面编辑器',
+        active: isEditor && !editorOnKnowledge,
+        // 已经在编辑器里就只切左栏，不再 navigate —— 重挂载会丢地图上正在进行的操作
+        onClick: () => (isEditor ? setLeftPanelView('resources') : navigate('/editor')),
+      },
       { key: 'tasks', label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
       { key: 'reports', label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
       { key: 'skills', label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
       { key: 'progress', label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
-      { key: 'knowledge', label: '知识库', active: isKnowledge, onClick: () => navigate('/knowledge') },
+      {
+        key: 'knowledge',
+        label: '知识库',
+        active: editorOnKnowledge,
+        // 以前这里 navigate('/knowledge') ⇒ 落到"中心页"、左栏整条换成 66px 悬浮卡，
+        // 视觉上等于退回首页外壳，编辑器整页重挂载。现在改为在编辑器左栏内切换视图。
+        onClick: () => {
+          setLeftPanelView('knowledge');
+          if (!isEditor) navigate('/editor');
+        },
+      },
     ];
 
     return (
@@ -392,13 +412,16 @@ function App() {
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
+            {/* 后台四页也挂在 AppLayout 里：此前它们在壳外面，进来之后既没有顶栏的
+                账号菜单、也没有登出入口，唯一的"返回"还是跳到 /editor —— 后台成了孤岛。
+                侧栏由 AppLayout 的 railMode 判定（/admin/* → 'none'），不会多出活动条。 */}
+            <Route element={<AuthGuard requireAdmin />}>
+              <Route path="/admin/users" element={<AdminUserPage />} />
+              <Route path="/admin/skill-approvals" element={<SkillApprovalsPage />} />
+              <Route path="/admin/skill-security" element={<SkillSecurityPage />} />
+              <Route path="/admin/skill-versions" element={<SkillVersionsPage />} />
+            </Route>
           </Route>
-        <Route element={<AuthGuard requireAdmin />}>
-          <Route path="/admin/users" element={<AdminUserPage />} />
-          <Route path="/admin/skill-approvals" element={<SkillApprovalsPage />} />
-          <Route path="/admin/skill-security" element={<SkillSecurityPage />} />
-          <Route path="/admin/skill-versions" element={<SkillVersionsPage />} />
-        </Route>
       </Route>
     </Routes>
   );

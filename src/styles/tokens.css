@@ -112,10 +112,13 @@
   --ds-control-md: 36px;
   --ds-control-lg: 44px;
 
-  /* Layer scale */
+  /* Layer scale
+   * ⚠ toast 必须高于**所有**模态层。antd 的 Modal / message 都从
+   * `zIndexPopupBase`(1000) 起递增，实测弹窗能到 1000+，所以 toast 取 2010；
+   * 自研弹窗一律用 `--ds-z-modal`(1000)/`+1`，别再往 10000 写。 */
   --ds-z-sticky: 20;
   --ds-z-dropdown: 60;
   --ds-z-nav: 100;
   --ds-z-modal: 1000;
-  --ds-z-toast: 1100;
+  --ds-z-toast: 2010;
 }

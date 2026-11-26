@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import * as turf from '@turf/turf';
 import type { Dispatch, SetStateAction } from 'react';
 import { generatePerpendicularLines } from '../../utils/geometry';
@@ -30,18 +31,18 @@ export async function applyCustomSegmentsAction(params: {
   } = params;
 
   if (!editingGroupId) {
-    alert('请先点击编辑按钮选择要修改的组');
+    message.warning('请先点击编辑按钮选择要修改的组');
     return;
   }
 
   const editingGroup = groups.find((g) => g.id === editingGroupId);
   if (!editingGroup || editingGroup.end === null) {
-    alert('选择的组未完成起止点选择');
+    message.warning('选择的组未完成起止点选择');
     return;
   }
 
   if (!perpendicularData) {
-    alert('请先绘制断面');
+    message.warning('请先绘制断面');
     return;
   }
 
@@ -186,7 +187,7 @@ export async function applyCustomSegmentsAction(params: {
           : `（已同步后端属性 ${successCount} 条）`;
     }
 
-    alert(
+    message.success(
       `已更新组 ${groups.findIndex((g) => g.id === editingGroupId) + 1} 的垂线长度（未修改间距）${backendSyncSummary}`,
     );
     return;
@@ -282,7 +283,7 @@ export async function applyCustomSegmentsAction(params: {
         : `（已同步后端属性 ${successCount} 条）`;
   }
 
-  alert(
+  message.success(
     `已应用组 ${groups.findIndex((g) => g.id === editingGroupId) + 1} 的自定义配置（修改了间距，已重绘）${backendSyncSummary}`,
   );
 }

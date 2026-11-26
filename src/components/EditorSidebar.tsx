@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import { 
   Upload, 
   Settings, 
@@ -303,7 +304,7 @@ function EditorSidebar(props: EditorSidebarProps) {
                   const isRegion = bankGroups.some((g) => g.region_code === activeSelectedBank);
                   if (isRegion) {
                     if (selectedBankGroup.length !== 1) {
-                      alert('删除岸段组仅支持单选一个 region_code，请先只选择一个再删除');
+                      message.warning('删除岸段组仅支持单选一个 region_code，请先只选择一个再删除');
                       return;
                     }
                     deleteBankGroup();

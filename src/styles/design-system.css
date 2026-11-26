@@ -168,13 +168,39 @@ a:focus-visible {
 }
 @keyframes ds-skeleton-slide { to { transform: translateX(100%); } }
 
-/* ---------- Ant Design 对齐（只动形状与焦点，不动配色，保证与改造前一致） ---------- */
-.ant-btn { border-radius: var(--ds-radius-md); font-family: var(--ds-font-sans); }
+/* ---------- Ant Design 对齐 ----------
+ * 圆角与字体已由根级 ConfigProvider（src/styles/antdTheme.ts）的
+ * borderRadius / fontFamily token 统一给出，这里不再用选择器硬压：
+ * 硬压只能压到「类名存在的元素」，token 能覆盖到 antd 内部派生的每一个尺寸档。 */
 .ant-btn:focus-visible,
 .ant-input:focus-visible,
 .ant-input-affix-wrapper:focus-visible,
 .ant-select-selector:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 2px; }
+/* toast 的 2010 与 antd message 的默认计算值（zIndexPopupBase 1000 + CONTAINER_MAX_OFFSET 1000 + 10）
+ * 恰好相等，所以这一行现在是幂等的保险：antd 升级后若算法变了，这里仍然把它拉到遮罩之上。
+ * ⚠ 不要设 zIndexPopupBase:2000 —— 会把 antd 浮层抬到自研 .overlay(1000) 之上，
+ *   反过来把自研弹窗压在下拉/Tooltip 下面。 */
 .ant-message { z-index: var(--ds-z-toast); }
+
+/* 全屏兜底态（路由守卫 / 启动加载）。
+ * ⚠ AuthGuard 曾经用 4 个 Tailwind 类名（`flex items-center justify-center min-h-screen`），
+ * 而项目里没有 tailwindcss、也没有 tailwind.config.js —— 全部失效，
+ * 于是每次硬刷新都能看到左上角一行 16px 黑字。这里用一个真实类替代。 */
+.app-boot {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px;
+  color: var(--ds-text-muted);
+  font-size: var(--ds-text-sm);
+  background: var(--ds-surface-sunken);
+}
+.app-boot__inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
 /* 窄屏只做"不撑破"的收敛：英文副标题隐藏、中文标题省略。
    宽屏样式完全沿用 App.css 原有导航，不做任何重绘。 */

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Form, Input, Button, message, ConfigProvider } from 'antd';
+import { Form, Input, Button, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
@@ -110,18 +110,16 @@ function LoginPage() {
               </Form.Item>
 
               <Form.Item className="login-submit-item">
-                {/* autoInsertSpace=false：antd 默认会在两个汉字之间插一个空格（渲染成「登 录」），
-                    挤在 104px 的圆里会显得散，关掉让它紧凑居中 */}
-                <ConfigProvider button={{ autoInsertSpace: false }}>
-                  <Button
-                    className="login-submit"
-                    type="primary"
-                    htmlType="submit"
-                    loading={isLoading}
-                  >
-                    登录
-                  </Button>
-                </ConfigProvider>
+                {/* autoInsertSpace=false 已提到根级 ConfigProvider（src/main.tsx）：
+                    原来只在这一个按钮上关，导致「登 录」紧凑、「注 册 / 返 回」带空格。 */}
+                <Button
+                  className="login-submit"
+                  type="primary"
+                  htmlType="submit"
+                  loading={isLoading}
+                >
+                  登录
+                </Button>
               </Form.Item>
             </Form>
 

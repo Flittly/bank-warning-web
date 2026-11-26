@@ -123,7 +123,14 @@ export default function SkillVersionsPage() {
       okText: '删除',
       cancelText: '取消',
       okButtonProps: { danger: true },
-      onOk: () => call(`${API_BASE}/${row.skillName}/${row.version}`, 'DELETE', '删除'),
+      onOk: () => {
+        // 删除同属写操作：没有 busy 态时连点会发两次 DELETE，第二次必然是 404 报错，
+        // 用户看到的是"删除失败"，实际已经删掉了。这里让确认键转圈、行内按钮一起置灰。
+        setBusyKey(`${API_BASE}/${row.skillName}/${row.version}`);
+        return call(`${API_BASE}/${row.skillName}/${row.version}`, 'DELETE', '删除').finally(() => {
+          setBusyKey(null);
+        });
+      },
     });
   };
 
@@ -175,7 +182,16 @@ export default function SkillVersionsPage() {
                 隔离
               </Button>
             )}
-            <Button size="small" type="text" danger onClick={() => remove(row)} title={`删除 ${key}`}>
+            <Button
+              size="small"
+              type="text"
+              danger
+              loading={loading}
+              disabled={busyKey !== null && !loading}
+              onClick={() => remove(row)}
+              title={`删除 ${key}`}
+              aria-label={`删除 ${key}`}
+            >
               删除
             </Button>
           </div>
@@ -201,7 +217,7 @@ export default function SkillVersionsPage() {
     <div className="admin-page">
       <nav className="admin-nav">
         <div className="admin-nav-left">
-          <button className="admin-nav-back" onClick={() => navigate('/editor')} title="返回">
+          <button className="admin-nav-back" onClick={() => navigate('/home')} title="返回起始工作台" aria-label="返回起始工作台">
             <ArrowLeftOutlined />
           </button>
           <span className="admin-nav-title">Skill 版本与隔离</span>

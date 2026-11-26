@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import { useState, useRef, useEffect, type CSSProperties } from 'react';
 import { Plus, Trash2, Send, MessageCircle, Save, Square, Wrench, Brain } from 'lucide-react';
 import { getStoredAiModel, setStoredAiModel, onAiModelChanged } from '../utils/aiModelSettings';
@@ -174,12 +175,12 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
       const data = await res.json();
       if (data.success) {
         window.dispatchEvent(new CustomEvent('report-saved', { detail: { taskId } }));
-        alert('报告已保存: ' + data.filename);
+        message.success('报告已保存: ' + data.filename);
       } else {
-        alert('保存失败: ' + (data.error || '未知错误'));
+        message.error('保存失败: ' + (data.error || '未知错误'), 4);
       }
     } catch {
-      alert('保存失败');
+      message.error('保存失败', 4);
     }
   };
 

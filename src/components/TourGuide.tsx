@@ -277,6 +277,10 @@ export default function TourGuide({ open, onClose }: TourGuideProps) {
       borderRadiusLG: 16,
       borderRadius: 12,
       colorPrimary: '#1e293b',
+      // Tour 是深色主按钮（走近看/下一步），必须成套给 hover/active，
+      // 否则 antd 会按默认算法从 #1e293b 推导，hover 反而变浅、看着像禁用。
+      colorPrimaryHover: '#334155',
+      colorPrimaryActive: '#0f172a',
       colorBgElevated: 'rgba(255,255,255,0.88)',
       colorText: '#1e293b',
       colorTextSecondary: '#475569',

@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import { useEffect, useState } from 'react';
 import type { SectionParams } from '../types/sections';
 import TiffResourcePicker from './TiffResourcePicker';
@@ -158,7 +159,7 @@ function SectionPropertiesModal({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('导出 JSON 失败:', err);
-      alert('导出失败，请重试');
+      message.error('导出失败，请重试', 4);
     }
   };
 
@@ -178,10 +179,10 @@ function SectionPropertiesModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ params: [body], overwrite: false }),
       });
-      alert('模板已复制：' + newName);
+      message.success('模板已复制：' + newName);
       onClose();
     } catch (err: any) {
-      alert('复制失败：' + err.message);
+      message.error('复制失败：' + err.message, 4);
     }
   };
 
@@ -198,7 +199,7 @@ function SectionPropertiesModal({
       onClose();
     } catch (err: any) {
       console.error('保存参数失败:', err);
-      alert(`保存失败: ${err.message}`);
+      message.error(`保存失败: ${err.message}`, 4);
     } finally {
       setIsSaving(false);
     }

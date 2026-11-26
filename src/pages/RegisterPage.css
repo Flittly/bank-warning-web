@@ -1,11 +1,14 @@
 .register-page {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   background: linear-gradient(180deg, #0F172A 0%, #1E3A5F 40%, #2563EB 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  /* 纵向溢出必须能滚：注册表单在 375×667 这类小屏上一定超过一屏 */
+  overflow-x: hidden;
+  overflow-y: auto;
   position: relative;
 }
 
@@ -24,8 +27,11 @@
 .register-container {
   position: relative;
   z-index: 1;
-  width: 440px;
-  max-height: 90vh;
+  /* 原来写死 440px：视口窄于 440 + 边距时卡片被父级的 overflow:hidden 直接切掉，
+     且没有任何断点兜底。改成 min() 之后宽度永远不超出视口。 */
+  width: min(440px, calc(100vw - 32px));
+  box-sizing: border-box;
+  max-height: 100dvh;
   overflow-y: auto;
   padding: 40px 36px;
   border-radius: 20px;
@@ -178,4 +184,15 @@
   -webkit-backdrop-filter: blur(12px) !important;
   border: 1px solid rgba(255,255,255,0.08) !important;
   color: #e8edf2 !important;
+}
+
+/* 小屏：内边距与圆角收到"能装下字段"的最小值，避免输入框被挤成两行 */
+@media (max-width: 520px) {
+  .register-container {
+    padding: 26px 18px;
+    border-radius: 16px;
+  }
+  .register-header {
+    margin-bottom: 22px;
+  }
 }

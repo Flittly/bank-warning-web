@@ -10,7 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: var(--ds-z-modal, 1000);
 }
 
 .container {
@@ -298,7 +298,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10001;
+  z-index: calc(var(--ds-z-modal, 1000) + 1);
 }
 
 .subContainer {

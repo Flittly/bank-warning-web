@@ -1,3 +1,4 @@
+import { message } from 'antd';
 import * as turf from '@turf/turf';
 import type { Dispatch, SetStateAction } from 'react';
 import { authHeaders } from '../../utils/apiClient';
@@ -28,7 +29,7 @@ export async function reverseSelectedCrossLineAction(params: {
   const { selectedCrossLineIndex, perpendicularData, setPerpendicularData } = params;
 
   if (selectedCrossLineIndex === null || !perpendicularData) {
-    alert('请先选择要反转的断面');
+    message.warning('请先选择要反转的断面');
     return;
   }
 
@@ -86,7 +87,7 @@ export async function reverseSelectedCrossLineAction(params: {
     console.log(`已在后端反转断面: ${sectionId}`);
   } catch (err: any) {
     console.error('反转断面失败:', err);
-    alert(`反转断面失败: ${err.message}`);
+    message.error(`反转断面失败: ${err.message}`, 4);
   }
 }
 
@@ -99,12 +100,12 @@ export async function reverseCrossLinesInGroupAction(params: {
   const { group, perpendicularData, globalLength, setPerpendicularData } = params;
 
   if (group.end === null) {
-    alert('该段落尚未选择终点，无法反切');
+    message.warning('该段落尚未选择终点，无法反切');
     return;
   }
 
   if (!perpendicularData || perpendicularData.features.length === 0) {
-    alert('当前没有断面可反切');
+    message.warning('当前没有断面可反切');
     return;
   }
 
@@ -162,7 +163,7 @@ export async function reverseCrossLinesInGroupAction(params: {
   });
 
   if (reversedIndices.length === 0) {
-    alert('在该段落范围内未找到可反切的断面');
+    message.warning('在该段落范围内未找到可反切的断面');
     return;
   }
 
@@ -176,7 +177,7 @@ export async function reverseCrossLinesInGroupAction(params: {
     .filter(Boolean) as string[];
 
   if (sectionsToSync.length === 0) {
-    alert(`已反切 ${reversedIndices.length} 条断面（未同步到后端）`);
+    message.success(`已反切 ${reversedIndices.length} 条断面（未同步到后端）`);
     return;
   }
 
@@ -197,9 +198,9 @@ export async function reverseCrossLinesInGroupAction(params: {
   const failedCount = results.length - successCount;
 
   if (failedCount > 0) {
-    alert(`已反切 ${reversedIndices.length} 条断面；后端同步成功 ${successCount}，失败 ${failedCount}`);
+    message.warning(`已反切 ${reversedIndices.length} 条断面；后端同步成功 ${successCount}，失败 ${failedCount}`);
   } else {
-    alert(`已反切 ${reversedIndices.length} 条断面（已同步到后端）`);
+    message.success(`已反切 ${reversedIndices.length} 条断面（已同步到后端）`);
   }
 }
 
@@ -213,12 +214,12 @@ export async function deleteCrossLinesInGroupAction(params: {
   const { group, perpendicularData, globalLength, setPerpendicularData, setSelectedCrossLineIndex } = params;
 
   if (group.end === null) {
-    alert('该段落尚未选择终点，无法删除段内断面');
+    message.warning('该段落尚未选择终点，无法删除段内断面');
     return;
   }
 
   if (!perpendicularData || perpendicularData.features.length === 0) {
-    alert('当前没有断面可删除');
+    message.warning('当前没有断面可删除');
     return;
   }
 
@@ -258,7 +259,7 @@ export async function deleteCrossLinesInGroupAction(params: {
   });
 
   if (indicesToDelete.length === 0) {
-    alert('在该段落范围内未找到可删除的断面');
+    message.warning('在该段落范围内未找到可删除的断面');
     return;
   }
 
@@ -285,7 +286,7 @@ export async function deleteCrossLinesInGroupAction(params: {
     .filter(Boolean) as string[];
 
   if (sectionIdsToDelete.length === 0) {
-    alert(`已删除 ${indicesToDelete.length} 条断面（未同步到后端）`);
+    message.success(`已删除 ${indicesToDelete.length} 条断面（未同步到后端）`);
     return;
   }
 
@@ -305,9 +306,9 @@ export async function deleteCrossLinesInGroupAction(params: {
   const failedCount = results.length - successCount;
 
   if (failedCount > 0) {
-    alert(`已删除 ${indicesToDelete.length} 条断面；后端同步成功 ${successCount}，失败 ${failedCount}`);
+    message.warning(`已删除 ${indicesToDelete.length} 条断面；后端同步成功 ${successCount}，失败 ${failedCount}`);
   } else {
-    alert(`已删除 ${indicesToDelete.length} 条断面（已同步到后端）`);
+    message.success(`已删除 ${indicesToDelete.length} 条断面（已同步到后端）`);
   }
 }
 
@@ -332,14 +333,14 @@ export async function createCrossLineAtPointAction(params: {
 
   const taskId = getCurrentTaskId();
   if (!taskId) {
-    alert('未找到任务ID，请先创建任务');
+    message.warning('未找到任务ID，请先创建任务');
     return;
   }
 
   // 断面挂的是本任务的参数集，不再挂模板库（模板库改动不该影响已有任务）
   const basicParamId = await ensureTaskParamsId(taskId);
   if (!basicParamId) {
-    alert('获取任务参数失败，请先创建参数模板');
+    message.error('获取任务参数失败，请先创建参数模板', 4);
     return;
   }
 
@@ -384,7 +385,7 @@ export async function createCrossLineAtPointAction(params: {
       );
     });
     if (duplicateFound) {
-      alert('该位置已经存在断面，请选择其他位置或先删除已有断面。');
+      message.warning('该位置已经存在断面，请选择其他位置或先删除已有断面。');
       return;
     }
   }
@@ -452,7 +453,7 @@ export async function createCrossLineAtPointAction(params: {
         );
       });
       if (existingAtSameSpot) {
-        alert('该位置已经存在断面，请选择其他位置或先删除已有断面。');
+        message.warning('该位置已经存在断面，请选择其他位置或先删除已有断面。');
         return prev;
       }
 
@@ -481,7 +482,7 @@ export async function createCrossLineAtPointAction(params: {
     });
   } catch (err: any) {
     console.error('新建断面失败:', err);
-    alert(`新建断面失败: ${err.message}`);
+    message.error(`新建断面失败: ${err.message}`, 4);
   }
 }
 
@@ -494,7 +495,7 @@ export async function deleteSelectedCrossLineAction(params: {
   const { selectedCrossLineIndex, perpendicularData, setPerpendicularData, setSelectedCrossLineIndex } = params;
 
   if (selectedCrossLineIndex === null || !perpendicularData) {
-    alert('请先选择要删除的断面');
+    message.warning('请先选择要删除的断面');
     return;
   }
 
@@ -512,7 +513,7 @@ export async function deleteSelectedCrossLineAction(params: {
     setPerpendicularData(turf.featureCollection(updatedFeatures));
     setSelectedCrossLineIndex(null);
     console.log('已删除未同步断面');
-    alert('已删除选中的断面');
+    message.success('已删除选中的断面');
     return;
   }
 
@@ -535,10 +536,10 @@ export async function deleteSelectedCrossLineAction(params: {
     setPerpendicularData(turf.featureCollection(updatedFeatures));
     setSelectedCrossLineIndex(null);
     console.log(`已从后端删除断面: ${sectionId}`);
-    alert('已删除选中的断面');
+    message.success('已删除选中的断面');
   } catch (err: any) {
     console.error('删除断面失败:', err);
-    alert(`删除断面失败: ${err.message}`);
+    message.error(`删除断面失败: ${err.message}`, 4);
   }
 }
 
@@ -551,7 +552,7 @@ export async function deleteSelectedCrossLinesAction(params: {
   const { selectedCrossLineIndices, perpendicularData, setPerpendicularData, setSelectedCrossLineIndex } = params;
 
   if (!perpendicularData || !Array.isArray(perpendicularData.features) || perpendicularData.features.length === 0) {
-    alert('当前没有断面可删除');
+    message.warning('当前没有断面可删除');
     return;
   }
 
@@ -561,7 +562,7 @@ export async function deleteSelectedCrossLinesAction(params: {
     .sort((a, b) => b - a);
 
   if (unique.length === 0) {
-    alert('请先选择要删除的断面');
+    message.warning('请先选择要删除的断面');
     return;
   }
 
@@ -590,7 +591,7 @@ export async function deleteSelectedCrossLinesAction(params: {
     .map((s) => String(s));
 
   if (sectionIds.length === 0) {
-    alert(`已删除 ${unique.length} 条断面（未同步到后端）`);
+    message.success(`已删除 ${unique.length} 条断面（未同步到后端）`);
     return;
   }
 
@@ -608,9 +609,9 @@ export async function deleteSelectedCrossLinesAction(params: {
 
   const failCount = results.filter((r) => r.status === 'rejected').length;
   if (failCount > 0) {
-    alert(`已删除 ${unique.length} 条断面；后端同步成功 ${sectionIds.length - failCount}，失败 ${failCount}`);
+    message.warning(`已删除 ${unique.length} 条断面；后端同步成功 ${sectionIds.length - failCount}，失败 ${failCount}`);
   } else {
-    alert(`已删除 ${unique.length} 条断面（已同步到后端）`);
+    message.success(`已删除 ${unique.length} 条断面（已同步到后端）`);
   }
 }
 
@@ -655,7 +656,7 @@ export async function translateSelectedCrossLineAction(params: {
   const { offsetMeters, selectedCrossLineIndex, perpendicularData, uploadedData, setPerpendicularData } = params;
 
   if (selectedCrossLineIndex === null || !perpendicularData) {
-    alert('请先选择要平移的断面');
+    message.warning('请先选择要平移的断面');
     return;
   }
 
@@ -670,7 +671,7 @@ export async function translateSelectedCrossLineAction(params: {
   const shoreLineIndex = (selectedLine.properties as any)?.shoreLineIndex;
 
   if (currentDistance === undefined || shoreLineIndex === undefined || !uploadedData) {
-    alert('无法获取断面对应的岸线信息，平移操作暂不可用');
+    message.error('无法获取断面对应的岸线信息，平移操作暂不可用', 4);
     return;
   }
 
@@ -758,7 +759,7 @@ export async function translateSelectedCrossLineAction(params: {
     console.log(`已更新后端断面几何: ${sectionId}`);
   } catch (err: any) {
     console.error('平移断面失败:', err);
-    alert(`平移断面失败: ${err.message}`);
+    message.error(`平移断面失败: ${err.message}`, 4);
   }
 }
 
@@ -770,7 +771,7 @@ export async function configureSelectedCrossLinePropertiesAction(params: {
   const { selectedCrossLineIndex, perpendicularData, setEditingPropertiesGroupId } = params;
 
   if (selectedCrossLineIndex === null || !perpendicularData) {
-    alert('请先选择要配置的断面');
+    message.warning('请先选择要配置的断面');
     return;
   }
 
@@ -778,7 +779,7 @@ export async function configureSelectedCrossLinePropertiesAction(params: {
   const sectionId = (selectedLine.properties as any)?.sectionId;
 
   if (!sectionId) {
-    alert('未找到断面ID，请先重新生成断面');
+    message.warning('未找到断面ID，请先重新生成断面');
     return;
   }
 
@@ -796,7 +797,7 @@ export async function configureSelectedCrossLinePropertiesAction(params: {
     }
   } catch (err: any) {
     console.error('获取断面参数失败:', err);
-    alert(`获取断面参数失败: ${err.message}`);
+    message.error(`获取断面参数失败: ${err.message}`, 4);
   }
 }
 
@@ -833,7 +834,7 @@ export async function persistCrossLineGeometryAction(params: {
     scheduleSectionRecompute(sectionId, Boolean(payload?.had_result));
   } catch (err: any) {
     console.error('同步断面几何到后端失败:', err);
-    alert(`同步断面几何到后端失败: ${err.message}`);
+    message.error(`同步断面几何到后端失败: ${err.message}`, 4);
   }
 }
 
@@ -937,7 +938,7 @@ export async function createCrossLineByEndpointsAction(params: {
       return distStart < 1 && distEnd < 1;
     });
     if (duplicateFound) {
-      alert('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
+      message.warning('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
       return;
     }
   }
@@ -947,21 +948,26 @@ export async function createCrossLineByEndpointsAction(params: {
 
   // 如果没有 taskId 或 basicParamId，则只做前端创建
   if (!taskId || !basicParamId || !sectionId) {
+    // ⚠ 去重的判断与 alert 必须留在 updater **外面**：updater 里做副作用时，
+    // StrictMode（src/main.tsx 的 <StrictMode>）会双调用 updater，dev 下 alert 会弹两次；
+    // 换成 message 则是闪两条 toast。判断用当前渲染期的 perpendicularData 就够了。
+    const existingBefore = perpendicularData
+      ? (perpendicularData.features as GeoJSON.Feature<GeoJSON.LineString>[])
+      : [];
+    const existingClose = existingBefore.some((f: any) => {
+      const coords = f.geometry?.coordinates as number[][] | undefined;
+      if (!coords || coords.length < 2) return false;
+      const distStart = turf.distance(turf.point(start), turf.point(coords[0] as any), { units: 'meters' });
+      const distEnd = turf.distance(turf.point(end), turf.point(coords[coords.length - 1] as any), { units: 'meters' });
+      return distStart < 1 && distEnd < 1;
+    });
+    if (existingClose) {
+      message.warning('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
+      return;
+    }
+
     setPerpendicularData((prev) => {
       const existing = prev ? (prev.features as GeoJSON.Feature<GeoJSON.LineString>[]) : [];
-
-      // 去重：检查是否已有相近位置的断面（起点和终点都接近 < 1m）
-      const existingClose = existing.some((f: any) => {
-        const coords = f.geometry?.coordinates as number[][] | undefined;
-        if (!coords || coords.length < 2) return false;
-        const distStart = turf.distance(turf.point(start), turf.point(coords[0] as any), { units: 'meters' });
-        const distEnd = turf.distance(turf.point(end), turf.point(coords[coords.length - 1] as any), { units: 'meters' });
-        return distStart < 1 && distEnd < 1;
-      });
-      if (existingClose) {
-        alert('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
-        return prev;
-      }
 
       const newCrossLineId = existing.length;
       const left = start;
@@ -983,7 +989,7 @@ export async function createCrossLineByEndpointsAction(params: {
       return turf.featureCollection([...existing, newFeature]);
     });
 
-    alert('已创建断面（未找到任务ID或默认参数，未同步后端）');
+    message.success('已创建断面（未找到任务ID或默认参数，未同步后端）');
     return;
   }
 
@@ -1021,19 +1027,11 @@ export async function createCrossLineByEndpointsAction(params: {
     setPerpendicularData((prev) => {
       const existing = prev ? (prev.features as GeoJSON.Feature<GeoJSON.LineString>[]) : [];
 
-      // 去重：检查是否已有相近位置的断面
-      const existingClose = existing.some((f: any) => {
-        const coords = f.geometry?.coordinates as number[][] | undefined;
-        if (!coords || coords.length < 2) return false;
-        const distStart = turf.distance(turf.point(start), turf.point(coords[0] as any), { units: 'meters' });
-        const distEnd = turf.distance(turf.point(end), turf.point(coords[coords.length - 1] as any), { units: 'meters' });
-        return distStart < 1 && distEnd < 1;
-      });
-      if (existingClose) {
-        alert('该位置附近已经存在断面，请选择其他位置或先删除已有断面。');
-        return prev;
-      }
-
+      // 注意：这里**不再**做"近重复就丢弃"的守卫。
+      // 上面那条 POST 已经成功了，服务端已经存在这条断面；如果此处再按本地几何判一次重复
+      // 并 `return prev`，结果是「服务端多了一条、界面上没有」，而用户看到的提示却是
+      // "该位置附近已经存在断面，请先删除" —— 提示与真实状态正好相反，刷新后才突然多一条。
+      // 近重复的前置拦截在 :940（POST 之前）已经做过一次，那里才是应该拦的地方。
       const newCrossLineId = existing.length;
 
       const newFeature: GeoJSON.Feature<GeoJSON.LineString> = {
@@ -1055,10 +1053,10 @@ export async function createCrossLineByEndpointsAction(params: {
 
     // 未归属岸段必须当场告诉用户：否则算完结果岸段不着色，又会被当成「联动坏了」
     if (!binding.bankId) {
-      alert(describeUnbound(binding));
+      message.warning(describeUnbound(binding));
     }
   } catch (err: any) {
     console.error('自由创建断面失败:', err);
-    alert(`自由创建断面失败: ${err.message}`);
+    message.error(`自由创建断面失败: ${err.message}`, 4);
   }
 }

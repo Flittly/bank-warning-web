@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { TreeNode } from '../../tree/types';
 import { flattenTree } from '../../tree/treeModel';
@@ -44,6 +45,13 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(600);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * roving tabindex 的焦点行（flattenTree 之后的行序号）。
+   * 为什么不用 DOM 焦点当状态：行会被虚拟滚动卸载，离屏行的元素根本不存在，
+   * 焦点只能记在 state 里，滚动到位、行重新渲染后再把 DOM 焦点补上（见下面的 effect）。
+   */
+  const [activeIndex, setActiveIndex] = useState(0);
+  const pendingFocusRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -148,6 +156,123 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
     setCtx({ node, x, y });
   }, []);
 
+  // ---- 键盘导航（WAI-ARIA tree pattern）----
+  // 焦点行可能超出当前渲染窗口（虚拟滚动），所以先滚动、再在 render 之后补焦点。
+  const safeActiveIndex = rows.length > 0 ? Math.min(Math.max(activeIndex, 0), rows.length - 1) : 0;
+
+  const rowHeightAt = (i: number) => (rows[i]?.node.subtitle ? ROW_TALL : ROW_H);
+
+  const scrollRowIntoView = (i: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const top = offsets[i] ?? 0;
+    const h = rowHeightAt(i);
+    if (top < el.scrollTop) el.scrollTop = top;
+    else if (top + h > el.scrollTop + el.clientHeight) el.scrollTop = top + h - el.clientHeight;
+  };
+
+  const focusRow = (i: number) => {
+    if (rows.length === 0) return;
+    const next = Math.min(Math.max(i, 0), rows.length - 1);
+    setActiveIndex(next);
+    scrollRowIntoView(next);
+    pendingFocusRef.current = next;
+  };
+
+  // 行渲染出来之后把 DOM 焦点补上；没有依赖数组是有意的 —— 每次 render 都试一次，
+  // 直到目标行真的存在于 DOM（虚拟窗口可能要多滚一帧才包含它）。
+  useEffect(() => {
+    if (pendingFocusRef.current === null) return;
+    const idx = pendingFocusRef.current;
+    const el = containerRef.current?.querySelector<HTMLElement>(`[data-row-index="${idx}"]`);
+    if (el) {
+      el.focus({ preventScroll: true });
+      pendingFocusRef.current = null;
+    }
+  });
+
+  const openMenuForRow = (i: number) => {
+    const node = rows[i]?.node;
+    if (!node) return;
+    if (getActions(node.actions || []).length === 0) return;
+    const el = containerRef.current?.querySelector<HTMLElement>(`[data-row-index="${i}"]`);
+    const rect = el?.getBoundingClientRect();
+    setCtx({
+      node,
+      x: Math.round(rect ? Math.min(rect.right - 8, window.innerWidth - 210) : window.innerWidth / 2),
+      y: Math.round(rect ? Math.min(rect.bottom, window.innerHeight - 230) : window.innerHeight / 2),
+    });
+  };
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (rows.length === 0) return;
+    const i = safeActiveIndex;
+    const row = rows[i];
+    const node = row.node;
+    const hasChildren = Boolean(node.children && node.children.length > 0);
+    const isExpanded = Boolean(effectiveExpanded[node.id]);
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        focusRow(i + 1);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        focusRow(i - 1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        focusRow(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        focusRow(rows.length - 1);
+        break;
+      case 'ArrowRight':
+        // 有子节点且折叠 → 展开；已展开 → 进到第一项（flatten 之后就是下一行）
+        e.preventDefault();
+        if (hasChildren && !isExpanded) toggleExpanded(node.id);
+        else if (hasChildren) focusRow(i + 1);
+        break;
+      case 'ArrowLeft':
+        // 已展开 → 折叠；否则回到父节点（往上找第一个 depth 更小的行）
+        e.preventDefault();
+        if (hasChildren && isExpanded) {
+          toggleExpanded(node.id);
+        } else {
+          for (let j = i - 1; j >= 0; j -= 1) {
+            if (rows[j].depth < row.depth) { focusRow(j); break; }
+          }
+        }
+        break;
+      case 'Enter':
+      case ' ': {
+        e.preventDefault();
+        // 规则行点整行 = 看这条规则在拦什么，键盘必须一致（见 ResourceTreeNode 的 handleClick）
+        if (node.kind === 'rule') { onNodeAction(node, 'rule.describe'); break; }
+        if (node.selectable) {
+          handleSelect(node, { shift: e.shiftKey, ctrlOrMeta: e.ctrlKey || e.metaKey });
+        }
+        if (hasChildren && !e.shiftKey && !e.ctrlKey && !e.metaKey) toggleExpanded(node.id);
+        break;
+      }
+      case 'ContextMenu':
+        e.preventDefault();
+        openMenuForRow(i);
+        break;
+      case 'F10':
+        // Shift+F10 是 Windows 上"打开上下文菜单"的标准键
+        if (e.shiftKey) {
+          e.preventDefault();
+          openMenuForRow(i);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
   // 搜索态下无任何命中：直接给空态，不要让虚拟滚动容器渲染 0 行空白
   if (searching && !prunedRoot) {
     return (
@@ -164,25 +289,34 @@ export default function ResourceTree({ root, activeDemKeys, onNodeSelect, onNode
         ref={containerRef}
         onClick={handleBlankClick}
         onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}
+        onKeyDown={handleKeyDown}
+        role="tree"
+        aria-label="资源树"
       >
         <div style={{ height: total, position: 'relative' }}>
           <div style={{ position: 'absolute', top: offsets[start], left: 0, right: 0 }}>
-            {visible.map((r) => (
-              <ResourceTreeNode
-                key={r.node.id}
-                node={r.node}
-                depth={r.depth}
-                expanded={Boolean(effectiveExpanded[r.node.id])}
-                highlightTerms={searchTerms}
-                selected={selectedIds.has(r.node.id) || selectedId === r.node.id}
-                activeDemKeys={activeDemKeys}
-                onToggle={handleToggle}
-                onSelect={handleSelect}
-                onDoubleClick={onNodeDoubleClick}
-                onAction={onNodeAction}
-                onContextMenu={handleContextMenu}
-              />
-            ))}
+            {visible.map((r, k) => {
+              const rowIndex = start + k;
+              return (
+                <ResourceTreeNode
+                  key={r.node.id}
+                  node={r.node}
+                  depth={r.depth}
+                  expanded={Boolean(effectiveExpanded[r.node.id])}
+                  highlightTerms={searchTerms}
+                  selected={selectedIds.has(r.node.id) || selectedId === r.node.id}
+                  activeDemKeys={activeDemKeys}
+                  rowIndex={rowIndex}
+                  active={rowIndex === safeActiveIndex}
+                  onFocusRow={setActiveIndex}
+                  onToggle={handleToggle}
+                  onSelect={handleSelect}
+                  onDoubleClick={onNodeDoubleClick}
+                  onAction={onNodeAction}
+                  onContextMenu={handleContextMenu}
+                />
+              );
+            })}
           </div>
         </div>
       </div>

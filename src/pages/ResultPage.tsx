@@ -12,7 +12,7 @@ import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
 import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search, Waves, Play, Pause, ScanSearch, SquareDashed } from 'lucide-react';
-import { ConfigProvider, Modal } from 'antd';
+import { Modal } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { cancelTask } from '../services/taskRunControl';
 import { setSectionManualInvalid } from '../services/sectionInvalidApi';
@@ -128,6 +128,7 @@ import {
   type RiskIndicatorKey,
   type RiskMatrixGroup,
 } from '../utils/riskScoring';
+import { useAutoCollapseOnNarrow } from '../utils/useAutoCollapseOnNarrow';
 
 // —— Mapbox token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -633,6 +634,8 @@ function ResultPage(props: ResultPageProps) {
   const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
 
   const [chatCollapsed, setChatCollapsed] = useState<boolean>(false);
+  // 窄屏自动收起 AI 面板（见 useAutoCollapseOnNarrow 注释：固定双栏会压死地图）
+  useAutoCollapseOnNarrow(setChatCollapsed);
   const [satellite, setSatellite] = useState<boolean>(false);
   // —— 流场（水动力粒子图层）
   // 素材只在模型服务里，经 Java 后端 /v0/bank/flow-field/** 代理转发；见 topics/flow-field.md。
@@ -1006,14 +1009,23 @@ function ResultPage(props: ResultPageProps) {
   const openTaskMenu = (e: ReactMouseEvent<HTMLDivElement>, task: { task_id: string; task_name: string }) => {
     e.preventDefault();
     e.stopPropagation();
+    openTaskMenuAt(e.clientX, e.clientY, task);
+  };
+
+  /**
+   * 以任意视口坐标打开任务操作菜单。
+   * 抽出来的原因：右键是唯一入口时，触屏（无右键）与键盘（Tab 到不了 div）都进不来；
+   * 「⋯」按钮复用同一份菜单、同一套边界收敛，只是锚点换成按钮矩形。
+   */
+  const openTaskMenuAt = (clientX: number, clientY: number, task: { task_id: string; task_name: string }) => {
     const MENU_W = 200;
     // 五个操作项 + 标题 ≈ 190px；少估会让最后一行的菜单被视口底边裁掉
     const MENU_H = 220;
     // 顺手刷一次结果计数：刚在编辑器算完就切回来右键时，缓存的 0 会把「分析」错误置灰
     void refreshResultCounts();
     setTaskMenu({
-      x: Math.max(8, Math.min(e.clientX, window.innerWidth - MENU_W - 8)),
-      y: Math.max(8, Math.min(e.clientY, window.innerHeight - MENU_H - 8)),
+      x: Math.max(8, Math.min(clientX, window.innerWidth - MENU_W - 8)),
+      y: Math.max(8, Math.min(clientY, window.innerHeight - MENU_H - 8)),
       taskId: task.task_id,
       taskName: task.task_name,
     });
@@ -4378,9 +4390,30 @@ function ResultPage(props: ResultPageProps) {
                         e.stopPropagation();
                         if (!confirm(`确认删除任务「${task.task_name}」？`)) return;
                         handleDeleteTaskById(task.task_id);
-                      }} title="删除任务">×</button>
+                      }} title="删除任务" aria-label={`删除任务 ${task.task_name}`}>×</button>
+                      {/* 「⋯ 更多操作」：右键菜单对触屏和键盘是死路（没有右键、Tab 也进不来），
+                          所以给同一份菜单一个可见入口。位置以按钮自身矩形为锚，菜单朝向与右键一致。 */}
+                      <button
+                        className="task-more-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const r = e.currentTarget.getBoundingClientRect();
+                          openTaskMenuAt(r.left, r.bottom + 4, task);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const r = e.currentTarget.getBoundingClientRect();
+                            openTaskMenuAt(r.left, r.bottom + 4, task);
+                          }
+                        }}
+                        title="更多操作"
+                        aria-label={`更多操作 ${task.task_name}`}
+                        aria-haspopup="menu"
+                      >⋯</button>
                     </div>
-                    <div className="task-hint">右键查看操作</div>
+                    <div className="task-hint">右键或「⋯」查看操作</div>
                   </div>
                 ))}
               </div>
@@ -5193,7 +5226,6 @@ function ResultPage(props: ResultPageProps) {
         </div>
       )}
       {vizTarget && (
-        <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
         <Modal
           title="AI 出图"
           open={true}
@@ -5323,10 +5355,8 @@ function ResultPage(props: ResultPageProps) {
             />
           </div>
         </Modal>
-        </ConfigProvider>
       )}
       {regenerateTarget && (
-        <ConfigProvider theme={{ token: { borderRadiusLG: 24 } }}>
         <Modal
           title={reportDialogMode === 'regenerate' ? '确认生成报告' : '生成风险评估报告'}
           open={true}
@@ -5424,7 +5454,6 @@ function ResultPage(props: ResultPageProps) {
             </div>
           )}
         </Modal>
-        </ConfigProvider>
       )}
     </div>
   );

@@ -1,7 +1,10 @@
 .admin-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* 后台四页现在挂在 AppLayout 的 <main class="app-main"> 里，高度由外壳给。
+     再写 100vh 就等于把整页高度又叠了一遍（底部被多裁一次）。 */
+  height: 100%;
+  min-height: 0;
   background: #eef1f6;
   overflow: hidden;
 }
@@ -315,7 +318,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: #eef1f6;
   gap: 12px;
 }

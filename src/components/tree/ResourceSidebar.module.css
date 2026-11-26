@@ -89,6 +89,15 @@
   transition: background-color 0.15s, color 0.15s;
   border: 1px solid transparent;
 }
+
+/* 行是 treeitem（tabIndex 0/‑1），必须有可见焦点环 ——
+   树上按 ↑↓ 时如果看不出焦点在哪一行，键盘导航等于没有（WCAG 2.4.7）。
+   用内侧轮廓而不是外边距：行高 28px 且相邻行紧贴，外扩会被下一行盖住。 */
+.row:focus-visible {
+  outline: 2px solid var(--ds-primary, #3b82f6);
+  outline-offset: -2px;
+  background: rgba(59, 130, 246, 0.1);
+}
 .row:hover {
   background: var(--tree-hover);
 }
@@ -175,8 +184,17 @@
   gap: 3px;
   flex: 0 0 auto;
 }
-.row:hover .hoverActions {
+.row:hover .hoverActions,
+/* 键盘用户：焦点落在行内任意按钮时也要把这一组露出来，否则 Tab 进去只看到一个空行 */
+.row:focus-within .hoverActions {
   display: inline-flex;
+}
+/* 触屏设备没有 hover：行内操作永远显示，否则「加载到地图 / 定位 / 删除」根本按不到。
+   用 (hover: none) 而不是宽度断点 —— 触摸屏笔记本在宽屏下同样没有 hover。 */
+@media (hover: none) {
+  .hoverActions {
+    display: inline-flex;
+  }
 }
 .hIcon {
   color: var(--tree-accent);
@@ -185,9 +203,20 @@
   padding: 1px 3px;
   border-radius: 6px;
   transition: background-color 0.15s;
+  /* 行尾操作已从 <span> 换成 <button>（否则键盘进不来）：
+     这里必须把浏览器给按钮的默认边框/底色/内边距清掉，视觉上保持原来的小图标。 */
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
 }
 .hIcon:hover {
   background: rgba(37, 99, 235, 0.14);
+}
+.hIcon:focus-visible {
+  outline: 2px solid var(--ds-primary, #3b82f6);
+  outline-offset: 1px;
 }
 /* 这条 DEM 的开关处于"已开"（与 .rowDemActive 同一状态） */
 .hIconActive {
