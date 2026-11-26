@@ -28,16 +28,6 @@ interface EditorData {
   crossLineControlMode: 'shoreline' | 'free';
   selectedBasicParamIdState: string | number | null;
   sidebarMode: 'tree' | 'classic';
-  /**
-   * 编辑器左栏当前是「数据资源」还是「知识库」。
-   *
-   * <p>与 `sidebarMode` 是两个正交的轴：`sidebarMode` 决定资源视图用树还是经典列表，
-   * 这个决定左栏放资源还是知识库。知识库视图下 `sidebarMode` 不生效。
-   *
-   * <p>**有意不持久化**（不在 `partialize` 里）：上次停在知识库、下次进编辑器直接看到
-   * 知识文档列表而不是资源树，用户会以为自己的岸段/断面没了。每次进编辑器都从资源树开始。
-   */
-  leftPanelView: 'resources' | 'knowledge';
   mapLng: number;
   mapLat: number;
   mapZoom: number;
@@ -66,7 +56,6 @@ interface EditorActions {
   setCrossLineControlMode: (v: 'shoreline' | 'free') => void;
   setSelectedBasicParamIdState: (v: string | number | null) => void;
   setSidebarMode: (v: 'tree' | 'classic') => void;
-  setLeftPanelView: (v: 'resources' | 'knowledge') => void;
   setMapView: (lng: number, lat: number, zoom: number) => void;
 }
 
@@ -97,7 +86,6 @@ const initialData: EditorData = {
   crossLineControlMode: 'shoreline',
   selectedBasicParamIdState: null,
   sidebarMode: 'tree',
-  leftPanelView: 'resources',
   mapLng: 119.896,
   mapLat: 32.229,
   mapZoom: 7,
@@ -125,7 +113,6 @@ export const useEditorStore = create<EditorState>()(
       setCrossLineControlMode: setter(set, 'crossLineControlMode'),
       setSelectedBasicParamIdState: setter(set, 'selectedBasicParamIdState'),
       setSidebarMode: setter(set, 'sidebarMode'),
-      setLeftPanelView: setter(set, 'leftPanelView'),
       setMapView: (lng: number, lat: number, zoom: number) => set({ mapLng: lng, mapLat: lat, mapZoom: zoom }),
     }),
     {

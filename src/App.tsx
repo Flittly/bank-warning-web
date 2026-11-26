@@ -23,7 +23,6 @@ import AuthGuard from './auth/AuthGuard';
 import { useAuth } from './auth/useAuth';
 import TourGuide from './components/TourGuide';
 import SettingsModal from './components/SettingsModal';
-import { useEditorStore } from './store/useEditorStore';
 import './App.css';
 import './styles/design-system.css';
 
@@ -79,10 +78,9 @@ function ActivityBar({
   const isHome = path.startsWith('/home');
   const isEditor = path.startsWith('/editor');
   const isResult = path.startsWith('/result');
-  // 编辑器左栏放资源还是知识库：知识库不再是独立路由，改成左栏内的一种视图。
-  const leftPanelView = useEditorStore((s) => s.leftPanelView);
-  const setLeftPanelView = useEditorStore((s) => s.setLeftPanelView);
-  const editorOnKnowledge = isEditor && leftPanelView === 'knowledge';
+  // 编辑器左栏放资源还是知识库 —— 唯一真源是 URL 的 `?left=knowledge`，不进 store。
+  // 存 store 会活得比 EditorPage 久：点过知识库 → 去任务列表 → 回编辑器，左栏还停在知识库。
+  const editorOnKnowledge = isEditor && searchParams.get('left') === 'knowledge';
 
   // 工作区（编辑器 / 结果 / 知识库）恢复原来的窄图标条：条目与顺序保持基线一致，
   // 只有 title 提示，不显示文字标签，也不再挂设置与账户（这两项工作区走顶部导航的用户菜单）。
@@ -92,8 +90,8 @@ function ActivityBar({
         key: 'editor',
         label: '断面编辑器',
         active: isEditor && !editorOnKnowledge,
-        // 已经在编辑器里就只切左栏，不再 navigate —— 重挂载会丢地图上正在进行的操作
-        onClick: () => (isEditor ? setLeftPanelView('resources') : navigate('/editor')),
+        // 去掉 ?left= 即可回到资源树。已在 /editor 时只是 query 变化，不会重挂载。
+        onClick: () => navigate('/editor'),
       },
       { key: 'tasks', label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
       { key: 'reports', label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
@@ -104,11 +102,9 @@ function ActivityBar({
         label: '知识库',
         active: editorOnKnowledge,
         // 以前这里 navigate('/knowledge') ⇒ 落到"中心页"、左栏整条换成 66px 悬浮卡，
-        // 视觉上等于退回首页外壳，编辑器整页重挂载。现在改为在编辑器左栏内切换视图。
-        onClick: () => {
-          setLeftPanelView('knowledge');
-          if (!isEditor) navigate('/editor');
-        },
+        // 视觉上等于退回首页外壳，编辑器整页重挂载。现在改为编辑器左栏内的一种视图，
+        // 用 ?left=knowledge 表达，刷新/分享都能还原到同一个界面。
+        onClick: () => navigate('/editor?left=knowledge'),
       },
     ];
 

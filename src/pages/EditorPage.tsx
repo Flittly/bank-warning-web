@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import * as turf from '@turf/turf';
 import { Dropdown, message } from 'antd';
 import '../App.css';
@@ -233,8 +234,25 @@ function EditorPage(props: EditorPageProps) {
     scope: BoxScope;
   } | null>(null);
   const sidebarMode = useEditorStore((s) => s.sidebarMode);
-  // 左栏放「数据资源」还是「知识库」。与 sidebarMode 正交：知识库视图下忽略 tree/classic。
-  const leftPanelView = useEditorStore((s) => s.leftPanelView);
+
+  /**
+   * 左栏放「数据资源」还是「知识库」，**由 URL 派生**，不进 store。
+   *
+   * <p>与 `sidebarMode` 正交：`sidebarMode` 决定资源视图用树还是经典列表，
+   * 这个决定左栏放资源还是知识库；知识库视图下 `sidebarMode` 不生效。
+   *
+   * <p>为什么不在 store 里存一个 `leftPanelView`：那样它会活得比本组件久。
+   * 在编辑器里点过「知识库」后 `navigate('/result?panel=tasks')` 只卸载组件、没人复位，
+   * 再点「断面编辑器」回来左栏就直接是知识库 —— 而且只有"先进过知识库"才复现，
+   * 看着像随机 bug。改成从 `?left=` 读之后，`/editor` 恒等于资源树，
+   * 陈旧状态在结构上不可能存在：离开编辑器 = 参数随路由一起消失。
+   *
+   * <p>`/editor?task=xxx`（首页任务行）不带 `left`，同样落到资源树，互不干扰。
+   */
+  const [editorSearchParams] = useSearchParams();
+  const leftPanelView: 'resources' | 'knowledge' =
+    editorSearchParams.get('left') === 'knowledge' ? 'knowledge' : 'resources';
+
   const [demPickerOpen, setDemPickerOpen] = useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
   // 「补充岸段到已有任务」弹窗。候选清单在打开时算好（全库岸段 − 该任务已有），
