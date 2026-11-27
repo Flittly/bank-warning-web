@@ -3,6 +3,16 @@ import { useState, useRef, useEffect, type CSSProperties } from 'react';
 import { Plus, Trash2, Send, MessageCircle, Save, Square, Wrench, Brain } from 'lucide-react';
 import { getStoredAiModel, setStoredAiModel, onAiModelChanged } from '../utils/aiModelSettings';
 import { streamChat, type ChatStreamEvent } from '../utils/chatStream';
+import AddAiModelModal from './AddAiModelModal';
+
+/**
+ * 模型下拉里的「自定义模型」哨兵值。
+ *
+ * <p>它不是模型，选中后只弹添加框；之所以塞进同一个 `<select>`，是因为这里用的是原生
+ * 下拉，没有可挂载菜单项的插槽。哨兵值带双下划线，与用户能填的 key 不可能撞上
+ * （`AddAiModelModal` 只允许 `[A-Za-z0-9._-]`）。
+ */
+const CUSTOM_MODEL_OPTION = '__custom_model__';
 
 // 版本指纹：加载到这一版模块时在控制台打一行。Vite 对「非编辑器写入」的文件改动
 // 不触发 HMR（curl 拿到新内容 ≠ 浏览器内存里是新模块），没有这行指纹就只能靠猜。
@@ -57,6 +67,7 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState<{ key: string; label: string }[]>([]);
   const [selectedModel, setSelectedModel] = useState(() => getStoredAiModel());
+  const [addModelOpen, setAddModelOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // 流式令牌：每次发送自增。收到旧令牌的帧一律丢弃（切会话 / 重发 / 停止）
   const streamTokenRef = useRef(0);
@@ -71,21 +82,34 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
     if (key) setSelectedModel(key);
   }), []);
 
-  const fetchModels = async () => {
+  /**
+   * 拉模型列表。
+   *
+   * <p>`preferKey` 用于「刚添加完就选中它」：刚 POST 成功的模型还不在本地列表里，
+   * 只靠 localStorage 里存着的 key 回落会选到第一条。故意不返回 Promise 让调用方 await ——
+   * 调用方只关心"刷新并选中"，不关心刷新失败。
+   */
+  const fetchModels = async (preferKey?: string) => {
     try {
       const res = await fetch('/v0/bank/ai/models');
       const data = await res.json();
-      if (data.success && data.models) {
-        setModels(data.models);
-        if (data.models.length > 0) {
-          const stored = getStoredAiModel();
-          const keys = data.models.map((m: { key: string }) => m.key);
-          const next = stored && keys.includes(stored) ? stored : data.models[0].key;
-          if (next !== selectedModel) setSelectedModel(next);
-          if (next !== stored) setStoredAiModel(next);
-        }
-      }
-    } catch { /* ignore */ }
+      if (!data.success || !Array.isArray(data.models)) return;
+      const list: { key: string; label: string }[] = data.models;
+      setModels(list);
+      if (list.length === 0) return;
+      const keys = list.map((m) => m.key);
+      const stored = getStoredAiModel();
+      const next =
+        preferKey && keys.includes(preferKey)
+          ? preferKey
+          : stored && keys.includes(stored)
+            ? stored
+            : list[0].key;
+      setSelectedModel(next);
+      setStoredAiModel(next);
+    } catch {
+      /* 拉不到列表就不显示选择器，不影响已有的聊天能力 */
+    }
   };
 
   useEffect(() => {
@@ -650,28 +674,47 @@ function ChatPanel({ collapsed, width, selectedSkills, setSelectedSkills, chatTa
             </button>
           </div>
 
-          {models.length > 0 && (
-            <div style={{ padding: '2px 16px 6px 16px', background: '#ffffff' }}>
-              <select
-                value={selectedModel}
-                onChange={(e) => {
-                  setSelectedModel(e.target.value);
-                  setStoredAiModel(e.target.value);
-                }}
-                style={{
-                  border: 'none', background: 'transparent',
-                  fontSize: '0.68rem', color: '#94a3b8', outline: 'none',
-                  cursor: 'pointer', padding: 0,
-                }}
-              >
-                {models.map(m => (
-                  <option key={m.key} value={m.key}>{m.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* 不再用 `models.length > 0` 把整行藏起来：一个模型都没配的时候，
+              恰恰最需要这里的「＋ 自定义模型」入口，藏起来就只能去设置里绕。 */}
+          <div style={{ padding: '2px 16px 6px 16px', background: '#ffffff' }}>
+            <select
+              value={selectedModel}
+              onChange={(e) => {
+                // 选中哨兵项只弹窗、不改当前模型：不 setSelectedModel，
+                // 受控 value 保持原值，下拉会自动弹回原来那个模型。
+                if (e.target.value === CUSTOM_MODEL_OPTION) {
+                  setAddModelOpen(true);
+                  return;
+                }
+                setSelectedModel(e.target.value);
+                setStoredAiModel(e.target.value);
+              }}
+              style={{
+                border: 'none', background: 'transparent',
+                fontSize: '0.68rem', color: '#94a3b8', outline: 'none',
+                cursor: 'pointer', padding: 0,
+              }}
+            >
+              {models.length === 0 && <option value="">未配置模型</option>}
+              {models.map(m => (
+                <option key={m.key} value={m.key}>{m.label}</option>
+              ))}
+              <option value={CUSTOM_MODEL_OPTION}>＋ 自定义模型…</option>
+            </select>
+          </div>
         </>
       )}
+
+      <AddAiModelModal
+        open={addModelOpen}
+        existingKeys={models.map((m) => m.key)}
+        onCancel={() => setAddModelOpen(false)}
+        onAdded={(key) => {
+          setAddModelOpen(false);
+          void fetchModels(key);
+          message.success(`模型「${key}」已添加`);
+        }}
+      />
     </div>
   );
 }

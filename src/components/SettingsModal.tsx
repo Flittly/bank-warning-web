@@ -260,7 +260,7 @@ export default function SettingsModal({ username, roleLabel, onClose, onReplayTo
                   className={styles.input}
                   value={addForm.modelName}
                   onChange={(e) => setAddForm((f) => ({ ...f, modelName: e.target.value }))}
-                  placeholder="如 deepseek-chat"
+                  placeholder="如 deepseek-flash"
                 />
               </div>
               <div className={styles.mb15}>
