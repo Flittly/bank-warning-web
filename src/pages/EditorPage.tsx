@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as turf from '@turf/turf';
-import { Dropdown, message } from 'antd';
+import { Dropdown, message, Segmented, Slider, Switch } from 'antd';
 import '../App.css';
 import { useEditorStore } from '../store/useEditorStore';
 import SectionPropertiesModal from '../components/SectionPropertiesModal';
@@ -35,11 +35,19 @@ import { MessageCircle, Globe, Upload, Ruler, Plus, MousePointer2, Eraser, Chevr
 import { invalidateTaskParamsCache, setCurrentBasicParamId } from '../services/basicParamsService';
 import { fetchTiffBounds } from '../services/tiffService';
 import {
-  DEM_PREVIEW_COLORS,
+  DEM_RAMP_OPTIONS,
+  demLegendGradient,
   fetchDemPreview,
   releaseDemPreview,
   type DemPreview,
+  type DemRamp,
 } from '../services/demPreviewService';
+import {
+  requestDemTerrainBuild,
+  terrainSpecOf,
+  type DemTerrainInfo,
+} from '../services/demTerrainService';
+import { DEFAULT_TERRAIN_EXAGGERATION, terrainStatusView } from '../map/terrainLayer';
 import { fetchRiverSurface, invalidateRiverSurfaceCache } from '../services/riverSurfaceApi';
 import { removeDemBounds, resolveVisibleTiffBounds, toggleDemBounds } from '../map/tiffBoundsView';
 import {
@@ -118,6 +126,63 @@ interface EditorPageProps {
   initialTaskId?: string;
 }
 
+/** DEM 三维地形：切片是后台异步的，打开开关后按这个间隔问一次进度 */
+const TERRAIN_POLL_INTERVAL_MS = 3000;
+/**
+ * 轮询上限。实测 1 万×3 千、30 m 的 DEM 切 8–12 级只要 10 秒；留到 10 分钟是为了
+ * 给更大的 DEM 和排队（单线程 worker，前面可能还压着别的任务）留余量。
+ */
+const TERRAIN_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** 到这些状态就停止轮询：要么能用了，要么再问也不会变 */
+const TERMINAL_TERRAIN_STATUSES: ReadonlySet<DemTerrainInfo['status']> = new Set([
+  'ready',
+  'failed',
+  'missing',
+  'unavailable',
+]);
+
+/** 后端判定「DEM 不存在」时前端手搓的最小状态体（这种情况下后端只回 404，没有正文） */
+const EMPTY_TERRAIN_INFO: DemTerrainInfo = {
+  tiff_key: '',
+  status: 'none',
+  fingerprint: null,
+  minzoom: null,
+  maxzoom: null,
+  bounds: null,
+  tile_count: null,
+  error: null,
+  generated_at: null,
+};
+
+/** 可中止的等待：用户关掉开关 / 换 DEM 时立刻醒，不留一个 3 秒后的野请求 */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function isAbortError(error: unknown): boolean {
+  return (error as { name?: unknown } | null)?.name === 'AbortError';
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  const message = (error as { message?: unknown } | null)?.message;
+  return typeof message === 'string' && message ? message : fallback;
+}
+
 function EditorPage(props: EditorPageProps) {
   const { setPage, initialTaskId } = props;
   // === 持久化状态（使用 zustand store） ===
@@ -174,6 +239,8 @@ function EditorPage(props: EditorPageProps) {
     useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   // 同时只保留一张图：快速连点不同 DEM 时，慢的那次回来不能盖掉后点的那张
   const demPreviewAbortRef = useRef<AbortController | null>(null);
+  // 配色是「用户偏好」而不是「这份 DEM 的属性」：换一份 DEM 时保持不变
+  const [demRamp, setDemRamp] = useState<DemRamp>('gray');
   // 与 state 并行维护一份 ref：释放 blob 要在 setState 之外做（updater 里放副作用，
   // StrictMode 下会被双调用），而渲染期的 ref 同步又滞后一拍，所以由 setter 自己更新。
   const demPreviewRef = useRef<DemPreview | null>(null);
@@ -3472,14 +3539,88 @@ function EditorPage(props: EditorPageProps) {
     return true;
   };
 
+  // —— DEM 三维地形 ——
+  // 开关只对「当前预览的这份 DEM」生效。切片在模型服务后台异步进行（几秒到几分钟），
+  // 所以打开后进入「触发 + 轮询」：`POST /terrain/build` 是幂等的，已就绪且未过期时什么都不做，
+  // 轮询期间反复调它是安全的，顺便让后端替我们做过期检查。
+  // （声明在 handleDemPreview / clearDemPreview 之前：那两个要调 resetTerrain）
+  const [terrainOn, setTerrainOn] = useState(false);
+  const [terrainInfo, setTerrainInfo] = useState<DemTerrainInfo | null>(null);
+  const [terrainExaggeration, setTerrainExaggeration] = useState(DEFAULT_TERRAIN_EXAGGERATION);
+  const terrainAbortRef = useRef<AbortController | null>(null);
+
+  const stopTerrainRun = useCallback(() => {
+    terrainAbortRef.current?.abort();
+    terrainAbortRef.current = null;
+  }, []);
+
+  /** 换 DEM / 关预览：地形是跟着 DEM 走的，状态一并清掉，避免把上一份的瓦片挂到下一份上 */
+  const resetTerrain = useCallback(() => {
+    stopTerrainRun();
+    setTerrainOn(false);
+    setTerrainInfo(null);
+  }, [stopTerrainRun]);
+
+  const startTerrainRun = useCallback(async (tiffKey: string) => {
+    stopTerrainRun();
+    const controller = new AbortController();
+    terrainAbortRef.current = controller;
+    const deadline = Date.now() + TERRAIN_POLL_TIMEOUT_MS;
+    try {
+      while (!controller.signal.aborted) {
+        const info = await requestDemTerrainBuild(tiffKey, controller.signal);
+        if (controller.signal.aborted) return;
+        setTerrainInfo(info);
+        if (TERMINAL_TERRAIN_STATUSES.has(info.status)) return;
+        if (Date.now() >= deadline) {
+          message.warning('三维地形生成超时，请稍后重新打开');
+          setTerrainOn(false);
+          return;
+        }
+        await sleep(TERRAIN_POLL_INTERVAL_MS, controller.signal);
+      }
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) return;
+      setTerrainOn(false);
+      // 404 = 后端判定这份 DEM 不存在或无权访问（IllegalArgumentException 统一映射 404）
+      if (/HTTP 404/.test(errorMessage(error, ''))) {
+        setTerrainInfo({ ...EMPTY_TERRAIN_INFO, tiff_key: tiffKey, status: 'missing' });
+      } else {
+        message.error(errorMessage(error, '三维地形生成失败'));
+      }
+    } finally {
+      if (terrainAbortRef.current === controller) terrainAbortRef.current = null;
+    }
+  }, [stopTerrainRun]);
+
+  const handleTerrainToggle = useCallback((next: boolean) => {
+    setTerrainOn(next);
+    if (!next) {
+      stopTerrainRun();
+      return;
+    }
+    const tiffKey = demPreviewRef.current?.tiffKey;
+    if (tiffKey) void startTerrainRun(tiffKey);
+  }, [startTerrainRun, stopTerrainRun]);
+
+  useEffect(() => () => stopTerrainRun(), [stopTerrainRun]);
+
+  const terrainSpec = useMemo(
+    () => (terrainOn ? terrainSpecOf(terrainInfo) : null),
+    [terrainOn, terrainInfo],
+  );
+  const terrainView = terrainOn ? terrainStatusView(terrainInfo?.status, terrainInfo?.error) : null;
+
   /**
-   * 双击 DEM：让后端把它渲染成「灰度高程 + 红色 nodata」的栅格铺到地图上。
+   * 双击 DEM：让后端把它渲染成「高程配色 + 红色 nodata」的栅格铺到地图上。
    *
    * <p>为什么不做前端渲染：DEM 是单波段浮点 TIF（千万级像素、可能是地方投影），
    * 浏览器既解析不了 TIF、也扛不住整幅解码。后端那次 4326 重投影顺带把长边降到 1536，
    * 出来的 PNG 只有几百 KB。
+   *
+   * @param ramp 配色；不传就用当前选中的那份（同一个 tiffKey 再拉一次只换图，不动地形与视角）
    */
-  const handleDemPreview = useCallback(async (tiffKey: string) => {
+  const handleDemPreview = useCallback(async (tiffKey: string, ramp: DemRamp = demRamp) => {
     if (!tiffKey) return;
 
     demPreviewAbortRef.current?.abort();
@@ -3488,13 +3629,15 @@ function EditorPage(props: EditorPageProps) {
 
     setDemPreviewStatus('loading');
     try {
-      const preview = await fetchDemPreview(tiffKey, controller.signal);
+      const preview = await fetchDemPreview(tiffKey, { ramp, signal: controller.signal });
       if (controller.signal.aborted) {
         // 已被更新的一次请求顶掉：这张图不会进地图，得自己释放
         releaseDemPreview(preview);
         return;
       }
       const previous = demPreviewRef.current;
+      // 换了一份 DEM：上一份的三维地形必须先收掉（轮询、状态、挂载规格都指向旧的 tiff_key）
+      if (previous?.tiffKey !== preview.tiffKey) resetTerrain();
       demPreviewRef.current = preview;
       setDemPreview(preview);
       releaseDemPreview(previous);
@@ -3505,18 +3648,32 @@ function EditorPage(props: EditorPageProps) {
       setDemPreviewStatus('error');
       message.error(text);
     }
-  }, []);
+  }, [demRamp, resetTerrain]);
+
+  /**
+   * 切换配色：重取同一份 DEM 的图。
+   *
+   * <p>不走「清掉地形再重来」：三维地形挂在 raster-dem 源上，跟这张预览图的配色无关，
+   * 换个颜色就把地形拆了重建，用户会看到山坡塌一下再鼓起来。
+   */
+  const handleDemRampChange = useCallback((next: DemRamp) => {
+    if (next === demRamp) return;
+    setDemRamp(next);
+    const key = demPreviewRef.current?.tiffKey;
+    if (key) void handleDemPreview(key, next);
+  }, [demRamp, handleDemPreview]);
 
   /** 撤掉 DEM 预览（图层与 blob 一起收） */
   const clearDemPreview = useCallback(() => {
     demPreviewAbortRef.current?.abort();
     demPreviewAbortRef.current = null;
+    resetTerrain();
     const previous = demPreviewRef.current;
     demPreviewRef.current = null;
     setDemPreview(null);
     releaseDemPreview(previous);
     setDemPreviewStatus('idle');
-  }, []);
+  }, [resetTerrain]);
 
   // 卸载时收尾：blob 不 revoke 会一直占到刷新页面
   useEffect(() => () => {
@@ -4651,6 +4808,8 @@ function EditorPage(props: EditorPageProps) {
           sectionBoxDeleteIds={sectionBoxPreview?.sectionIds ?? null}
           showTiffBounds={showTiffBounds}
           demPreview={demPreview}
+          terrain={terrainSpec}
+          terrainExaggeration={terrainExaggeration}
           riverSurfaceData={riverSurfaceData}
           showRiverSurface={showRiverSurface}
           resizeTrigger={resizeTrigger}
@@ -4703,22 +4862,110 @@ function EditorPage(props: EditorPageProps) {
               </span>
             </div>
             <div
+              data-tour="dem-ramp-bar"
               style={{
                 height: 8, borderRadius: 4,
                 border: '1px solid rgba(0,0,0,0.08)',
-                background: `linear-gradient(90deg, rgb(${DEM_PREVIEW_COLORS.dark},${DEM_PREVIEW_COLORS.dark},${DEM_PREVIEW_COLORS.dark}), rgb(${DEM_PREVIEW_COLORS.light},${DEM_PREVIEW_COLORS.light},${DEM_PREVIEW_COLORS.light}))`,
+                // 渐变按服务端回显的断点画：换配色时图例和真正渲染的那张图必然一致
+                background: demLegendGradient(demPreview.meta),
               }}
             />
+            <div style={{ marginTop: 8 }}>
+              <Segmented
+                size="small"
+                block
+                aria-label="DEM 配色"
+                options={DEM_RAMP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                // 加载中先按本地意图显示（乐观更新）：服务端回显要等一次现场渲染（1–2 s），
+                // 这期间若还显示旧的 meta.ramp，用户点完会看到按钮"弹回原样"——就像没反应。
+                // 请求回来仍以 X-Dem-Ramp 为准（服务端可能把不认识的配色回落成灰度）。
+                value={demPreviewStatus === 'loading' ? demRamp : demPreview.meta.ramp}
+                onChange={(value) => handleDemRampChange(value as DemRamp)}
+              />
+            </div>
 
+            {/* 无数据图例：两档的 nodata 都是**透明**（这类河道 DEM 九成范围是空洞，
+                实心红会把底图、地名和三维地形整片盖住），所以这里画空心虚线而不是红块 ——
+                语义是「这里没数据、露出底图」，不是「红色区域」。 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, color: '#334155' }}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, background: DEM_PREVIEW_COLORS.nodata, flexShrink: 0 }} />
+              <span
+                data-testid="dem-legend-nodata-swatch"
+                style={{
+                  width: 12, height: 12, borderRadius: 3, flexShrink: 0,
+                  background: 'transparent',
+                  border: '1px dashed #94a3b8',
+                  boxSizing: 'border-box',
+                }}
+              />
               <span>
                 无数据
                 {demPreview.meta.nodata != null ? `（${demPreview.meta.nodata}）` : ''}
                 {demPreview.meta.nodataRatio != null
                   ? ` · ${(demPreview.meta.nodataRatio * 100).toFixed(1)}%`
                   : ''}
+                {' · 透明'}
               </span>
+            </div>
+
+            {/* 三维地形：把 DEM 当高程面渲染（按住右键或 Ctrl+拖动旋转，拖动时按住 Ctrl 可俯仰）。
+                首次打开要等后端切片，所以开关下面常驻一行状态；失败给「重试」。 */}
+            <div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', margin: '10px -12px 0', padding: '10px 12px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Switch
+                  size="small"
+                  aria-label="三维地形"
+                  checked={terrainOn}
+                  loading={Boolean(terrainView?.busy)}
+                  onChange={handleTerrainToggle}
+                />
+                <span style={{ fontWeight: 600, flex: 1 }}>三维地形</span>
+              </div>
+              {terrainOn && terrainView && (
+                <div
+                  data-tour="dem-terrain-status"
+                  style={{ marginTop: 6, fontSize: 11, color: terrainView.failed ? '#b91c1c' : '#64748b' }}
+                >
+                  {terrainView.label}
+                  {terrainView.failed && terrainInfo?.status === 'failed' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const key = demPreview.tiffKey;
+                        setTerrainInfo({ ...EMPTY_TERRAIN_INFO, tiff_key: key, status: 'pending' });
+                        void startTerrainRun(key);
+                      }}
+                      style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: 11 }}
+                    >
+                      重试
+                    </button>
+                  )}
+                </div>
+              )}
+              {terrainOn && terrainSpec && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569', marginBottom: 2 }}>
+                    <span>垂直夸张</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{terrainExaggeration.toFixed(1)}×</span>
+                  </div>
+                  <Slider
+                    aria-label="垂直夸张"
+                    min={0.5}
+                    max={10}
+                    step={0.5}
+                    value={terrainExaggeration}
+                    onChange={(v) => setTerrainExaggeration(v)}
+                    // 手柄气泡默认朝上，会正好盖住上面的「三维地形」开关与读数行；改朝下飘到地图上
+                    tooltip={{ placement: 'bottom' }}
+                    styles={{ root: { margin: '4px 0' } }}
+                  />
+                </div>
+              )}
+              {/* 中键轨道是这一版新加的，不给提示没人会去试（右键那套是 Mapbox 自带、行为也不一样） */}
+              {terrainOn && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
+                  按住<strong style={{ color: '#64748b' }}>鼠标中键</strong>拖动：上下改俯仰、左右转方位
+                </div>
+              )}
             </div>
           </div>
         )}

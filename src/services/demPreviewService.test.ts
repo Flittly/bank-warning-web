@@ -10,7 +10,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEM_PREVIEW_COLORS, fetchDemPreview, releaseDemPreview } from './demPreviewService';
+import {
+  DEM_PREVIEW_COLORS,
+  demLegendGradient,
+  fetchDemPreview,
+  releaseDemPreview,
+  type DemPreviewMeta,
+} from './demPreviewService';
 
 const OK_HEADERS: Record<string, string> = {
   'X-Dem-West': '120.46050751',
@@ -127,5 +133,101 @@ describe('demPreviewService', () => {
     expect(DEM_PREVIEW_COLORS.dark).toBe(14);
     expect(DEM_PREVIEW_COLORS.light).toBe(208);
     expect(DEM_PREVIEW_COLORS.nodata).toBe('rgb(230, 32, 32)');
+  });
+
+  it('选了配色就把 ramp 带进查询参数', async () => {
+    const fetchMock = vi.fn(async (_url: string) => pngResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchDemPreview('tiff/a.tif', { ramp: 'hypsometric' });
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('ramp=hypsometric');
+  });
+
+  it('不传配色时不写 ramp 参数（让服务端用默认灰度）', async () => {
+    const fetchMock = vi.fn(async (_url: string) => pngResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchDemPreview('tiff/a.tif');
+
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('ramp=');
+  });
+
+  it('请求绕开 HTTP 缓存（换配色必须真的重取，不能吃旧图）', async () => {
+    // 后端曾给预览图加 max-age=3600：浏览器把灰度图存在 ?ramp=hypsometric 名下，
+    // 前端拿回的 X-Dem-Ramp 还是 gray，Segmented 立刻弹回灰度 ⇒「点了没反应」。
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => pngResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchDemPreview('tiff/a.tif', { ramp: 'hypsometric' });
+
+    expect(fetchMock.mock.calls[0][1]?.cache).toBe('no-store');
+  });
+
+  it('配色与图例断点以响应头回显为准', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        pngResponse({
+          ...OK_HEADERS,
+          'X-Dem-Ramp': 'hypsometric',
+          // 故意乱序 + 夹一个非法项：解析后必须按高程升序、非法项丢弃
+          'X-Dem-Legend': '[[8,"#f08a5d"],[-60,"#1d5fa8"],["x","#000000"],[0,"#e6f4f8"]]',
+        }),
+      ),
+    );
+
+    const preview = await fetchDemPreview('tiff/a.tif', { ramp: 'hypsometric' });
+
+    expect(preview.meta.ramp).toBe('hypsometric');
+    expect(preview.meta.legendStops).toEqual([
+      [-60, '#1d5fa8'],
+      [0, '#e6f4f8'],
+      [8, '#f08a5d'],
+    ]);
+  });
+
+  it('缺 X-Dem-Ramp 时按灰度处理，图例不至于空着', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => pngResponse()));
+
+    const preview = await fetchDemPreview('tiff/a.tif');
+
+    expect(preview.meta.ramp).toBe('gray');
+    expect(preview.meta.legendStops).toEqual([]);
+  });
+});
+
+describe('demLegendGradient', () => {
+  function meta(overrides: Partial<DemPreviewMeta>): DemPreviewMeta {
+    return {
+      west: 0, south: 0, east: 1, north: 1, width: 1, height: 1,
+      min: null, max: null, low: null, high: null, nodata: null, nodataRatio: null,
+      ramp: 'gray', legendStops: [],
+      ...overrides,
+    };
+  }
+
+  it('灰度配色用固定两端色', () => {
+    const gradient = demLegendGradient(meta({ min: -50, max: 10 }));
+    expect(gradient).toContain('rgb(14,14,14)');
+    expect(gradient).toContain('rgb(208,208,208)');
+  });
+
+  it('分层设色按本图 min~max 把断点映射成百分比，并夹在 0~100%', () => {
+    const gradient = demLegendGradient(meta({
+      min: -60,
+      max: 10,
+      ramp: 'hypsometric',
+      legendStops: [
+        [-80, '#08306b'],
+        [-20, '#78b4d8'],
+        [30, '#9e1c26'],
+      ],
+    }));
+
+    // -80 低于 min ⇒ 0%；-20 落在 40/70 ⇒ 57.1%；30 高于 max ⇒ 100%
+    expect(gradient).toBe(
+      'linear-gradient(90deg, #08306b 0.0%, #78b4d8 57.1%, #9e1c26 100.0%)',
+    );
   });
 });

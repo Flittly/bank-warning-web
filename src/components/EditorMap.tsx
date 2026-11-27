@@ -7,11 +7,21 @@ import { getBasemapStyle } from '../map/basemapStyle';
 import { disableMapboxAuthCheck } from '../map/mapboxAuth';
 import { boxFromCorners, boxPolygon, isValidBox, type BoxBounds } from '../map/boxSelection';
 import { sectionIdOfFeature } from '../map/sectionBoxDelete';
+import { attachMiddleDragTilt } from '../map/middleDragTilt';
 import { snapPointToBank, type BankAnchor, type LngLat } from '../map/sectionBankBinding';
 import type { SelectionGroup } from '../types/selection';
 import { getVerticalFootCoordsFromAny } from '../utils/verticalFootPoint';
 import { useEditorStore } from '../store/useEditorStore';
 import type { DemPreview } from '../services/demPreviewService';
+import {
+  applyTerrain,
+  createTerrainTransformRequest,
+  DEFAULT_TERRAIN_EXAGGERATION,
+  isTerrainTileError,
+  terrainTileErrorStatus,
+  type DemTerrainSpec,
+} from '../map/terrainLayer';
+import { authHeaders } from '../utils/apiClient';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -329,6 +339,10 @@ interface EditorMapProps {
   showTiffBounds: boolean;
   /** 双击 DEM 后的栅格预览（灰度高程 + 红色 nodata）；null / 不传 = 不显示 */
   demPreview?: DemPreview | null;
+  /** DEM 三维地形；null / 不传 = 不开。开关、切片进度与轮询都在页面层，这里只负责挂到地图上 */
+  terrain?: DemTerrainSpec | null;
+  /** 垂直夸张系数（仅 terrain 有值时生效） */
+  terrainExaggeration?: number;
   /** 长江河面范围（4326，来自 river_yangtze）；没开启过图层时为 null */
   riverSurfaceData?: GeoJSON.FeatureCollection | null;
   /** 是否绘制长江河面参考图层（规则：与长江河面相交） */
@@ -397,6 +411,8 @@ function EditorMap(props: EditorMapProps) {
     tiffBoundsData,
     showTiffBounds,
     demPreview,
+    terrain = null,
+    terrainExaggeration,
     riverSurfaceData,
     showRiverSurface = false,
     resizeTrigger,
@@ -415,6 +431,19 @@ function EditorMap(props: EditorMapProps) {
   const riverSurfaceDataRef = useRef<GeoJSON.FeatureCollection | null>(riverSurfaceData ?? null);
   const demPreviewRef = useRef<DemPreview | null>(demPreview ?? null);
   demPreviewRef.current = demPreview ?? null;
+  // 地形规格与夸张系数留在 ref 里：卫星/标准底图切换会整图重建，load 回调末尾要按 ref 补回来。
+  // 用 effect 同步而不是在渲染期写 ref（后者会被 react-compiler 判成「渲染期访问 ref」）；
+  // 这个 effect 声明在地图初始化 effect 之前，同一次提交里先跑，重建时读到的就是最新值。
+  const terrainRef = useRef<{ spec: DemTerrainSpec | null; exaggeration: number }>({
+    spec: terrain,
+    exaggeration: terrainExaggeration ?? DEFAULT_TERRAIN_EXAGGERATION,
+  });
+  useEffect(() => {
+    terrainRef.current = {
+      spec: terrain ?? null,
+      exaggeration: terrainExaggeration ?? DEFAULT_TERRAIN_EXAGGERATION,
+    };
+  }, [terrain, terrainExaggeration]);
   useEffect(() => { uploadedDataRef.current = uploadedData; }, [uploadedData]);
   useEffect(() => { tiffBoundsDataRef.current = tiffBoundsData; }, [tiffBoundsData]);
   useEffect(() => { riverSurfaceDataRef.current = riverSurfaceData ?? null; }, [riverSurfaceData]);
@@ -546,7 +575,7 @@ function EditorMap(props: EditorMapProps) {
   const savedLat = useEditorStore((s) => s.mapLat);
   const savedZoom = useEditorStore((s) => s.mapZoom);
   const setMapView = useEditorStore((s) => s.setMapView);
-  const lastCenterRef = useRef({ lng: savedLng, lat: savedLat, zoom: savedZoom });
+  const lastCenterRef = useRef({ lng: savedLng, lat: savedLat, zoom: savedZoom, pitch: 0, bearing: 0 });
   useEffect(() => {
     configRef.current = { interval: globalInterval, length: globalLength };
   }, [globalInterval, globalLength]);
@@ -639,6 +668,33 @@ function EditorMap(props: EditorMapProps) {
       map.off('idle', apply);
     };
   }, [demPreview]);
+
+  // DEM 三维地形：开关 / 夸张系数 / 换 DEM 任一变化都重跑。
+  // 同上不能在 style 未就绪时早退：`once('idle')` 补挂，并在重跑/卸载时摘掉旧的 idle 监听。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const wasOn = Boolean(map.getTerrain());
+    const apply = () => {
+      const { spec, exaggeration } = terrainRef.current;
+      applyTerrain(map, spec, exaggeration, {
+        // 阴影层压在灰度预览之上（灰度图有 0.9 不透明度，放它下面等于没画）、业务图层之下
+        beforeLayers: ['river-surface-fill'],
+        // 从关到开的那一下才抬视角；拖滑块、重建地图都不抢用户的视角
+        ensurePitch: Boolean(spec) && !wasOn,
+      });
+    };
+
+    if (map.isStyleLoaded()) {
+      apply();
+      return undefined;
+    }
+    map.once('idle', apply);
+    return () => {
+      map.off('idle', apply);
+    };
+  }, [terrain, terrainExaggeration]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -905,6 +961,11 @@ function EditorMap(props: EditorMapProps) {
       style: mapStyle,
       center: [lastCenterRef.current.lng, lastCenterRef.current.lat],
       zoom: lastCenterRef.current.zoom,
+      pitch: lastCenterRef.current.pitch,
+      bearing: lastCenterRef.current.bearing,
+      // Mapbox 取瓦片走自己的 `new Request(...)`，`utils/apiClient` 的全局拦截器命中不到；
+      // 这里给地形瓦片补上 Authorization，其余请求原样放行
+      transformRequest: createTerrainTransformRequest(authHeaders),
     });
 
     mapRef.current = map;
@@ -912,6 +973,21 @@ function EditorMap(props: EditorMapProps) {
     // 失败就 gl.clear() 清屏，表现为「底图闪一下、岸线断面一起全白」。
     disableMapboxAuthCheck(map);
     map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+    // 中键拖动改视角：Mapbox 自带的 dragRotate 只认右键，且是「绕屏幕中心转地球」，
+    // 想单独调俯仰时手会画弧。这里补一套三维软件惯用的中键轨道（上下俯仰 / 左右转方位）。
+    const detachMiddleDragTilt = attachMiddleDragTilt(map);
+
+    // 地形瓦片的失败单独看：走廊以外没有瓦片，404 是预期内的；但 401/403 说明 token 没带上
+    // 或 DEM 不归当前用户，地图只会「悄悄变平」，不打出来的话根本无从排查。
+    let terrainAuthWarned = false;
+    map.on('error', (ev) => {
+      if (!isTerrainTileError(ev)) return;
+      const status = terrainTileErrorStatus(ev);
+      if (status !== 401 && status !== 403) return;
+      if (terrainAuthWarned) return;
+      terrainAuthWarned = true;
+      console.warn(`[三维地形] 瓦片请求被拒绝（HTTP ${status}）：检查登录态，以及这份 DEM 是否归当前用户`);
+    });
 
     // 样式加载失败时 mapbox 只抛一个笼统的 'error'，随后 `load` 永不触发：
     // 所有 addLayer 都不执行 ⇒ 岸线、断面、框选层统统不存在，地图纯白，
@@ -2238,13 +2314,31 @@ function EditorMap(props: EditorMapProps) {
       if (demPreviewRef.current) {
         applyDemPreviewLayer(map, demPreviewRef.current);
       }
+
+      // 三维地形同理：源与地形都随旧地图销毁，这里按 ref 补回来。
+      // 必须排在 DEM 预览之后 —— 阴影层要插在 dem-preview-layer 之上，那一层此刻才存在。
+      const { spec: terrainSpec, exaggeration } = terrainRef.current;
+      if (terrainSpec) {
+        applyTerrain(map, terrainSpec, exaggeration, {
+          beforeLayers: ['river-surface-fill'],
+        });
+      }
     });
 
     return () => {
+      // 俯仰与方位也带走：切底图是整图重建，只还中心和缩放的话，正在看的三维地形一切底图就摊平。
+      // 只存在内存里 —— 刷新页面后仍按俯视起（与持久化的 lng/lat/zoom 行为区分开）。
       const c = map.getCenter();
-      lastCenterRef.current = { lng: c.lng, lat: c.lat, zoom: map.getZoom() };
+      lastCenterRef.current = {
+        lng: c.lng,
+        lat: c.lat,
+        zoom: map.getZoom(),
+        pitch: map.getPitch(),
+        bearing: map.getBearing(),
+      };
       map.remove();
       mapRef.current = null;
+      detachMiddleDragTilt();
     };
   }, [mapStyle]);
 
