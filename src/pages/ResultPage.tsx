@@ -11,8 +11,8 @@ import ResizeHandle from '../components/ResizeHandle';
 import WorkspacePanel from '../components/WorkspacePanel';
 import type { ReportTab } from '../components/WorkspacePanel';
 import VerticalResizeHandle from '../components/VerticalResizeHandle';
-import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search, Waves, Play, Pause, ScanSearch, SquareDashed } from 'lucide-react';
-import { Modal } from 'antd';
+import { Box, FileText, List, BarChart3, MessageCircle, Globe, Download, Search, Waves, Play, Pause, ScanSearch, SquareDashed, Mountain } from 'lucide-react';
+import { Modal, Segmented, Slider } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { cancelTask } from '../services/taskRunControl';
 import { setSectionManualInvalid } from '../services/sectionInvalidApi';
@@ -81,6 +81,27 @@ import {
   type FlowFieldScene,
 } from '../services/flowFieldApi';
 import { demBoundsOf, fetchTiffBounds } from '../services/tiffService';
+import { pickTaskDemId } from '../services/demTerrainService';
+import {
+  DEM_RAMP_OPTIONS,
+  demLegendGradient,
+  fetchDemPreview,
+  formatDemMeters,
+  releaseDemPreview,
+  type DemPreview,
+  type DemRamp,
+} from '../services/demPreviewService';
+import { applyDemPreviewLayer, DEM_PREVIEW_LAYER } from '../map/demPreviewLayer';
+import {
+  applyTerrain,
+  createTerrainTransformRequest,
+  TERRAIN_ENTER_PITCH,
+  TERRAIN_HILLSHADE_LAYER,
+  TERRAIN_SOURCE,
+} from '../map/terrainLayer';
+import { attachMiddleDragTilt } from '../map/middleDragTilt';
+import { useDemTerrain } from '../hooks/useDemTerrain';
+import { authHeaders } from '../utils/apiClient';
 import {
   formatCellValue,
   formatIndicatorResult,
@@ -515,6 +536,18 @@ function pushBankEditDraft(map: mapboxgl.Map, coords: BankCoord[]) {
  */
 const NO_DATA_BAND_WIDTH_SCALE = 0.75;
 
+/**
+ * 打开三维地形时允许的最低比例尺。
+ *
+ * <p>Mapbox 的 terrain mosaic 用的瓦片层级是 `map zoom N → z(N-2)`：zoom 9 拿的是 z7（每像素
+ * 约 1.2 km），几米到几十米的河床起伏在那一层早已被平均掉，再怎么夸张也是一块斜着的平板。
+ * 实测 zoom 12（→ z10）起岸坡才有可读的明暗过渡，与编辑器里的观感一致。
+ *
+ * <p>注意这个值只用来「兜底」：高于它的视野一律不动 —— 用户可能正对着某段岸线看细节，
+ * 打开三维不该把视野搬走。
+ */
+const TERRAIN_MIN_ZOOM = 12;
+
 interface ResultPageProps {
   initialTaskId?: string;
 }
@@ -637,6 +670,38 @@ function ResultPage(props: ResultPageProps) {
   // 窄屏自动收起 AI 面板（见 useAutoCollapseOnNarrow 注释：固定双栏会压死地图）
   useAutoCollapseOnNarrow(setChatCollapsed);
   const [satellite, setSatellite] = useState<boolean>(false);
+
+  // —— DEM 三维地形
+  // 与编辑器共用 `useDemTerrain`（开关 / 切片轮询 / 状态文案），只有数据源不同：
+  // 这里跟「当前选中任务的 DEM」走，而任务 → DEM 要经断面档案的 `dem_id` 转一道，
+  // 所以先用 `terrainDemKey` 把任务解析成 DEM，再交给 hook（follow=true：切任务时接着展示新 DEM）。
+  /** 当前任务解析出来的 DEM（tiff_key）；null = 还没解析出来或这个任务没有 DEM */
+  const [terrainDemKey, setTerrainDemKey] = useState<string | null>(null);
+  /** 解析是否已经跑过一轮：用来区分「还在找」和「这个任务确实没有 DEM」 */
+  const [terrainDemSettled, setTerrainDemSettled] = useState<boolean>(false);
+  /** `terrainDemKey` 是给哪个任务算的：三维关着的时候换过任务，再打开不能先挂上一份 DEM */
+  const terrainDemTaskRef = useRef<string | null>(null);
+  const terrain = useDemTerrain({ tiffKey: terrainDemKey, follow: true });
+  // 底图切换（setStyle）后要按「当前该挂什么」把地形补回来，而那个 effect 只依赖 satellite：
+  // 用 ref 把最新值递进去，避免把 spec 放进依赖（否则每次切片状态变化都会重建整个底图）
+  const terrainSpecRef = useRef(terrain.spec);
+  terrainSpecRef.current = terrain.spec;
+  const terrainExaggerationRef = useRef(terrain.exaggeration);
+  terrainExaggerationRef.current = terrain.exaggeration;
+
+  // —— 三维地形表面的 DEM 栅格（灰度高程 / 分层设色）
+  // `raster-dem` + `hillshade` 只给起伏和光照，**表面颜色来自压在下面的一层栅格**。
+  // 编辑器里立体感强，一半功劳是这层灰度图被地形拉伸后产生的明暗；结果页只挂 hillshade
+  // 时表面是浅色底图，阴影没东西可压，看着就只是一张「有点灰的平板」。所以这里补上同一层，
+  // 并把编辑器的配色切换也搬过来（同一个 `fetchDemPreview`，同一套 `applyDemPreviewLayer`）。
+  const [terrainRamp, setTerrainRamp] = useState<DemRamp>('gray');
+  const [terrainPreview, setTerrainPreview] = useState<DemPreview | null>(null);
+  const [terrainPreviewError, setTerrainPreviewError] = useState<string | null>(null);
+  /** 底图切换（setStyle）会连预览层一起清掉，补层时要有「当前该铺哪张图」 */
+  const terrainPreviewRef = useRef<DemPreview | null>(null);
+  terrainPreviewRef.current = terrainPreview;
+
+
   // —— 流场（水动力粒子图层）
   // 素材只在模型服务里，经 Java 后端 /v0/bank/flow-field/** 代理转发；见 topics/flow-field.md。
   const flowLayerRef = useRef<FlowFieldLayer | null>(null);
@@ -2175,8 +2240,17 @@ function ResultPage(props: ResultPageProps) {
     return { sectionId, riskLevel, status, message, raw: r };
   };
 
+  /**
+   * 任务是否已经收尾。
+   *
+   * <p>`running` 必须**优先**：重跑一个已完成的任务时，后端会先清结果、再把状态改成
+   * running，`run_completed_at` 在那一瞬间还挂着上一次的值。只看时间戳就会在开跑的
+   * 第一秒宣布"已完成"，随后 `stopPolling()` 把轮询一起停掉 —— 表现就是
+   * 「刚跳到任务列表，任务就显示算完了，色带也不再一段段变」。
+   */
   const isTaskCompleted = (taskInfo: any) => {
     const st = String(taskInfo?.status ?? '').toLowerCase();
+    if (st === 'running') return false;
     if (st === 'completed' || st === 'success' || st === 'done') return true;
     if (taskInfo?.run_completed_at) return true;
     if (taskInfo?.runCompletedAt) return true;
@@ -2395,7 +2469,18 @@ function ResultPage(props: ResultPageProps) {
       applyShorelineGradient(sectionsWithIndicatorResult);
     }
 
-    const shouldStop = completed || (expectedTotal > 0 && processedCount >= expectedTotal);
+    // 轮询什么时候停：**只认后端的终态**。
+    // 以前还有一条「已处理数 >= 断面总数就停」，那是"结果都回来了"而不是"任务跑完了"：
+    // 状态可能还是 running（后端在写终态、或者这一批里有的断面失败但结果行还没落），
+    // 提前停跟会让进度条和地图定格在半路，看着像任务被掐断。没拿到状态时才退回数量判据。
+    const rawStatus = String(taskInfo?.status ?? '').trim().toLowerCase();
+    const terminalStatus = [
+      'completed', 'success', 'done', 'finished',
+      'failed', 'error', 'failure', 'partial_failed',
+      'cancelled', 'canceled', 'terminated', 'stopped',
+    ].includes(rawStatus);
+    const allProcessed = expectedTotal > 0 && processedCount >= expectedTotal;
+    const shouldStop = terminalStatus || (!rawStatus && allProcessed);
     if (shouldStop) {
       stopPolling();
     }
@@ -3917,6 +4002,22 @@ function ResultPage(props: ResultPageProps) {
     // 避免 addLayer → styledata → 再 addLayer 的死循环。
     const rehydrate = () => {
       try {
+        // 三维地形也要补：setStyle 一并丢掉 raster-dem 源与山体阴影层。
+        // 只在「源确实没了」时补，避免 styledata 连续触发时反复 setTerrain 造成闪动。
+        const terrainSpec = terrainSpecRef.current;
+        if (terrainSpec && !map.getSource(TERRAIN_SOURCE)) {
+          applyTerrain(map, terrainSpec, terrainExaggerationRef.current, {
+            beforeLayers: ['uploaded-lines-base'],
+          });
+        }
+        // 表面栅格同样被 setStyle 清掉了，按 ref 补回来（必须在 hillshade 建好之后补，
+        // 否则它会落到阴影上面把明暗盖平）：换底图不该让三维变回一张灰平板。
+        const preview = terrainPreviewRef.current;
+        if (preview && !map.getLayer(DEM_PREVIEW_LAYER)) {
+          applyDemPreviewLayer(map, preview, {
+            beforeLayers: [TERRAIN_HILLSHADE_LAYER, 'uploaded-lines-base'],
+          });
+        }
         const taskId = selectedTaskRef.current;
         if (!taskId) return;
         if (map.getLayer('sections-line-hit')) return;
@@ -3943,11 +4044,17 @@ function ResultPage(props: ResultPageProps) {
       style: getBasemapStyle('standard'),
       center: [119.89600633, 32.22907004],
       zoom: 7,
+      // 三维地形的瓦片走 Mapbox 自己的 `new Request(...)`，`utils/apiClient` 的全局拦截器
+      // 命中不到 ⇒ 不补 Authorization 的话地形瓦片全是 401，地图只会「悄悄变平」。
+      transformRequest: createTerrainTransformRequest(authHeaders),
     });
 
     mapRef.current = map;
     // 同 EditorMap：mapbox 在首帧后自检 token，失败会清空画布 ⇒ 结果页也会「闪一下变全白」。
     disableMapboxAuthCheck(map);
+    // 中键轨道与三维地形一起提供：上下拖改俯仰、左右转方位（Mapbox 自带 dragRotate 只认右键）
+    const detachMiddleDragTilt = attachMiddleDragTilt(map);
+
     // 开发期把地图挂到 window：结果页的图层（断面 / 色带 / 框选高亮）全在 canvas 上，
     // DOM 里查不到，真机脚本（CDP）只能靠它读 `getSource()._data` / `getStyle().layers`
     // 来区分「没画」和「画了但被压住」。生产构建不会带上（`import.meta.env.DEV` 为 false 时被裁掉）。
@@ -3970,6 +4077,7 @@ function ResultPage(props: ResultPageProps) {
     map.on('style.load', initLayers);
 
     return () => {
+      detachMiddleDragTilt();
       map.remove();
       mapRef.current = null;
     };
@@ -3980,6 +4088,122 @@ function ResultPage(props: ResultPageProps) {
     if (!map) return;
     requestAnimationFrame(() => map.resize());
   }, [resizeTrigger]);
+
+  // ——— 三维地形：挂 / 摘 / 改夸张 ———
+  // 与编辑器共用 `applyTerrain`（同一个源名、同一套光照与山体阴影），这里只决定插入位置与视角策略。
+  // 不能在 style 未就绪时早退：值不再变化 effect 不会重跑，图层会永久缺失；`once('idle')` 补挂。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      applyTerrain(map, terrain.spec, terrain.exaggeration, {
+        // 山体阴影压在业务折线之下，岸段色带与断面线要读得清
+        beforeLayers: ['uploaded-lines-base'],
+        // 视角统一交给下面那个 effect：这里再 easeTo 一次会和「推比例尺」抢同一个过渡，
+        // 后发的那次以当前（还是平的）俯仰为起点，等于把抬视角取消掉（实测踩过）。
+        ensurePitch: false,
+      });
+    };
+    if (map.isStyleLoaded()) {
+      apply();
+      return undefined;
+    }
+    map.once('idle', apply);
+    return () => {
+      map.off('idle', apply);
+    };
+  }, [terrain.spec, terrain.exaggeration, terrain.on, mapReady]);
+
+  // 地形一就绪：抬俯仰，并（只在比例尺太小时）轻推一档。**两者必须同一次 easeTo**。
+  //   * 编辑器的三维是「双击 DEM 预览之后才开」，视野本来就在 DEM 上，所以它只抬俯仰；
+  //   * 结果页点三维时地图通常已在任务区域（handleTaskClick 飞过），此时若 fitBounds 到整片 DEM
+  //     反而是副作用：大区 DEM 有 312 × 96 km，fit 完 zoom≈7，几米级河床起伏一像素都不到，
+  //     看着就像「点了没反应」。实测就是这个坑，所以只兜「缩得太远」一种情况。
+  //   * 分两次 easeTo（一次抬俯仰、一次推缩放）后发的那次会以当时还是平的俯仰为起点，
+  //     把抬视角整个取消掉 —— 所以合成一次。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !terrain.spec) return;
+    map.easeTo({
+      pitch: Math.max(map.getPitch(), TERRAIN_ENTER_PITCH),
+      zoom: Math.max(map.getZoom(), TERRAIN_MIN_ZOOM),
+      duration: 900,
+    });
+    // spec 每次渲染都是新对象，按「哪份 DEM」触发：同一份不重复动镜头，换了才动
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terrain.spec?.fingerprint]);
+
+  // ——— 三维地形的表面栅格（灰度 / 分层设色）———
+  // 取图走编辑器的同一个接口（`fetchDemPreview` 自带 `cache:'no-store'`），换配色只换图不重建地形，
+  // 所以切换配色时视角、夸张系数都不会被打断。
+  useEffect(() => {
+    if (!terrain.on || !terrainDemKey) {
+      const previous = terrainPreviewRef.current;
+      terrainPreviewRef.current = null;
+      setTerrainPreview(null);
+      setTerrainPreviewError(null);
+      releaseDemPreview(previous);
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setTerrainPreviewError(null);
+    void fetchDemPreview(terrainDemKey, { ramp: terrainRamp, signal: controller.signal })
+      .then((preview) => {
+        // 已经被新请求取代（换任务 / 换配色 / 关开关）：这张图的 blob 直接释放，不铺上地图
+        if (cancelled) {
+          releaseDemPreview(preview);
+          return;
+        }
+        const previous = terrainPreviewRef.current;
+        terrainPreviewRef.current = preview;
+        setTerrainPreview(preview);
+        // 旧图的 blob 在图层换图之后才释放：先释放会让正在显示的那张短暂变空
+        releaseDemPreview(previous);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setTerrainPreviewError(error instanceof Error ? error.message : 'DEM 配色图加载失败');
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [terrain.on, terrainDemKey, terrainRamp]);
+
+  // 卸载时释放最后一张图（blob 不释放就一直占内存）
+  useEffect(() => () => releaseDemPreview(terrainPreviewRef.current), []);
+
+  // 把栅格铺到地图上。插入位置两条硬约束：
+  //   * 在 `dem-hillshade` **之下** —— 阴影要压着它，明暗才读得出来；
+  //   * 在业务折线 / 岸段色带 **之下** —— 它只是底料，盖上去会把要素糊掉。
+  // 同地形那套模板：样式没就绪不能早退（值不再变化 effect 不重跑 ⇒ 图层永久缺失），用 `once('idle')` 补。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () =>
+      applyDemPreviewLayer(map, terrainPreview, {
+        beforeLayers: [TERRAIN_HILLSHADE_LAYER, 'uploaded-lines-base'],
+      });
+    if (map.isStyleLoaded()) {
+      apply();
+      return undefined;
+    }
+    map.once('idle', apply);
+    return () => {
+      map.off('idle', apply);
+    };
+  }, [terrainPreview, mapReady]);
+
+  // 关掉三维：把视角放平。编辑器不用管（它的 DEM 预览还在，留着俯仰也能看），
+  // 这里地形一撤，歪着的二维底图看着就像坏了。
+  useEffect(() => {
+    if (terrain.on) return;
+    const map = mapRef.current;
+    if (!map) return;
+    if (map.getPitch() < 1 && Math.abs(map.getBearing()) < 1) return;
+    map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+  }, [terrain.on]);
 
   // —— 流场：第一次打开流场时才拉清单，避免页面加载就多打两个请求。
   // 两条清单各来自一处：
@@ -4191,6 +4415,55 @@ function ResultPage(props: ResultPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowEnabled, flowScenes, selectedTask]);
 
+  /**
+   * 三维地形：把「当前选中任务」解析成「它用的 DEM」。
+   *
+   * <p>任务本身不直接存 DEM，得走断面档案（`section_profiles.dem_id`，值与 `tiff_key` 同形）。
+   * 只在三维开着时才解析 —— 关着的时候多打一个请求没有意义。
+   *
+   * <p>切换任务时这里会重新解析并把结果写进 `terrainDemKey`，hook 以 `follow=true` 接住：
+   * 自动为新的 DEM 重新切片、重新挂地形，用户不需要再点一次按钮。
+   */
+  useEffect(() => {
+    if (!terrain.on) {
+      // 关掉之后不清 key：下次点开能立刻复用上一次的解析结果（只有换任务才会变）
+      setTerrainDemSettled(false);
+      return;
+    }
+    const taskId = selectedTask;
+    if (!taskId) {
+      setTerrainDemKey(null);
+      setTerrainDemSettled(true);
+      return;
+    }
+    // 关着三维的时候换过任务：手里的 key 属于上一个任务，先清掉，
+    // 否则打开的一瞬间会按旧 DEM 发一次 build 请求、闪一下旧区域
+    if (terrainDemTaskRef.current !== taskId) setTerrainDemKey(null);
+    let cancelled = false;
+    setTerrainDemSettled(false);
+    void (async () => {
+      try {
+        const profiles = await ensureTaskProfilesLoaded(taskId);
+        if (cancelled) return;
+        terrainDemTaskRef.current = taskId;
+        setTerrainDemKey(pickTaskDemId(profiles));
+      } catch {
+        // 任务还没跑出断面档案时拿不到 dem_id —— 面板上会显示「没有关联 DEM」，不弹错误
+        if (!cancelled) {
+          terrainDemTaskRef.current = taskId;
+          setTerrainDemKey(null);
+        }
+      } finally {
+        if (!cancelled) setTerrainDemSettled(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // ensureTaskProfilesLoaded 进依赖会每渲染重跑（每次都是新引用）；它内部自带缓存，稳定
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terrain.on, selectedTask]);
+
   /** 工况按流量档分组，51 条平铺在一个下拉里太糊。 */
   const flowCaseGroups = useMemo(() => {
     const groups = new Map<string, FlowFieldCase[]>();
@@ -4244,6 +4517,22 @@ function ResultPage(props: ResultPageProps) {
     display: 'flex', alignItems: 'center', gap: 4,
     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
   };
+
+  // 浮层面板（流场 / 三维）共用同一张卡片：位置只差 top
+  const MAP_OVERLAY_CARD_STYLE: React.CSSProperties = {
+    position: 'absolute', right: 12, zIndex: 10, width: 248,
+    background: 'rgba(255,255,255,0.84)',
+    backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+    border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14,
+    padding: '10px 12px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+    display: 'flex', flexDirection: 'column', gap: 8,
+    fontSize: '0.78rem', color: '#334155',
+  };
+  // 竖向排布：卫星 12 / AI 50 / 流场 88 / 三维 126（每档 38px），面板紧接按钮列下方
+  const OVERLAY_BTN_TOPS = { satellite: 12, chat: 50, flow: 88, terrain: 126 } as const;
+  // 三维面板里多了「表面高程 + 图例条 + 灰度/分层设色」三行（与编辑器一致），实测约 222px 高，
+  // 流场卡片要再往下让一档，否则两张卡片会叠在一起
+  const OVERLAY_CARD_TOPS = { terrain: 164, flow: 398 } as const;
 
   // ——— 终止当前选中的运行中任务 ———
   // 与资源树 / 侧栏下半区共用同一个接口。三段式：确认 → 调接口 → 就地刷新进度。
@@ -4351,8 +4640,35 @@ function ResultPage(props: ResultPageProps) {
                 </button>
               </div>
 
-              {taskSearchQuery.trim() && !loading && (
-                <div className="task-search-hint">
+              {/**
+               * 运行中的任务条：任务列表是「看过程」的入口之一，不能只有一张静态卡片。
+               * 点开一个还在算的任务时，这里给出实时计数与终止入口，地图上的色带
+               * 同时随结果逐段刷新（`updateProgressAndMap` 的轮询驱动）。没有这一条，
+               * 用户点进来只会看到上一次的颜色，误以为任务已经结束。
+               */}
+              {selectedTask && String(progress?.status ?? '').toLowerCase() === 'running' && (
+                <div className="task-run-strip" data-tour="task-run-strip">
+                  <span className="task-run-strip-dot" aria-hidden />
+                  <div className="task-run-strip-text">
+                    <strong>正在计算</strong>
+                    <span>
+                      {progress?.processedCount ?? 0}/{progress?.expectedTotal ?? 0} 断面 · 成功 {progress?.successCount ?? 0}
+                      {progress && progress.errorCount > 0 ? ` · 失败 ${progress.errorCount}` : ''}
+                      {' · 岸段随结果逐段上色'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="task-run-strip-stop"
+                    onClick={() => { void handleStopRunningTask(); }}
+                    disabled={cancelling}
+                  >
+                    {cancelling ? '终止中…' : '终止'}
+                  </button>
+                </div>
+              )}
+
+              {taskSearchQuery.trim() && !loading && (                <div className="task-search-hint">
                   找到 <b>{filteredTasks.length}</b> 条 / 共 {taskList.length} 条
                   <button
                     className="task-search-hint-reset"
@@ -4947,14 +5263,14 @@ function ResultPage(props: ResultPageProps) {
         <button
           onClick={() => setSatellite(!satellite)}
           title={satellite ? '平面地图' : '卫星影像'}
-          style={{ ...MAP_OVERLAY_BTN_STYLE, top: 12 }}
+          style={{ ...MAP_OVERLAY_BTN_STYLE, top: OVERLAY_BTN_TOPS.satellite }}
         >
           <Globe size={14} /> {satellite ? '平面' : '卫星'}
         </button>
         <button
           onClick={() => { setChatCollapsed(!chatCollapsed); setTimeout(() => setResizeTrigger(t => t + 1), 350); }}
           title={chatCollapsed ? '展开聊天' : '收起聊天'}
-          style={{ ...MAP_OVERLAY_BTN_STYLE, top: 50 }}
+          style={{ ...MAP_OVERLAY_BTN_STYLE, top: OVERLAY_BTN_TOPS.chat }}
         >
           <MessageCircle size={14} />
           {chatCollapsed ? 'AI' : '收起'}
@@ -4965,7 +5281,7 @@ function ResultPage(props: ResultPageProps) {
           title={flowEnabled ? '关闭流场' : '显示流场（水动力粒子）'}
           style={{
             ...MAP_OVERLAY_BTN_STYLE,
-            top: 88,
+            top: OVERLAY_BTN_TOPS.flow,
             ...(flowEnabled
               ? { background: 'rgba(14,165,233,0.92)', color: '#ffffff', borderColor: 'rgba(14,165,233,0.65)' }
               : null),
@@ -4974,16 +5290,130 @@ function ResultPage(props: ResultPageProps) {
           <Waves size={14} /> 流场
         </button>
 
+        {/* —— 三维地形：接在流场之后。数据源是「当前选中任务的 DEM」（经 section_profiles.dem_id
+            解析），渲染与交互完全复用编辑器那一套：raster-dem + setTerrain + 山体阴影、
+            默认 4 倍夸张、中键拖动改俯仰/方位。 */}
+        <button
+          onClick={() => terrain.toggle(!terrain.on)}
+          title={terrain.on ? '关闭三维地形' : '以三维地形显示该任务的 DEM'}
+          style={{
+            ...MAP_OVERLAY_BTN_STYLE,
+            top: OVERLAY_BTN_TOPS.terrain,
+            ...(terrain.on
+              ? { background: 'rgba(37,99,235,0.92)', color: '#ffffff', borderColor: 'rgba(37,99,235,0.65)' }
+              : null),
+          }}
+        >
+          <Mountain size={14} /> 三维
+        </button>
+
+        {terrain.on && (
+          <div style={{ ...MAP_OVERLAY_CARD_STYLE, top: OVERLAY_CARD_TOPS.terrain }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: 600, color: '#0f172a' }}>三维地形</span>
+              <span style={{ color: terrain.view?.failed ? '#b91c1c' : '#64748b' }}>
+                {/* 没有 DEM 时别报「生成中…」—— 那个分支下面会明说「该任务没有关联的 DEM」 */}
+                {!terrainDemSettled || !terrainDemKey
+                  ? ''
+                  : terrain.view?.ready
+                    ? '已就绪'
+                    : terrain.view?.busy
+                      ? '生成中…'
+                      : ''}
+              </span>
+            </div>
+
+            {!terrainDemSettled ? (
+              <div style={{ color: '#64748b' }}>正在定位该任务的 DEM…</div>
+            ) : !terrainDemKey ? (
+              <div style={{ color: '#b45309', lineHeight: 1.5 }}>
+                该任务没有关联的 DEM（断面档案里没有 dem_id）—— 跑完至少一条断面后再试
+              </div>
+            ) : (
+              <>
+                {terrain.view?.label && (
+                  <div style={{ color: terrain.view.failed ? '#b91c1c' : '#64748b', lineHeight: 1.5 }}>
+                    {terrain.view.label}
+                    {terrain.view.failed && (
+                      <button
+                        type="button"
+                        onClick={() => terrain.restart()}
+                        style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: 11 }}
+                      >
+                        重试
+                      </button>
+                    )}
+                  </div>
+                )}
+                {/* 表面配色：黑白（灰度高程）/ 彩色（分层设色）。与编辑器同一组按钮、同一套图例，
+                    切换只换「被地形拉伸的那张表面图」，不动地形源、不动视角与夸张系数。 */}
+                <div>
+                  {terrainPreview && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569', marginBottom: 4 }}>
+                        <span>表面高程</span>
+                        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {formatDemMeters(terrainPreview.meta.min)} ~ {formatDemMeters(terrainPreview.meta.max)}
+                        </span>
+                      </div>
+                      <div
+                        data-testid="terrain-ramp-bar"
+                        style={{
+                          height: 8,
+                          borderRadius: 4,
+                          border: '1px solid rgba(0,0,0,0.08)',
+                          marginBottom: 6,
+                          // 渐变按服务端回显的断点画：图例与真正渲染的那张表面图必然一致
+                          background: demLegendGradient(terrainPreview.meta),
+                        }}
+                      />
+                    </>
+                  )}
+                  <Segmented
+                    size="small"
+                    block
+                    aria-label="DEM 配色"
+                    options={DEM_RAMP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                    // 选中态跟本地意图走：换色要等一次现场渲染（1–2 s），等回显再更新会让按钮先"弹回去"
+                    value={terrainRamp}
+                    onChange={(value) => setTerrainRamp(value as DemRamp)}
+                  />
+                  {terrainPreviewError && (
+                    <div style={{ marginTop: 4, color: '#b91c1c', lineHeight: 1.5 }}>{terrainPreviewError}</div>
+                  )}
+                </div>
+                {terrain.spec && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569', marginBottom: 2 }}>
+                      <span>垂直夸张</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{terrain.exaggeration.toFixed(1)}×</span>
+                    </div>
+                    <Slider
+                      aria-label="垂直夸张"
+                      min={0.5}
+                      max={10}
+                      step={0.5}
+                      value={terrain.exaggeration}
+                      onChange={(v) => terrain.setExaggeration(v)}
+                      tooltip={{ placement: 'bottom' }}
+                      styles={{ root: { margin: '4px 0' } }}
+                    />
+                  </div>
+                )}
+                <div style={{ color: '#94a3b8', lineHeight: 1.5 }}>
+                  按住<strong style={{ color: '#64748b' }}>鼠标中键</strong>拖动：上下改俯仰、左右转方位
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {flowEnabled && (
           <div
             style={{
-              position: 'absolute', right: 12, top: 126, zIndex: 10, width: 248,
-              background: 'rgba(255,255,255,0.84)',
-              backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-              border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14,
-              padding: '10px 12px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
-              display: 'flex', flexDirection: 'column', gap: 8,
-              fontSize: '0.78rem', color: '#334155',
+              ...MAP_OVERLAY_CARD_STYLE,
+              // 三维面板展开时整体下移，两张卡片不叠在一起
+              top: terrain.on ? OVERLAY_CARD_TOPS.flow : OVERLAY_CARD_TOPS.terrain,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

@@ -4,6 +4,7 @@ import { HelpCircle, Menu, Settings } from 'lucide-react';
 import { Button, Space, Dropdown } from 'antd';
 import { UserOutlined, LogoutOutlined, LoginOutlined, SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, HistoryOutlined, TeamOutlined, HomeOutlined } from '@ant-design/icons';
 import EditorPage from './pages/EditorPage';
+import AiWorkspacePage from './pages/AiWorkspacePage';
 import ResultPage from './pages/ResultPage';
 import KnowledgePage from './pages/KnowledgePage';
 import LoginPage from './pages/LoginPage';
@@ -14,6 +15,7 @@ import RegisterPage from './pages/RegisterPage';
 import AdminUserPage from './pages/AdminUserPage';
 import SkillApprovalsPage from './pages/SkillApprovalsPage';
 import GlobalSearchBar from './components/GlobalSearchBar';
+import { getCurrentTaskId } from './pages/editor/taskState';
 import SkillSecurityPage from './pages/SkillSecurityPage';
 import SkillVersionsPage from './pages/SkillVersionsPage';
 
@@ -53,6 +55,13 @@ const ACTIVITY_ICONS: Record<string, string> = {
   skills: 'M7.5 4.27l9 5.15 M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z M3.3 7l8.7 5 8.7-5 M12 22V12',
   progress: 'M3 3v18h18 M18 17V9 M13 17V5 M8 17v-3',
   knowledge: 'M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20',
+  // AI 助手用「机器人头」而不是星芒（Sparkles）：
+  // 这一排全是块面状闭合轮廓（铅笔/列表/文件/立方体/书本），笔触在 2px 下均匀厚重；
+  // 而单颗四角星中心内凹只剩 ~4px、尖角又顶到视口边缘，18px 下会显得又细又锐，
+  // 摆在一起像另一个图标集里借来的。用 rect+r 圆角的机器人头，笔触语言与其余保持一致。
+  // AI 页左栏的标题行（`AiWorkspacePage`）用的是同一个 lucide `Bot`（14px 线性），
+  // 两处同形 —— 条带上认出是它，点进去标题还是它。
+  ai: 'M12 8V4H8 M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z M2 14h2 M20 14h2 M9 13v2 M15 13v2',
 };
 
 type ActivityVariant = 'home' | 'work';
@@ -74,16 +83,21 @@ function ActivityBar({
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const path = location.pathname;
-  const panel = searchParams.get('panel') || 'tasks';
   const isHome = path.startsWith('/home');
-  const isEditor = path.startsWith('/editor');
+  // `/editor/ai` 是独立整页，不是编辑器的一种状态：否则条带上「断面编辑器」和「AI 助手」
+  // 会同时高亮，用户判断不出自己在哪一层。
+  const isAiWorkspace = path === '/editor/ai' || path.startsWith('/editor/ai/');
+  const isEditor = path.startsWith('/editor') && !isAiWorkspace;
   const isResult = path.startsWith('/result');
+  const isResultPanel = (key: string) => isResult && (searchParams.get('panel') || 'tasks') === key;
   // 编辑器左栏放资源还是知识库 —— 唯一真源是 URL 的 `?left=knowledge`，不进 store。
   // 存 store 会活得比 EditorPage 久：点过知识库 → 去任务列表 → 回编辑器，左栏还停在知识库。
   const editorOnKnowledge = isEditor && searchParams.get('left') === 'knowledge';
 
   // 工作区（编辑器 / 结果 / 知识库）恢复原来的窄图标条：条目与顺序保持基线一致，
   // 只有 title 提示，不显示文字标签，也不再挂设置与账户（这两项工作区走顶部导航的用户菜单）。
+  // 注意：这里**没有**「计算进度」—— 进度已经就地显示在编辑器「执行风险分析」按钮下方，
+  // 单独开一页看进度既要多跳一次、又和任务列表重复；要看结论请走「任务列表」。
   if (variant === 'work') {
     const workItems = [
       {
@@ -93,10 +107,20 @@ function ActivityBar({
         // 去掉 ?left= 即可回到资源树。已在 /editor 时只是 query 变化，不会重挂载。
         onClick: () => navigate('/editor'),
       },
-      { key: 'tasks', label: '任务列表', active: isResult && panel === 'tasks', onClick: () => navigate('/result?panel=tasks') },
-      { key: 'reports', label: '报告查看', active: isResult && panel === 'reports', onClick: () => navigate('/result?panel=reports') },
-      { key: 'skills', label: 'Skills', active: isResult && panel === 'skills', onClick: () => navigate('/result?panel=skills') },
-      { key: 'progress', label: '计算进度', active: isResult && panel === 'progress', onClick: () => navigate('/result?panel=progress') },
+      {
+        key: 'ai',
+        label: 'AI 助手',
+        active: isAiWorkspace,
+        // 带上编辑器里的当前任务作为对话上下文（`taskState` 是模块变量，读一次即可）。
+        // 没有任务时不带：页面照样能进，只是工具层没有现成任务可查。
+        onClick: () => {
+          const taskId = getCurrentTaskId();
+          navigate(`/editor/ai${taskId ? `?taskId=${encodeURIComponent(taskId)}` : ''}`);
+        },
+      },
+      { key: 'tasks', label: '任务列表', active: isResultPanel('tasks'), onClick: () => navigate('/result?panel=tasks') },
+      { key: 'reports', label: '报告查看', active: isResultPanel('reports'), onClick: () => navigate('/result?panel=reports') },
+      { key: 'skills', label: 'Skills', active: isResultPanel('skills'), onClick: () => navigate('/result?panel=skills') },
       {
         key: 'knowledge',
         label: '知识库',
@@ -402,6 +426,9 @@ function App() {
           <Route element={<AppLayout />}>
             <Route path="/home" element={<HomePage />} />
             <Route path="/editor" element={<EditorPageWrapper />} />
+            {/* AI 分析助手是**整页**而不是弹窗：左会话记录 / 右对话区，占满 app-main。
+                放在 /editor 之下，railMode 会命中 'work'，左侧图标条保持不断头。 */}
+            <Route path="/editor/ai" element={<AiWorkspacePage />} />
             <Route path="/result" element={<ResultPageWrapper />} />
             <Route path="/result/:taskId" element={<ResultPageWrapper />} />
             {/* 三条独立路径：报告中心 / 技能中心 / 知识库，各自取数、各自渲染，不经过编辑器 */}

@@ -223,6 +223,11 @@
   background: rgba(37, 99, 235, 0.16);
 }
 
+.runProgress {
+  flex-shrink: 0;
+  padding: 0 10px 8px;
+}
+
 .footer {
   border-top: 1px solid var(--tree-border);
   background: var(--tree-panel);

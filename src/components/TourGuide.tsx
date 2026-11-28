@@ -46,7 +46,7 @@ const here = () => `${window.location.pathname}${window.location.search}`;
 const ACTIVITY_BAR_STEP: TourStep = {
   title: '左侧功能栏',
   description:
-    '平台所有页面都收在这一条竖栏里：断面编辑器、任务列表、报告查看、Skills、计算进度、知识库。点图标直接切换，当前所在页面会高亮。',
+    '平台所有页面都收在这一条竖栏里：断面编辑器、AI 助手、任务列表、报告查看、Skills、知识库。点图标直接切换，当前所在页面会高亮。',
   target: () => getEl('[data-tour="activity-bar"]'),
   placement: 'right',
   route: ROUTE.editor,
@@ -76,7 +76,8 @@ const MAP_SELECT_BANK_STEP: TourStep = {
 
 const CHAT_STEP: TourStep = {
   title: 'AI 智能助手',
-  description: '右侧 AI 助手可随时回答崩岸预警相关问题，支持知识库检索和报告生成。',
+  description:
+    '两个入口：右侧窄栏适合边看地图边随口问；左侧竖栏第二枚图标是「AI 助手」整页——左列会话记录、右侧完整对话区，适合认真问一段分析。两者共用同一份会话。',
   target: () => getEl('[data-tour="chat-panel"]'),
   placement: 'left',
   route: ROUTE.editor,
@@ -124,7 +125,7 @@ const TREE_EDITOR_STEPS: TourStep[] = [
   {
     title: '当前任务与执行风险分析',
     description:
-      '面板底部常驻「执行风险分析」按钮，右侧显示当前选中的任务名；没有选任务时会提示「未选择任务」。',
+      '面板底部常驻「执行风险分析」按钮，右侧显示当前选中的任务名；没有选任务时会提示「未选择任务」。点下去不会跳走——进度就地出现在按钮下方（已处理 / 总数、成功 / 失败、用时），地图上的断面会随结果逐条变色（绿→蓝→橙→红），可随时终止；算完点卡片上的「去任务列表看结果」再去看结论。',
     target: () => getEl('[data-tour="tree-footer"]'),
     placement: 'right',
     route: ROUTE.editor,
@@ -233,14 +234,6 @@ const TAIL_STEPS: TourStep[] = [
     target: () => getEl('[data-tour="result-skills"]'),
     placement: 'right',
     route: ROUTE.result('skills'),
-  },
-  {
-    title: '计算进度',
-    description:
-      '选中任务后可查看实时进度：已处理 / 总数、成功 / 失败，以及每条断面的报错详情。',
-    target: () => getEl('[data-tour="result-progress"]'),
-    placement: 'right',
-    route: ROUTE.result('progress'),
   },
   {
     title: '知识文档',

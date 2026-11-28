@@ -138,3 +138,23 @@ export function terrainSpecOf(info: DemTerrainInfo | null | undefined): DemTerra
     bounds: [bounds.west, bounds.south, bounds.east, bounds.north],
   };
 }
+
+/**
+ * 一个任务用到的 DEM（`section_profiles.dem_id`，值与 `tiff_key` 同形）。
+ *
+ * <p>单条断面只挂一份 DEM，但一个任务可以跨多份（跨区任务）。这里取**出现次数最多**的那份：
+ * 它是这个任务的主 DEM，也正好是风险段 / 报告覆盖得最多的那一块。
+ * 并列时按 key 排序取第一个 —— 必须有个确定的次序，否则「打开三维」看到的区域会随
+ * 对象属性顺序变化而随机跳。
+ *
+ * @returns 该任务没有可用 dem_id 时返回 null
+ */
+export function pickTaskDemId(profiles: Record<string, any> | null | undefined): string | null {
+  const tally = new Map<string, number>();
+  for (const profile of Object.values(profiles ?? {})) {
+    const dem = String(profile?.dem_id ?? profile?.demId ?? '').trim();
+    if (dem) tally.set(dem, (tally.get(dem) ?? 0) + 1);
+  }
+  if (tally.size === 0) return null;
+  return [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+}

@@ -13,6 +13,7 @@ import type { SelectionGroup } from '../types/selection';
 import { getVerticalFootCoordsFromAny } from '../utils/verticalFootPoint';
 import { useEditorStore } from '../store/useEditorStore';
 import type { DemPreview } from '../services/demPreviewService';
+import { applyDemPreviewLayer } from '../map/demPreviewLayer';
 import {
   applyTerrain,
   createTerrainTransformRequest,
@@ -113,10 +114,29 @@ function buildCrossLineEndpoints(
   return turf.featureCollection(points) as GeoJSON.FeatureCollection<GeoJSON.Point>;
 }
 
-function buildValidationColorExpression() {
-  // pending/unknown => yellow, valid => green, invalid => red
+/**
+ * 断面色：**有运行结果就按风险等级上色**，没有才回落到校验色。
+ *
+ * <p>为什么两套色叠在一起：编辑期最关心「这条断面能不能算」（校验色：绿=有效、
+ * 红=无效、琥珀=待校验）；而点「执行风险分析」之后最关心「算出来的结论是什么」。
+ * 运行期间把结果颜色叠上去，用户就能看着断面一条条变成绿/蓝/橙/红 —— 这正是
+ * 之前「计算进度」整页存在时的观感，现在不需要离开编辑器。结果颜色来自
+ * `runProgressStore` 的 `levels`（显示等级 0..3，配 `RISK_COLORS` 同一套值），
+ * 没有结果的断面**不加 `riskLevel` 属性**，因此继续显示校验色。
+ */
+function buildSectionColorExpression(): ExpressionSpecification {
   return [
     'case',
+    ['has', 'riskLevel'],
+    [
+      'match',
+      ['get', 'riskLevel'],
+      0, '#10b981',
+      1, '#3b82f6',
+      2, '#f97316',
+      3, '#ef4444',
+      /* 越界值（不该出现）当成校验未知色，不要静默涂成某个等级 */ '#f59e0b',
+    ],
     ['==', ['get', 'validation_status'], 'valid'],
     '#22c55e',
     ['==', ['get', 'validation_status'], 'invalid'],
@@ -126,68 +146,11 @@ function buildValidationColorExpression() {
     ['==', ['get', 'is_valid'], false],
     '#ef4444',
     '#f59e0b',
-  ] as any;
+  ] as unknown as ExpressionSpecification;
 }
 
-// —— DEM 栅格预览层 ——
-const DEM_PREVIEW_SOURCE = 'dem-preview';
-const DEM_PREVIEW_LAYER = 'dem-preview-layer';
-
-/**
- * 把（或清掉）DEM 预览图铺到地图上。
- *
- * <p>必须压在 `river-surface-fill` 之下：它是底料而不是标注，盖在断面线与岸段色带上面
- * 会把这些要素全糊住。
- *
- * <p>source / layer 都按需创建、无数据即删，不留常驻空壳：Mapbox 的 `image` source
- * 创建时就必须拿到合法的 url 与四角坐标，空壳只能塞假数据，一旦哪条分支忘了替换，
- * 图上就会留一张错位的图。
- */
-function applyDemPreviewLayer(map: mapboxgl.Map, preview: DemPreview | null | undefined): void {
-  if (!preview) {
-    // 先删层再删 source：反过来会因「source 仍被图层引用」而抛错
-    if (map.getLayer(DEM_PREVIEW_LAYER)) map.removeLayer(DEM_PREVIEW_LAYER);
-    if (map.getSource(DEM_PREVIEW_SOURCE)) map.removeSource(DEM_PREVIEW_SOURCE);
-    return;
-  }
-
-  const ensureLayer = () => {
-    if (map.getLayer(DEM_PREVIEW_LAYER)) return;
-    // 压到第一个业务图层之下；它还没建出来（样式刚换）就退化成最上层
-    const beforeId = map.getLayer('river-surface-fill') ? 'river-surface-fill' : undefined;
-    map.addLayer(
-      {
-        id: DEM_PREVIEW_LAYER,
-        type: 'raster',
-        source: DEM_PREVIEW_SOURCE,
-        paint: {
-          // 留一点透明度：完全实心会把底图的地名压死，反而更难核对位置
-          'raster-opacity': 0.9,
-          'raster-resampling': 'linear',
-          // 关掉淡入淡出，否则连续切换两份 DEM 时会短暂看到两张图叠着
-          'raster-fade-duration': 0,
-        },
-      },
-      beforeId,
-    );
-  };
-
-  const existing = map.getSource(DEM_PREVIEW_SOURCE) as mapboxgl.ImageSource | undefined;
-  if (existing) {
-    // 换图只更新图片与坐标，不重建 source —— 重建会让图层闪一下
-    existing.updateImage({ url: preview.imageUrl, coordinates: preview.coordinates });
-    ensureLayer();
-    return;
-  }
-
-  map.addSource(DEM_PREVIEW_SOURCE, {
-    type: 'image',
-    url: preview.imageUrl,
-    coordinates: preview.coordinates,
-  });
-  ensureLayer();
-}
-
+// DEM 栅格预览层：实现在 `map/demPreviewLayer.ts`（结果页的三维要复用同一套铺设逻辑）。
+// 这里只保留调用点，插入位置仍是「压在 river-surface-fill 之下」。
 function buildArrowIconImageData(color: string): ImageData {
   const size = 24;
   const canvas = document.createElement('canvas');
@@ -217,6 +180,11 @@ const ARROW_ICON_DEFS: Array<[string, string]> = [
   ['cross-arrow-green', '#22c55e'],
   ['cross-arrow-red', '#ef4444'],
   ['cross-arrow-amber', '#f59e0b'],
+  // 运行结果上色用（与 RISK_COLORS 0..3 同值；断线着色见 buildSectionColorExpression）
+  ['cross-arrow-risk-0', '#10b981'],
+  ['cross-arrow-risk-1', '#3b82f6'],
+  ['cross-arrow-risk-2', '#f97316'],
+  ['cross-arrow-risk-3', '#ef4444'],
 ];
 
 function ensureArrowIcons(map: mapboxgl.Map) {
@@ -226,9 +194,20 @@ function ensureArrowIcons(map: mapboxgl.Map) {
 }
 
 function buildArrowIconExpression(): ExpressionSpecification {
-  // pending/unknown => amber, valid => green, invalid => red（与 buildValidationColorExpression 同步）
+  // 有运行结果 → 按风险等级；否则 pending=amber / valid=green / invalid=red
+  // （与 buildSectionColorExpression 同步，箭头与断面线永远同色）
   return [
     'case',
+    ['has', 'riskLevel'],
+    [
+      'match',
+      ['get', 'riskLevel'],
+      0, 'cross-arrow-risk-0',
+      1, 'cross-arrow-risk-1',
+      2, 'cross-arrow-risk-2',
+      3, 'cross-arrow-risk-3',
+      'cross-arrow-amber',
+    ],
     ['==', ['get', 'validation_status'], 'valid'],
     'cross-arrow-green',
     ['==', ['get', 'validation_status'], 'invalid'],
@@ -239,6 +218,32 @@ function buildArrowIconExpression(): ExpressionSpecification {
     'cross-arrow-red',
     'cross-arrow-amber',
   ] as unknown as ExpressionSpecification;
+}
+
+/**
+ * 给断面要素挂上 `riskLevel` 属性（按 `section_id` 匹配运行结果）。
+ *
+ * <p>为什么改的是**写进地图数据源的那一份**而不是原 props：要素本身是编辑器的草稿数据，
+ * 风险等级是"这一轮运行"的临时叠加，不该混进 `perpendicularData`（否则保存/回写时
+ * 会带出一个不存在的字段）。这里浅拷贝一层，地图看到有属性、页面数据保持干净。
+ */
+function withRiskLevels(
+  data: GeoJSON.FeatureCollection | null,
+  levels: Record<string, number> | null | undefined,
+): GeoJSON.FeatureCollection | null {
+  if (!data || !levels) return data;
+  const features = (data.features || []).map((f) => {
+    const id = sectionIdOfFeature(f);
+    const level = id ? levels[id] : undefined;
+    const props: any = f.properties || {};
+    if (level === undefined || level === null) {
+      if (!('riskLevel' in props)) return f;
+      const { riskLevel: _drop, ...rest } = props;
+      return { ...f, properties: rest } as GeoJSON.Feature;
+    }
+    return { ...f, properties: { ...props, riskLevel: level } } as GeoJSON.Feature;
+  });
+  return { ...data, features } as GeoJSON.FeatureCollection;
 }
 
 /**
@@ -379,6 +384,13 @@ interface EditorMapProps {
   sectionBoxDeleteIds?: string[] | null;
   /** 框选删除断面：预览中的框（画完到确认之间一直留着） */
   sectionBoxDeleteBounds?: BoxBounds | null;
+  /**
+   * 运行结果 → 断面着色：`section_id → 显示等级 0..3`。
+   *
+   * 有值的断面按风险等级上色（算到一条红一条），没有值/不传的继续显示校验色。
+   * 由 `runProgressStore` 的轮询驱动，进度卡关掉就传 null，断面回到校验色。
+   */
+  riskLevels?: Record<string, number> | null;
 }
 
 function EditorMap(props: EditorMapProps) {
@@ -416,12 +428,16 @@ function EditorMap(props: EditorMapProps) {
     riverSurfaceData,
     showRiverSurface = false,
     resizeTrigger,
+    riskLevels = null,
   } = props;
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
   const perpendicularDataRef = useRef<GeoJSON.FeatureCollection | null>(perpendicularData);
   perpendicularDataRef.current = perpendicularData;
+  /** 换 style 时要把当前的风险上色一起补回数据源（不放在 props 里是因为它每 1.5s 变一次） */
+  const riskLevelsRef = useRef<Record<string, number> | null | undefined>(riskLevels);
+  riskLevelsRef.current = riskLevels;
   useEffect(() => {
     perpendicularDataRef.current = perpendicularData;
   }, [perpendicularData]);
@@ -591,14 +607,15 @@ function EditorMap(props: EditorMapProps) {
     if (!map) return;
 
     const updateMapSources = () => {
+      const decorated = withRiskLevels(perpendicularData, riskLevels);
       const crossLinesSource = map.getSource('perpendicular-lines') as mapboxgl.GeoJSONSource;
       if (crossLinesSource) {
-        crossLinesSource.setData(perpendicularData || turf.featureCollection([]));
+        crossLinesSource.setData(decorated || turf.featureCollection([]));
       }
 
       const crossArrowsSource = map.getSource('perpendicular-arrows') as mapboxgl.GeoJSONSource;
       if (crossArrowsSource) {
-        crossArrowsSource.setData(buildCrossLineArrowPoints(perpendicularData));
+        crossArrowsSource.setData(buildCrossLineArrowPoints(decorated));
       }
     };
 
@@ -611,7 +628,7 @@ function EditorMap(props: EditorMapProps) {
         map.off('idle', updateMapSources);
       };
     }
-  }, [perpendicularData]);
+  }, [perpendicularData, riskLevels]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1045,11 +1062,13 @@ function EditorMap(props: EditorMapProps) {
         if (src) src.setData(uploadedDataRef.current);
       }
       if (perpendicularDataRef.current) {
+        // 换底图/换 style 后数据源是空的，这里要把「当前那一份」（含运行结果上色）补回去
+        const decorated = withRiskLevels(perpendicularDataRef.current, riskLevelsRef.current);
         const src = map.getSource('perpendicular-lines') as mapboxgl.GeoJSONSource;
-        if (src) src.setData(perpendicularDataRef.current);
+        if (src) src.setData(decorated ?? perpendicularDataRef.current);
 
         const arrowSrc = map.getSource('perpendicular-arrows') as mapboxgl.GeoJSONSource;
-        if (arrowSrc) arrowSrc.setData(buildCrossLineArrowPoints(perpendicularDataRef.current));
+        if (arrowSrc) arrowSrc.setData(buildCrossLineArrowPoints(decorated));
       }
 
       // 刷新后恢复“已选岸段”高亮与段落选择组（同步 effect 早于地图创建执行时会被跳过）
@@ -1265,7 +1284,7 @@ function EditorMap(props: EditorMapProps) {
         id: 'perpendicular-lines-layer',
         type: 'line',
         source: 'perpendicular-lines',
-        paint: { 'line-color': buildValidationColorExpression(), 'line-width': 4 },
+        paint: { 'line-color': buildSectionColorExpression(), 'line-width': 4 },
       });
 
       ensureArrowIcons(map);

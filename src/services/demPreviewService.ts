@@ -207,6 +207,17 @@ export function releaseDemPreview(preview: DemPreview | null | undefined): void 
 }
 
 /**
+ * 高程显示（米）。缺失或非有限值统一显示破折号，别让 NaN 漏到界面上。
+ *
+ * <p>编辑器的图例与结果页的三维面板共用：两处都写一份的话，「4.5 m」和「4.50 米」
+ * 这种差异会先出现在读数上，接着就出现在图例上。
+ */
+export function formatDemMeters(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  return `${value.toFixed(1)} m`;
+}
+
+/**
  * 图例条的 CSS 渐变。
  *
  * <p>灰度配色用固定的两端色；分层设色用服务端给的断点，并按**本图**的 min~max

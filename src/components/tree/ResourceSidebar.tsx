@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Edit3, Database } from 'lucide-react';
+import TaskRunProgressCard from '../TaskRunProgressCard';
+import type { TaskRunSnapshot } from '../../pages/editor/taskRunProgress';
 import { authHeaders } from '../../utils/apiClient';
 import { sharedGetJSON } from '../../utils/sharedGet';
 import { buildResourceTree } from '../../tree/treeModel';
@@ -28,6 +30,11 @@ export interface ResourceSidebarHandlers extends LoadedOnMapActions {
   onRun: () => void;
   /** 批量操作：kind 为选中节点的统一类型，nodes 为参与批量操作的节点 */
   onBatchAction?: (kind: string, nodes: TreeNode[], actionKey: string) => void;
+  /** 当前任务的运行进度（与经典侧栏同一份快照，见 `useTaskRunProgress`） */
+  runProgress?: TaskRunSnapshot | null;
+  onStopRun?: () => Promise<boolean> | void;
+  onViewRunResult?: () => void;
+  onDismissRunProgress?: () => void;
 }
 
 interface Props {
@@ -86,6 +93,9 @@ function readStoredHeight(): number {
 }
 
 export default function ResourceSidebar({ handlers, demKeys, demPreviews, activeSectionId, tiffBoundsVisible, boxSelection }: Props) {
+  // 运行进度来自 EditorPage（与经典侧栏同一份快照）：树模式里那个「执行风险分析」
+  // 按钮同样不该把人弹到结果页，进度就地贴在这个按钮上面。
+  const runProgress = handlers.runProgress;
   const setData = useResourceTreeStore((s) => s.setData);
   const dataVersion = useResourceTreeStore((s) => s.dataVersion);
   const banks = useResourceTreeStore((s) => s.banks);
@@ -317,6 +327,17 @@ export default function ResourceSidebar({ handlers, demKeys, demPreviews, active
           actions={handlers}
         />
       </div>
+
+      {runProgress && (
+        <div className={styles.runProgress}>
+          <TaskRunProgressCard
+            snapshot={runProgress}
+            onStop={handlers.onStopRun}
+            onViewResult={() => handlers.onViewRunResult?.()}
+            onDismiss={() => handlers.onDismissRunProgress?.()}
+          />
+        </div>
+      )}
 
       <div className={styles.footer} data-tour="tree-footer">
         <button type="button" className={styles.run} onClick={handlers.onRun} title="执行风险分析">

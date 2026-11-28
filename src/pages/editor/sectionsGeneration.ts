@@ -736,28 +736,46 @@ export async function generateSectionsForBanksIntoTask(
   };
 }
 
-export async function runCurrentTask(params: {   perpendicularData: GeoJSON.FeatureCollection;
-  setPage?: (page: 'editor' | 'result', taskId?: string) => void;
-}) {
-  const { perpendicularData, setPage } = params;
+export interface RunTaskOutcome {
+  /**
+   * 请求是否**被受理并跑完**（成功、失败、被终止都算 true）。
+   *
+   * <p>只把"根本没跑起来"（409 冲突 / 网络断 / 断面已失效）判成 false：
+   * 这类情况下界面上的进度卡要停在「未执行」并给出原因，而不是一直转圈。
+   */
+  ok: boolean;
+  /** ok=false 时给用户看的一句话 */
+  message?: string;
+  status?: string;
+}
+
+/**
+ * 执行当前任务的全部断面。
+ *
+ * <p>**不再跳结果页**：进度就地显示在编辑器侧栏（见 `hooks/useTaskRunProgress`），
+ * 要看结论由用户自己从任务列表进去。这个跳转以前写在这里，`setPage` 一调，
+ * 编辑器整个卸载 —— 执行过程中的界面状态（选中的岸段、断面、图层面板）全部丢失。
+ *
+ * <p>`/run` 是同步接口（整批算完才返回），所以调用方要在 `await` 它之前先把轮询开起来。
+ */
+export async function runCurrentTask(params: {
+  perpendicularData: GeoJSON.FeatureCollection;
+}): Promise<RunTaskOutcome> {
+  const { perpendicularData } = params;
 
   if (!perpendicularData || perpendicularData.features.length === 0) {
     message.warning('请先绘制断面');
-    return;
+    return { ok: false, message: '请先绘制断面' };
   }
 
   const taskId = getCurrentTaskId();
   if (!taskId) {
     message.warning('未找到任务ID，请先绘制断面');
-    return;
+    return { ok: false, message: '未找到任务ID' };
   }
 
   try {
     console.log(`开始分析任务: ${taskId}`);
-
-    if (setPage) {
-      setPage('result', taskId);
-    }
 
     const response = await fetch(`/v0/bank/tasks/${taskId}/run`, {
       method: 'POST',
@@ -780,10 +798,11 @@ export async function runCurrentTask(params: {   perpendicularData: GeoJSON.Feat
 
     const result = await response.json();
     console.log('任务运行结果:', result);
+    const status = String(result?.status ?? '');
 
     // 被终止**不是失败**：后端会正常返回 200 + status=cancelled（success=false）。
     // 不单独拦一下，用户点了「终止」之后看到的会是"任务运行失败"，以为自己搞坏了什么。
-    if (String(result?.status ?? '') === 'cancelled') {
+    if (status === 'cancelled') {
       const summary: any = result?.summary ?? {};
       message.warning(
         `任务已终止：已处理 ${summary.success ?? 0} 个断面（失败 ${summary.failed ?? 0}），` +
@@ -791,12 +810,15 @@ export async function runCurrentTask(params: {   perpendicularData: GeoJSON.Feat
         6,
       );
     } else if (result.success) {
-      message.success(`任务运行成功！状态: ${result.status}，已处理 ${result.results?.length || 0} 个断面`);
+      message.success(`任务运行成功！状态: ${status}，已处理 ${result.results?.length || 0} 个断面`);
     } else {
       message.error('任务运行失败，请检查控制台');
     }
+
+    return { ok: true, status };
   } catch (err: any) {
     console.error('运行任务失败:', err);
     message.error(`运行任务失败: ${err.message}`);
+    return { ok: false, message: err?.message || String(err) };
   }
 }

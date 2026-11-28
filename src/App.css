@@ -1698,6 +1698,81 @@
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
+/* ---- 任务列表里的「正在计算」条 ----
+   任务列表本身就是看过程的地方：点开一个还在算的任务，这条给出实时计数 +
+   终止入口，配合地图色带逐段刷新，用户不用再切回编辑器确认它还在跑。 */
+.result-tasks-panel > .task-run-strip {
+  flex: 0 0 auto;
+}
+
+.task-run-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+}
+
+.task-run-strip-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #2563eb;
+  animation: task-run-strip-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes task-run-strip-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.task-run-strip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 0.68rem;
+  color: #475569;
+  line-height: 1.35;
+}
+
+.task-run-strip-text strong {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.task-run-strip-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-run-strip-stop {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #b91c1c;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.task-run-strip-stop:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.task-run-strip-stop:disabled {
+  border-color: #e5e7eb;
+  color: #94a3b8;
+  cursor: default;
+}
+
 .task-search-clear {
   position: absolute;
   right: 6px;

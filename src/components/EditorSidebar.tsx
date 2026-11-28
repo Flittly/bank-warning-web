@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type { SelectionGroup } from '../types/selection';
+import TaskRunProgressCard from './TaskRunProgressCard';
+import type { TaskRunSnapshot } from '../pages/editor/taskRunProgress';
 import styles from './EditorSidebar.module.css';
 import modalStyles from './Modal.module.css';
 
@@ -117,6 +119,16 @@ interface EditorSidebarProps {
   handleSelectBasicParam: (id: string | null) => void;
   onExportSections: () => void;
   clippedBanks: any[];
+  /**
+   * 运行进度：贴在「执行风险分析」按钮下面就地显示。
+   *
+   * <p>只传数据不传轮询 —— 轮询在 `EditorPage`（`useTaskRunProgress`），
+   * 两种侧栏模式共用同一份快照，切模式不会丢进度。
+   */
+  runProgress?: TaskRunSnapshot | null;
+  onStopRun?: () => Promise<boolean> | void;
+  onViewRunResult?: () => void;
+  onDismissRunProgress?: () => void;
 }
 
 function EditorSidebar(props: EditorSidebarProps) {
@@ -194,6 +206,10 @@ function EditorSidebar(props: EditorSidebarProps) {
     handleSectionsFileUpload,
     handleSelectBasicParam,
     onExportSections,
+    runProgress,
+    onStopRun,
+    onViewRunResult,
+    onDismissRunProgress,
     loadedBanks,
     selectedLoadedBanks,
     setSelectedLoadedBanks,
@@ -768,6 +784,16 @@ function EditorSidebar(props: EditorSidebarProps) {
           <Zap size={28} />
         </button>
         <span className={styles.hintText}>执行风险分析</span>
+        {runProgress && (
+          <div className={styles.runProgress}>
+            <TaskRunProgressCard
+              snapshot={runProgress}
+              onStop={onStopRun}
+              onViewResult={() => onViewRunResult?.()}
+              onDismiss={() => onDismissRunProgress?.()}
+            />
+          </div>
+        )}
       </div>
 
       {showUploadHelp && (

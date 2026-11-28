@@ -38,16 +38,12 @@ import {
   DEM_RAMP_OPTIONS,
   demLegendGradient,
   fetchDemPreview,
+  formatDemMeters as fmtDemMeters,
   releaseDemPreview,
   type DemPreview,
   type DemRamp,
 } from '../services/demPreviewService';
-import {
-  requestDemTerrainBuild,
-  terrainSpecOf,
-  type DemTerrainInfo,
-} from '../services/demTerrainService';
-import { DEFAULT_TERRAIN_EXAGGERATION, terrainStatusView } from '../map/terrainLayer';
+import { useDemTerrain } from '../hooks/useDemTerrain';
 import { fetchRiverSurface, invalidateRiverSurfaceCache } from '../services/riverSurfaceApi';
 import { removeDemBounds, resolveVisibleTiffBounds, toggleDemBounds } from '../map/tiffBoundsView';
 import {
@@ -113,6 +109,7 @@ import {
   updateTaskParams,
 } from './editor/basicParamsApi';
 import { getCurrentTaskId, setCurrentTaskId } from './editor/taskState';
+import { useTaskRunProgress } from '../hooks/useTaskRunProgress';
 import { updateSectionParams } from './editor/sectionApi';
 import {
   DEFAULT_REQUEST_CONCURRENCY,
@@ -124,63 +121,6 @@ import { useAutoCollapseOnNarrow } from '../utils/useAutoCollapseOnNarrow';
 interface EditorPageProps {
   setPage?: (page: 'editor' | 'result', taskId?: string) => void;
   initialTaskId?: string;
-}
-
-/** DEM 三维地形：切片是后台异步的，打开开关后按这个间隔问一次进度 */
-const TERRAIN_POLL_INTERVAL_MS = 3000;
-/**
- * 轮询上限。实测 1 万×3 千、30 m 的 DEM 切 8–12 级只要 10 秒；留到 10 分钟是为了
- * 给更大的 DEM 和排队（单线程 worker，前面可能还压着别的任务）留余量。
- */
-const TERRAIN_POLL_TIMEOUT_MS = 10 * 60 * 1000;
-
-/** 到这些状态就停止轮询：要么能用了，要么再问也不会变 */
-const TERMINAL_TERRAIN_STATUSES: ReadonlySet<DemTerrainInfo['status']> = new Set([
-  'ready',
-  'failed',
-  'missing',
-  'unavailable',
-]);
-
-/** 后端判定「DEM 不存在」时前端手搓的最小状态体（这种情况下后端只回 404，没有正文） */
-const EMPTY_TERRAIN_INFO: DemTerrainInfo = {
-  tiff_key: '',
-  status: 'none',
-  fingerprint: null,
-  minzoom: null,
-  maxzoom: null,
-  bounds: null,
-  tile_count: null,
-  error: null,
-  generated_at: null,
-};
-
-/** 可中止的等待：用户关掉开关 / 换 DEM 时立刻醒，不留一个 3 秒后的野请求 */
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException('Aborted', 'AbortError'));
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-function isAbortError(error: unknown): boolean {
-  return (error as { name?: unknown } | null)?.name === 'AbortError';
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  const message = (error as { message?: unknown } | null)?.message;
-  return typeof message === 'string' && message ? message : fallback;
 }
 
 function EditorPage(props: EditorPageProps) {
@@ -228,6 +168,7 @@ function EditorPage(props: EditorPageProps) {
   const [leftPanelWidth, setLeftPanelWidth] = useState(350);
   const [rightPanelWidth, setRightPanelWidth] = useState(350);
   const [resizeTrigger, setResizeTrigger] = useState(0);
+
   const [showTiffBounds, setShowTiffBounds] = useState<boolean>(false);
   const [tiffBoundsData, setTiffBoundsData] = useState<GeoJSON.FeatureCollection | null>(null);
 
@@ -3344,6 +3285,15 @@ function EditorPage(props: EditorPageProps) {
     }
   };
 
+  /**
+   * 运行进度：**就地**显示在「执行风险分析」按钮下面，不再跳结果页。
+   *
+   * <p>以前点这个按钮会立刻 `setPage('result')`，人被弹到结果页、只能从这个页面看进度；
+   * 但执行分析的人本来就站在编辑器里，为了看几行进度丢掉编辑上下文不划算。
+   * 现在进度留在侧栏，要看结论再去任务列表（卡片上的「去任务列表看结果」）。
+   */
+  const runProgress = useTaskRunProgress(() => useResourceTreeStore.getState().bumpData());
+
   // 开始分析：运行任务中的所有断面
   const handleStartAnalysis = async () => {
     if (!perpendicularData) {
@@ -3357,8 +3307,31 @@ function EditorPage(props: EditorPageProps) {
       return;
     }
 
-    await runCurrentTask({ perpendicularData, setPage });
+    const taskId = getCurrentTaskId();
+    if (!taskId) {
+      message.warning('未找到任务ID，请先绘制断面');
+      return;
+    }
+
+    // 先点亮进度卡再发请求：`/run` 是同步的（整批算完才返回），
+    // 不先开始轮询的话，这几十秒里界面上什么都不会发生。
+    void runProgress.start(taskId);
+
+    const outcome = await runCurrentTask({ perpendicularData });
+    if (outcome.ok) {
+      // `/run` 是同步接口：它返回 = 这批断面已经算完。解除起跑闸门，
+      // 让轮询立刻把「完成/失败/被终止」定下来，不用再等下一个 1.5s。
+      runProgress.markReturned(outcome.status);
+    } else {
+      runProgress.markFailed(outcome.message || '任务未能启动');
+    }
   };
+
+  /** 进度卡上的「去任务列表看结果」：结果页默认就停在任务列表那一栏，并选中这个任务。 */
+  const openTaskResult = useCallback(() => {
+    const taskId = runProgress.snapshot?.taskId || getCurrentTaskId();
+    if (taskId) setPage?.('result', taskId);
+  }, [runProgress.snapshot?.taskId, setPage]);
 
   // 应用自定义线段配置：更新当前编辑组的垂线
   const handleApplyCustomSegments = () => {
@@ -3539,77 +3512,30 @@ function EditorPage(props: EditorPageProps) {
     return true;
   };
 
+  /**
+   * 进度卡上的「终止」：走和资源树 `task.stop`、下半区横幅完全同一条实现
+   * （二次确认 + cooperative/stale 两种文案 + 两次跟进刷新），不另写一份。
+   */
+  const stopRunningTask = useCallback(async (): Promise<boolean> => {
+    const snap = runProgress.snapshot;
+    if (!snap?.taskId) return false;
+    return handleStopTask(snap.taskId, snap.taskName);
+  }, [runProgress.snapshot, handleStopTask]);
+
   // —— DEM 三维地形 ——
-  // 开关只对「当前预览的这份 DEM」生效。切片在模型服务后台异步进行（几秒到几分钟），
-  // 所以打开后进入「触发 + 轮询」：`POST /terrain/build` 是幂等的，已就绪且未过期时什么都不做，
-  // 轮询期间反复调它是安全的，顺便让后端替我们做过期检查。
-  // （声明在 handleDemPreview / clearDemPreview 之前：那两个要调 resetTerrain）
-  const [terrainOn, setTerrainOn] = useState(false);
-  const [terrainInfo, setTerrainInfo] = useState<DemTerrainInfo | null>(null);
-  const [terrainExaggeration, setTerrainExaggeration] = useState(DEFAULT_TERRAIN_EXAGGERATION);
-  const terrainAbortRef = useRef<AbortController | null>(null);
-
-  const stopTerrainRun = useCallback(() => {
-    terrainAbortRef.current?.abort();
-    terrainAbortRef.current = null;
-  }, []);
-
-  /** 换 DEM / 关预览：地形是跟着 DEM 走的，状态一并清掉，避免把上一份的瓦片挂到下一份上 */
-  const resetTerrain = useCallback(() => {
-    stopTerrainRun();
-    setTerrainOn(false);
-    setTerrainInfo(null);
-  }, [stopTerrainRun]);
-
-  const startTerrainRun = useCallback(async (tiffKey: string) => {
-    stopTerrainRun();
-    const controller = new AbortController();
-    terrainAbortRef.current = controller;
-    const deadline = Date.now() + TERRAIN_POLL_TIMEOUT_MS;
-    try {
-      while (!controller.signal.aborted) {
-        const info = await requestDemTerrainBuild(tiffKey, controller.signal);
-        if (controller.signal.aborted) return;
-        setTerrainInfo(info);
-        if (TERMINAL_TERRAIN_STATUSES.has(info.status)) return;
-        if (Date.now() >= deadline) {
-          message.warning('三维地形生成超时，请稍后重新打开');
-          setTerrainOn(false);
-          return;
-        }
-        await sleep(TERRAIN_POLL_INTERVAL_MS, controller.signal);
-      }
-    } catch (error) {
-      if (controller.signal.aborted || isAbortError(error)) return;
-      setTerrainOn(false);
-      // 404 = 后端判定这份 DEM 不存在或无权访问（IllegalArgumentException 统一映射 404）
-      if (/HTTP 404/.test(errorMessage(error, ''))) {
-        setTerrainInfo({ ...EMPTY_TERRAIN_INFO, tiff_key: tiffKey, status: 'missing' });
-      } else {
-        message.error(errorMessage(error, '三维地形生成失败'));
-      }
-    } finally {
-      if (terrainAbortRef.current === controller) terrainAbortRef.current = null;
-    }
-  }, [stopTerrainRun]);
-
-  const handleTerrainToggle = useCallback((next: boolean) => {
-    setTerrainOn(next);
-    if (!next) {
-      stopTerrainRun();
-      return;
-    }
-    const tiffKey = demPreviewRef.current?.tiffKey;
-    if (tiffKey) void startTerrainRun(tiffKey);
-  }, [startTerrainRun, stopTerrainRun]);
-
-  useEffect(() => () => stopTerrainRun(), [stopTerrainRun]);
-
-  const terrainSpec = useMemo(
-    () => (terrainOn ? terrainSpecOf(terrainInfo) : null),
-    [terrainOn, terrainInfo],
-  );
-  const terrainView = terrainOn ? terrainStatusView(terrainInfo?.status, terrainInfo?.error) : null;
+  // 开关只对「当前预览的这份 DEM」生效；切片、轮询、状态文案全部在 useDemTerrain 里，
+  // 与结果页共用同一份实现（那边只是数据源换成「当前选中任务的 DEM」）。
+  // （声明在 handleDemPreview / clearDemPreview 之前：那两个要调 terrain.reset）
+  const terrain = useDemTerrain({ tiffKey: demPreview?.tiffKey ?? null });
+  const terrainSpec = terrain.spec;
+  const terrainOn = terrain.on;
+  const terrainView = terrain.view;
+  const terrainExaggeration = terrain.exaggeration;
+  const setTerrainExaggeration = terrain.setExaggeration;
+  const handleTerrainToggle = terrain.toggle;
+  const resetTerrain = terrain.reset;
+  /** 失败后「重试」：状态回到 pending 并重新跑一遍 */
+  const retryTerrain = terrain.restart;
 
   /**
    * 双击 DEM：让后端把它渲染成「高程配色 + 红色 nodata」的栅格铺到地图上。
@@ -4595,11 +4521,7 @@ function EditorPage(props: EditorPageProps) {
     return sectionIdOfFeature(list[selectedCrossLineIndex]) || null;
   }, [perpendicularData, selectedCrossLineIndex]);
 
-  /** DEM 高程显示（米）。缺失或非有限值统一显示破折号，别让 NaN 漏到界面上。 */
-  const fmtDemMeters = (value: number | null | undefined): string => {
-    if (value == null || !Number.isFinite(value)) return '—';
-    return `${value.toFixed(1)} m`;
-  };
+  /** DEM 高程显示（米）由 `demPreviewService.formatDemMeters` 统一提供（结果页复用同一份） */
 
   return (
     <div className="editor-layout">
@@ -4643,6 +4565,11 @@ function EditorPage(props: EditorPageProps) {
           onHideDems: () => { clearDemPreview(); setShowTiffBounds(false); setFocusedDemKeys(null); },
           // —— 下半区运行横幅的「终止」：与资源树 task.stop 走同一条实现 ——
           onStopTask: (id, name) => handleStopTask(id, name),
+          // —— 树模式底部「执行风险分析」上方的运行进度（与经典侧栏同一份快照）——
+          runProgress: runProgress.snapshot,
+          onStopRun: stopRunningTask,
+          onViewRunResult: openTaskResult,
+          onDismissRunProgress: runProgress.dismiss,
         }}
             />
           )}
@@ -4761,6 +4688,10 @@ function EditorPage(props: EditorPageProps) {
           onExportSections={handleExportSections}
           handleSelectBasicParam={handleSelectBasicParam}
           clippedBanks={clippedBanks}
+          runProgress={runProgress.snapshot}
+          onStopRun={stopRunningTask}
+          onViewRunResult={openTaskResult}
+          onDismissRunProgress={runProgress.dismiss}
         />
           )}
         </div>
@@ -4813,6 +4744,8 @@ function EditorPage(props: EditorPageProps) {
           riverSurfaceData={riverSurfaceData}
           showRiverSurface={showRiverSurface}
           resizeTrigger={resizeTrigger}
+          // 运行结果上色：算出一条断面就变一条，算完/关掉进度卡后回到校验色
+          riskLevels={runProgress.snapshot?.levels ?? null}
           satellite={satellite}
           colorBanks={colorBanks}
         />
@@ -4926,14 +4859,10 @@ function EditorPage(props: EditorPageProps) {
                   style={{ marginTop: 6, fontSize: 11, color: terrainView.failed ? '#b91c1c' : '#64748b' }}
                 >
                   {terrainView.label}
-                  {terrainView.failed && terrainInfo?.status === 'failed' && (
+                  {terrainView.failed && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const key = demPreview.tiffKey;
-                        setTerrainInfo({ ...EMPTY_TERRAIN_INFO, tiff_key: key, status: 'pending' });
-                        void startTerrainRun(key);
-                      }}
+                      onClick={() => retryTerrain()}
                       style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: 11 }}
                     >
                       重试
@@ -5156,6 +5085,7 @@ function EditorPage(props: EditorPageProps) {
       <div data-tour="chat-panel" style={{ height: '100%', position: 'relative' }}>
         <ChatPanel collapsed={chatCollapsed} width={rightPanelWidth} />
       </div>
+
 
       {/* 创建任务弹窗 */}
       {taskNameDialog && (
